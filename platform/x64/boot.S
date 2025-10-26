@@ -1,6 +1,18 @@
 // x64 Boot Assembly
 // Minimal boot code to set up stack and jump to C
 
+// PVH boot note for QEMU direct kernel loading
+.section .note.Xen, "a"
+.align 4
+.long 4                     // namesz
+.long 12                    // descsz
+.long 18                    // type = XEN_ELFNOTE_PHYS32_ENTRY
+.asciz "Xen"
+.align 4
+.long _start                // entry point (physical address)
+.long 0                     // reserved
+.long 0                     // reserved
+
 .section .text.boot
 .global _start
 .code64

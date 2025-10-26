@@ -1,6 +1,6 @@
 // vmos kernel entry point
 
-#include "uart.h"
+void uart_puts(const char*);
 
 void main(void)
 {

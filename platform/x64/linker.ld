@@ -9,6 +9,10 @@ SECTIONS
     /* Place kernel at 1 MiB */
     . = 0x100000;
 
+    .note.Xen : {
+        *(.note.Xen)
+    }
+
     .text : {
         *(.text.boot)
         *(.text*)
