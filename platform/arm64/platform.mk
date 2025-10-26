@@ -9,3 +9,6 @@ QEMU_EXTRA_ARGS =
 
 PLATFORM_CFLAGS =
 PLATFORM_LDFLAGS =
+
+# Shared sources from src/ that this platform uses
+PLATFORM_SHARED_SRCS = devicetree.c
