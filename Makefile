@@ -26,15 +26,19 @@ SRC_DIR = src
 
 BOOT_ASM = $(PLATFORM_DIR)/boot.S
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
-PLATFORM_UART = $(PLATFORM_DIR)/uart.c
+
+# Platform-specific C sources
+PLATFORM_SRCS = $(PLATFORM_DIR)/uart.c $(PLATFORM_DIR)/devicetree.c
+
+# Common C sources
 C_SOURCES = $(SRC_DIR)/main.c
 
 # Object files in build directory
 BOOT_OBJ = $(BUILD_DIR)/boot.o
-UART_OBJ = $(BUILD_DIR)/uart.o
-C_OBJECTS = $(BUILD_DIR)/main.o
+PLATFORM_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/%.o,$(PLATFORM_SRCS))
+C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
 
-ALL_OBJECTS = $(BOOT_OBJ) $(UART_OBJ) $(C_OBJECTS)
+ALL_OBJECTS = $(BOOT_OBJ) $(PLATFORM_OBJS) $(C_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -47,11 +51,11 @@ $(BUILD_DIR):
 $(BOOT_OBJ): $(BOOT_ASM) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -c $< -o $@
 
-$(UART_OBJ): $(PLATFORM_UART) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: $(PLATFORM_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -c $< -o $@
 
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
