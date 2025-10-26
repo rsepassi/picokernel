@@ -26,13 +26,15 @@ SRC_DIR = src
 
 BOOT_ASM = $(PLATFORM_DIR)/boot.S
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
+PLATFORM_UART = $(PLATFORM_DIR)/uart.c
 C_SOURCES = $(SRC_DIR)/main.c
 
 # Object files in build directory
 BOOT_OBJ = $(BUILD_DIR)/boot.o
+UART_OBJ = $(BUILD_DIR)/uart.o
 C_OBJECTS = $(BUILD_DIR)/main.o
 
-ALL_OBJECTS = $(BOOT_OBJ) $(C_OBJECTS)
+ALL_OBJECTS = $(BOOT_OBJ) $(UART_OBJ) $(C_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -48,6 +50,9 @@ $(BOOT_OBJ): $(BOOT_ASM) | $(BUILD_DIR)
 $(BUILD_DIR)/main.o: $(SRC_DIR)/main.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(UART_OBJ): $(PLATFORM_UART) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
@@ -55,6 +60,7 @@ run: $(KERNEL)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults \
+		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
 		-kernel $(KERNEL)
 
