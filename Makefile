@@ -5,7 +5,7 @@
 ARCH ?= arm64
 
 # Build directory
-BUILD_DIR = build
+BUILD_DIR = build/$(ARCH)
 
 # Platform directory
 PLATFORM_DIR = platform/$(ARCH)
@@ -34,7 +34,7 @@ C_OBJECTS = $(BUILD_DIR)/main.o
 
 ALL_OBJECTS = $(BOOT_OBJ) $(C_OBJECTS)
 
-KERNEL = $(BUILD_DIR)/kernel-$(ARCH).elf
+KERNEL = $(BUILD_DIR)/kernel.elf
 
 .PHONY: all run clean
 all: $(KERNEL)
@@ -55,8 +55,9 @@ run: $(KERNEL)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults \
+		$(QEMU_EXTRA_ARGS) \
 		-kernel $(KERNEL)
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf build
 

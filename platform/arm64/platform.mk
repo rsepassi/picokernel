@@ -5,6 +5,7 @@ TARGET = aarch64-none-elf
 QEMU = qemu-system-aarch64
 QEMU_MACHINE = virt
 QEMU_CPU = cortex-a57
+QEMU_EXTRA_ARGS =
 
 PLATFORM_CFLAGS =
 PLATFORM_LDFLAGS =
