@@ -10,5 +10,9 @@ QEMU_EXTRA_ARGS =
 PLATFORM_CFLAGS =
 PLATFORM_LDFLAGS =
 
+# Platform-specific sources
+PLATFORM_C_SRCS = uart.c
+PLATFORM_S_SRCS = boot.S
+
 # Shared sources from src/ that this platform uses
 PLATFORM_SHARED_SRCS = devicetree.c

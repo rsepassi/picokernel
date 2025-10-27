@@ -7,10 +7,8 @@ ARCH ?= arm64
 # Build directory
 BUILD_DIR = build/$(ARCH)
 
-# Platform directory
+# Platform configuration
 PLATFORM_DIR = platform/$(ARCH)
-
-# Include platform-specific configuration
 include $(PLATFORM_DIR)/platform.mk
 
 # Toolchain
@@ -29,11 +27,11 @@ LDFLAGS = -nostdlib $(PLATFORM_LDFLAGS)
 # Source files
 SRC_DIR = src
 
-BOOT_ASM = $(PLATFORM_DIR)/boot.S
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
 
-# Platform-specific C sources
-PLATFORM_SRCS = $(PLATFORM_DIR)/uart.c $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_ADDITIONAL_SRCS))
+# Platform-specific sources (defined in platform.mk, with paths prepended)
+PLATFORM_C_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_C_SRCS))
+PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 
 # Shared sources (selected by platform.mk via PLATFORM_SHARED_SRCS)
 SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
@@ -42,12 +40,12 @@ SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 C_SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/printk.c
 
 # Object files in build directory
-BOOT_OBJ = $(BUILD_DIR)/boot.o
-PLATFORM_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/%.o,$(PLATFORM_SRCS))
+PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/%.o,$(PLATFORM_C_SOURCES))
+PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/%.o,$(PLATFORM_S_SOURCES))
 SHARED_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SHARED_SOURCES))
 C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
 
-ALL_OBJECTS = $(BOOT_OBJ) $(PLATFORM_OBJS) $(SHARED_OBJS) $(C_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -57,14 +55,14 @@ all: $(KERNEL)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BOOT_OBJ): $(BOOT_ASM) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
 $(BUILD_DIR)/%.o: $(PLATFORM_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
+
+$(BUILD_DIR)/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
@@ -80,4 +78,3 @@ run: $(KERNEL)
 
 clean:
 	rm -rf build
-
