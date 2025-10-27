@@ -31,7 +31,7 @@ static inline unsigned char uart_read_reg(unsigned int offset)
     return *reg;
 }
 
-static inline void uart_putc(char c)
+void uart_putc(char c)
 {
     // Wait until the transmit holding register is empty
     while ((uart_read_reg(UART_LSR) & UART_LSR_THRE) == 0) {

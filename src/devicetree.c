@@ -6,13 +6,7 @@
 
 // External UART functions
 void uart_puts(const char* str);
-
-// Helper function to print a character
-static void uart_putc(char c)
-{
-    char buf[2] = {c, '\0'};
-    uart_puts(buf);
-}
+void uart_putc(char);
 
 // Helper to convert uint32 to hex string
 static void print_hex32(uint32_t val)

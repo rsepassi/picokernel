@@ -1,8 +1,7 @@
 // Flattened Device Tree (FDT) structures and functions
 // Based on the Device Tree Specification
 
-#ifndef FDT_H
-#define FDT_H
+#pragma once
 
 #include <stdint.h>
 
@@ -53,5 +52,3 @@ static inline uint64_t fdt64_to_cpu(uint64_t x) {
 
 // FDT parsing functions
 void fdt_dump(void *fdt);
-
-#endif // FDT_H
