@@ -29,8 +29,44 @@ static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
 
 // External interrupt handler stubs (defined in assembly)
-extern void isr_stub_common(void);
+// Exception vectors 0-31
+extern void isr_stub_0(void);
+extern void isr_stub_1(void);
+extern void isr_stub_2(void);
+extern void isr_stub_3(void);
+extern void isr_stub_4(void);
+extern void isr_stub_5(void);
+extern void isr_stub_6(void);
+extern void isr_stub_7(void);
+extern void isr_stub_8(void);
+extern void isr_stub_9(void);
+extern void isr_stub_10(void);
+extern void isr_stub_11(void);
+extern void isr_stub_12(void);
+extern void isr_stub_13(void);
+extern void isr_stub_14(void);
+extern void isr_stub_15(void);
+extern void isr_stub_16(void);
+extern void isr_stub_17(void);
+extern void isr_stub_18(void);
+extern void isr_stub_19(void);
+extern void isr_stub_20(void);
+extern void isr_stub_21(void);
+extern void isr_stub_22(void);
+extern void isr_stub_23(void);
+extern void isr_stub_24(void);
+extern void isr_stub_25(void);
+extern void isr_stub_26(void);
+extern void isr_stub_27(void);
+extern void isr_stub_28(void);
+extern void isr_stub_29(void);
+extern void isr_stub_30(void);
+extern void isr_stub_31(void);
+
+// Timer interrupt (vector 32)
 extern void isr_stub_32(void);
+
+// Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
 
 // Forward declare timer handler
@@ -48,6 +84,18 @@ static void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8
     idt[num].reserved = 0;
 }
 
+// Exception names for debugging
+static const char* exception_names[32] = {
+    "Divide Error", "Debug", "NMI", "Breakpoint",
+    "Overflow", "Bound Range Exceeded", "Invalid Opcode", "Device Not Available",
+    "Double Fault", "Coprocessor Segment Overrun", "Invalid TSS", "Segment Not Present",
+    "Stack Fault", "General Protection", "Page Fault", "Reserved",
+    "x87 FPU Error", "Alignment Check", "Machine Check", "SIMD Floating-Point",
+    "Virtualization Exception", "Control Protection", "Reserved", "Reserved",
+    "Reserved", "Reserved", "Reserved", "Reserved",
+    "Hypervisor Injection", "VMM Communication", "Security Exception", "Reserved"
+};
+
 // Common interrupt handler dispatcher
 void interrupt_handler(uint64_t vector)
 {
@@ -55,27 +103,51 @@ void interrupt_handler(uint64_t vector)
         // Timer interrupt (vector 32)
         lapic_timer_handler();
     } else if (vector == 255) {
-        // Spurious interrupt - just ignore, no EOI needed
+        // Spurious interrupt - should not reach here (minimal stub)
+    } else if (vector < 32) {
+        // CPU exception - print diagnostic and halt
+        printk("\n!!! EXCEPTION: ");
+        printk(exception_names[vector]);
+        printk(" (vector ");
+        printk_dec(vector);
+        printk(") !!!\n");
+        printk("System halted.\n");
+        // Halt the CPU
+        while (1) {
+            __asm__ volatile("hlt");
+        }
     } else {
         // Unhandled interrupt - for now just ignore
-        // (printk in interrupt context may not be safe)
+        // (could add logging here if needed)
     }
 }
 
 // Initialize the IDT
 void interrupt_init(void)
 {
+    // Array of exception handler pointers for vectors 0-31
+    void (*exception_handlers[32])(void) = {
+        isr_stub_0,  isr_stub_1,  isr_stub_2,  isr_stub_3,
+        isr_stub_4,  isr_stub_5,  isr_stub_6,  isr_stub_7,
+        isr_stub_8,  isr_stub_9,  isr_stub_10, isr_stub_11,
+        isr_stub_12, isr_stub_13, isr_stub_14, isr_stub_15,
+        isr_stub_16, isr_stub_17, isr_stub_18, isr_stub_19,
+        isr_stub_20, isr_stub_21, isr_stub_22, isr_stub_23,
+        isr_stub_24, isr_stub_25, isr_stub_26, isr_stub_27,
+        isr_stub_28, isr_stub_29, isr_stub_30, isr_stub_31
+    };
+
     // Set up IDT pointer
     idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
     idtp.base = (uint64_t)&idt;
 
-    // Install default handler for all exception vectors (0-31)
+    // Install exception handlers (vectors 0-31)
+    // Flags: 0x8E = Present, DPL=0, Interrupt Gate (64-bit)
     for (int i = 0; i < 32; i++) {
-        idt_set_gate(i, (uint64_t)isr_stub_common, 0x08, 0x8E);
+        idt_set_gate(i, (uint64_t)exception_handlers[i], 0x08, 0x8E);
     }
 
     // Install timer interrupt handler (vector 32)
-    // Flags: 0x8E = Present, DPL=0, Interrupt Gate (64-bit)
     idt_set_gate(32, (uint64_t)isr_stub_32, 0x08, 0x8E);
 
     // Install spurious interrupt handler (vector 255)

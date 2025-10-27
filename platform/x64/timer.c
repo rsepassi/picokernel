@@ -78,15 +78,37 @@ void lapic_timer_handler(void)
 #define MSR_IA32_APIC_BASE 0x1B
 #define APIC_BASE_ENABLE (1 << 11)
 
-// Simple delay loop for calibration (approximately 10ms)
-static void delay_loop(uint32_t iterations)
+// PIT (Programmable Interval Timer) I/O ports
+#define PIT_CHANNEL0 0x40
+#define PIT_CHANNEL2 0x42
+#define PIT_COMMAND  0x43
+
+// PIT frequency: 1.193182 MHz (fixed, crystal oscillator)
+#define PIT_FREQUENCY 1193182UL
+
+// I/O port helpers
+static inline void outb(uint16_t port, uint8_t value)
 {
-    for (volatile uint32_t i = 0; i < iterations; i++) {
-        __asm__ volatile("pause");
-    }
+    __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
-// Calibrate the LAPIC timer frequency
+static inline uint8_t inb(uint16_t port)
+{
+    uint8_t value;
+    __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+// Disable the legacy 8259 PIC (we're using APIC instead)
+static void disable_pic(void)
+{
+    // Mask all interrupts on both PICs
+    outb(0x21, 0xFF);  // Master PIC data port
+    outb(0xA1, 0xFF);  // Slave PIC data port
+}
+
+// Calibrate the LAPIC timer frequency using PIT
+// PIT runs at fixed 1.193182 MHz, making it ideal for calibration
 static void calibrate_timer(void)
 {
     // Set divisor to 16
@@ -95,26 +117,49 @@ static void calibrate_timer(void)
     // Disable timer during calibration (set vector 32, masked)
     lapic_write(LAPIC_LVT_TIMER, 32 | 0x10000);
 
-    // Set initial count to maximum value
+    // Disable legacy PIC to prevent spurious IRQs during calibration
+    disable_pic();
+
+    // Configure PIT channel 0 for one-shot mode
+    // Command: Channel 0, Access mode lobyte/hibyte, Mode 0 (interrupt on terminal count), Binary
+    outb(PIT_COMMAND, 0x30);
+
+    // Set PIT to count for ~10ms
+    // PIT freq = 1193182 Hz, so for 10ms: count = 1193182 / 100 = 11931.82 ≈ 11932
+    uint16_t pit_count = 11932;
+    outb(PIT_CHANNEL0, pit_count & 0xFF);        // Low byte
+    outb(PIT_CHANNEL0, (pit_count >> 8) & 0xFF); // High byte
+
+    // Start LAPIC timer at maximum value
     lapic_write(LAPIC_TIMER_INIT, 0xFFFFFFFF);
 
-    // Wait for a short period (rough ~10ms delay)
-    delay_loop(1000000);
+    // Wait for PIT to finish counting down to near zero
+    while (1) {
+        outb(PIT_COMMAND, 0x00);  // Latch channel 0 count
+        uint8_t low = inb(PIT_CHANNEL0);
+        uint8_t high = inb(PIT_CHANNEL0);
+        uint16_t current = (high << 8) | low;
 
-    // Read current counter value
-    uint32_t elapsed = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CURRENT);
+        // Check if counter has counted down to near zero
+        if (current < 100) {
+            break;
+        }
+    }
 
-    // Stop timer (keep vector 32, masked)
+    // Read LAPIC timer counter value
+    uint32_t lapic_elapsed = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CURRENT);
+
+    // Stop LAPIC timer
     lapic_write(LAPIC_LVT_TIMER, 32 | 0x10000);
     lapic_write(LAPIC_TIMER_INIT, 0);
 
-    // Estimate ticks per ms (elapsed in ~10ms, so divide by 10)
-    // Add some margin for safety (use 80% of measured value)
-    if (elapsed > 0) {
-        g_ticks_per_ms = (elapsed / 10) * 4 / 5;
-        printk("Timer calibrated: ~");
+    // Calculate ticks per ms
+    // We measured ~10ms, so divide by 10
+    if (lapic_elapsed > 0) {
+        g_ticks_per_ms = lapic_elapsed / 10;
+        printk("Timer calibrated: ");
         printk_dec(g_ticks_per_ms);
-        printk(" ticks/ms\n");
+        printk(" ticks/ms (PIT-based)\n");
     } else {
         printk("Timer calibration failed, using default ");
         printk_dec(g_ticks_per_ms);
@@ -130,6 +175,15 @@ void timer_init(void)
 
     // Extract base address (bits 12-35, page-aligned)
     g_lapic_base = apic_base_msr & 0xFFFFF000UL;
+
+    // Validate LAPIC base address
+    if (g_lapic_base == 0 || g_lapic_base < 0x1000) {
+        printk("ERROR: Invalid LAPIC base address: 0x");
+        printk_hex32((uint32_t)g_lapic_base);
+        printk("\n");
+        printk("LAPIC may not be supported on this system\n");
+        return;
+    }
 
     printk("LAPIC base address: 0x");
     printk_hex32((uint32_t)g_lapic_base);
