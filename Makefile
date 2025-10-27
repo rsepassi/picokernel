@@ -39,7 +39,7 @@ PLATFORM_SRCS = $(PLATFORM_DIR)/uart.c $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_A
 SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 
 # Common C sources
-C_SOURCES = $(SRC_DIR)/main.c
+C_SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/printk.c
 
 # Object files in build directory
 BOOT_OBJ = $(BUILD_DIR)/boot.o

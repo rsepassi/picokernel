@@ -3,13 +3,10 @@
 
 #include "acpi.h"
 #include "io.h"
+#include "printk.h"
 #include <stdint.h>
 
 #define NULL ((void*)0)
-
-// Forward declaration from uart.c
-void uart_puts(const char* str);
-void uart_putc(char c);
 
 // QEMU fw_cfg interface (IOport-based for x86)
 #define FW_CFG_PORT_SEL     0x510
@@ -247,7 +244,7 @@ struct acpi_table_header* acpi_find_table(const char* signature)
 
         // Verify XSDT checksum
         if (acpi_checksum(xsdt, xsdt->header.length) != 0) {
-            uart_puts("XSDT checksum failed\n");
+            printk("XSDT checksum failed\n");
             return NULL;
         }
 
@@ -269,7 +266,7 @@ struct acpi_table_header* acpi_find_table(const char* signature)
 
         // Verify RSDT checksum
         if (acpi_checksum(rsdt, rsdt->header.length) != 0) {
-            uart_puts("RSDT checksum failed\n");
+            printk("RSDT checksum failed\n");
             return NULL;
         }
 
@@ -298,20 +295,20 @@ void acpi_init(void)
     g_rsdp = (struct acpi_rsdp*)acpi_find_rsdp();
 
     if (g_rsdp == NULL) {
-        uart_puts("ACPI: RSDP not found\n");
+        printk("ACPI: RSDP not found\n");
         return;
     }
 
-    uart_puts("ACPI initialized (RSDP at ");
-    print_hex64((uint64_t)g_rsdp);
-    uart_puts(", Revision ");
-    uart_putdec(g_rsdp->revision);
-    uart_puts(", OEM: ");
+    printk("ACPI initialized (RSDP at ");
+    printk_hex64((uint64_t)g_rsdp);
+    printk(", Revision ");
+    printk_dec(g_rsdp->revision);
+    printk(", OEM: ");
     for (int i = 0; i < 6; i++) {
         char c = g_rsdp->oem_id[i];
-        uart_putc(c >= 32 && c <= 126 ? c : '?');
+        printk_putc(c >= 32 && c <= 126 ? c : '?');
     }
-    uart_puts(")\n\n");
+    printk(")\n\n");
 }
 
 // Helper to dump detailed MADT info
@@ -319,11 +316,11 @@ static void dump_madt_details(struct acpi_table_header* header)
 {
     struct acpi_madt* madt = (struct acpi_madt*)header;
 
-    uart_puts("      Local APIC Address: ");
-    print_hex32(madt->local_apic_address);
-    uart_puts("\n      Flags: ");
-    print_hex32(madt->flags);
-    uart_puts("\n      Entries:\n");
+    printk("      Local APIC Address: ");
+    printk_hex32(madt->local_apic_address);
+    printk("\n      Flags: ");
+    printk_hex32(madt->flags);
+    printk("\n      Entries:\n");
 
     uint8_t* ptr = (uint8_t*)madt + sizeof(struct acpi_madt);
     uint8_t* end = (uint8_t*)madt + madt->header.length;
@@ -331,56 +328,51 @@ static void dump_madt_details(struct acpi_table_header* header)
     while (ptr < end) {
         struct acpi_madt_entry_header* entry = (struct acpi_madt_entry_header*)ptr;
 
-        uart_puts("        Type ");
-        uart_putdec(entry->type);
-        uart_puts(", Length ");
-        uart_putdec(entry->length);
+        printk("        Type ");
+        printk_dec(entry->type);
+        printk(", Length ");
+        printk_dec(entry->length);
 
         if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC) {
             struct acpi_madt_local_apic* lapic = (struct acpi_madt_local_apic*)entry;
-            uart_puts(" (Local APIC: processor_id=");
-            uart_putdec(lapic->acpi_processor_id);
-            uart_puts(", apic_id=");
-            uart_putdec(lapic->apic_id);
-            uart_puts(", flags=");
-            print_hex32(lapic->flags);
-            uart_puts(")");
+            printk(" (Local APIC: processor_id=");
+            printk_dec(lapic->acpi_processor_id);
+            printk(", apic_id=");
+            printk_dec(lapic->apic_id);
+            printk(", flags=");
+            printk_hex32(lapic->flags);
+            printk(")");
         } else if (entry->type == ACPI_MADT_TYPE_IO_APIC) {
             struct acpi_madt_io_apic* ioapic = (struct acpi_madt_io_apic*)entry;
-            uart_puts(" (I/O APIC: id=");
-            uart_putdec(ioapic->io_apic_id);
-            uart_puts(", addr=");
-            print_hex32(ioapic->io_apic_address);
-            uart_puts(", irq_base=");
-            uart_putdec(ioapic->global_irq_base);
-            uart_puts(")");
+            printk(" (I/O APIC: id=");
+            printk_dec(ioapic->io_apic_id);
+            printk(", addr=");
+            printk_hex32(ioapic->io_apic_address);
+            printk(", irq_base=");
+            printk_dec(ioapic->global_irq_base);
+            printk(")");
         } else if (entry->type == ACPI_MADT_TYPE_INTERRUPT_OVERRIDE) {
             struct acpi_madt_interrupt_override* override = (struct acpi_madt_interrupt_override*)entry;
-            uart_puts(" (Interrupt Override: bus=");
-            uart_putdec(override->bus);
-            uart_puts(", source=");
-            uart_putdec(override->source);
-            uart_puts(", global_irq=");
-            uart_putdec(override->global_irq);
-            uart_puts(", flags=");
-            const char hex[] = "0123456789abcdef";
-            uart_puts("0x");
-            uart_putc(hex[(override->flags >> 12) & 0xf]);
-            uart_putc(hex[(override->flags >> 8) & 0xf]);
-            uart_putc(hex[(override->flags >> 4) & 0xf]);
-            uart_putc(hex[override->flags & 0xf]);
-            uart_puts(")");
+            printk(" (Interrupt Override: bus=");
+            printk_dec(override->bus);
+            printk(", source=");
+            printk_dec(override->source);
+            printk(", global_irq=");
+            printk_dec(override->global_irq);
+            printk(", flags=");
+            printk_hex16(override->flags);
+            printk(")");
         } else if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC_NMI) {
-            uart_puts(" (Local APIC NMI)");
+            printk(" (Local APIC NMI)");
         } else if (entry->type == ACPI_MADT_TYPE_NMI_SOURCE) {
-            uart_puts(" (NMI Source)");
+            printk(" (NMI Source)");
         } else if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC_OVERRIDE) {
-            uart_puts(" (Local APIC Address Override)");
+            printk(" (Local APIC Address Override)");
         } else if (entry->type == ACPI_MADT_TYPE_LOCAL_X2APIC) {
-            uart_puts(" (Local x2APIC)");
+            printk(" (Local x2APIC)");
         }
 
-        uart_puts("\n");
+        printk("\n");
         ptr += entry->length;
     }
 }
@@ -389,98 +381,98 @@ static void dump_madt_details(struct acpi_table_header* header)
 void acpi_dump_tables(void)
 {
     if (g_rsdp == NULL) {
-        uart_puts("ACPI not initialized\n");
+        printk("ACPI not initialized\n");
         return;
     }
 
-    uart_puts("=== ACPI Tables ===\n\n");
+    printk("=== ACPI Tables ===\n\n");
 
     // List all tables from RSDT/XSDT
     if (g_rsdp->revision >= 2 && g_rsdp->xsdt_address != 0) {
         struct acpi_xsdt* xsdt = (struct acpi_xsdt*)(uintptr_t)g_rsdp->xsdt_address;
         uint32_t entries = (xsdt->header.length - sizeof(struct acpi_table_header)) / 8;
 
-        uart_puts("Using XSDT (");
-        uart_putdec(entries);
-        uart_puts(" tables)\n\n");
+        printk("Using XSDT (");
+        printk_dec(entries);
+        printk(" tables)\n\n");
 
         for (uint32_t i = 0; i < entries; i++) {
             struct acpi_table_header* header = (struct acpi_table_header*)(uintptr_t)xsdt->entry[i];
 
-            uart_puts("  [");
-            uart_putdec(i);
-            uart_puts("] ");
+            printk("  [");
+            printk_dec(i);
+            printk("] ");
             for (int j = 0; j < 4; j++) {
                 char c = header->signature[j];
                 if (c >= 32 && c <= 126) {
-                    uart_putc(c);
+                    printk_putc(c);
                 } else {
-                    uart_puts("?");
+                    printk("?");
                 }
             }
-            uart_puts("\n      Address: ");
-            print_hex64((uint64_t)header);
-            uart_puts("\n      Length: ");
-            uart_putdec(header->length);
-            uart_puts(" bytes\n      Revision: ");
-            uart_putdec(header->revision);
-            uart_puts("\n      OEM ID: ");
+            printk("\n      Address: ");
+            printk_hex64((uint64_t)header);
+            printk("\n      Length: ");
+            printk_dec(header->length);
+            printk(" bytes\n      Revision: ");
+            printk_dec(header->revision);
+            printk("\n      OEM ID: ");
             for (int j = 0; j < 6; j++) {
                 char c = header->oem_id[j];
-                uart_putc(c >= 32 && c <= 126 ? c : '?');
+                printk_putc(c >= 32 && c <= 126 ? c : '?');
             }
-            uart_puts("\n");
+            printk("\n");
 
             // Add detailed logging for specific table types
             if (memcmp(header->signature, "APIC", 4) == 0) {
                 dump_madt_details(header);
             }
-            uart_puts("\n");
+            printk("\n");
         }
     } else if (g_rsdp->rsdt_address != 0) {
         struct acpi_rsdt* rsdt = (struct acpi_rsdt*)(uintptr_t)g_rsdp->rsdt_address;
         uint32_t entries = (rsdt->header.length - sizeof(struct acpi_table_header)) / 4;
 
-        uart_puts("Using RSDT (");
-        uart_putdec(entries);
-        uart_puts(" tables)\n\n");
+        printk("Using RSDT (");
+        printk_dec(entries);
+        printk(" tables)\n\n");
 
         for (uint32_t i = 0; i < entries; i++) {
             struct acpi_table_header* header = (struct acpi_table_header*)(uintptr_t)rsdt->entry[i];
 
-            uart_puts("  [");
-            uart_putdec(i);
-            uart_puts("] ");
+            printk("  [");
+            printk_dec(i);
+            printk("] ");
             for (int j = 0; j < 4; j++) {
                 char c = header->signature[j];
                 if (c >= 32 && c <= 126) {
-                    uart_putc(c);
+                    printk_putc(c);
                 } else {
-                    uart_puts("?");
+                    printk("?");
                 }
             }
-            uart_puts("\n      Address: ");
-            print_hex32((uint32_t)(uintptr_t)header);
-            uart_puts("\n      Length: ");
-            uart_putdec(header->length);
-            uart_puts(" bytes\n      Revision: ");
-            uart_putdec(header->revision);
-            uart_puts("\n      OEM ID: ");
+            printk("\n      Address: ");
+            printk_hex32((uint32_t)(uintptr_t)header);
+            printk("\n      Length: ");
+            printk_dec(header->length);
+            printk(" bytes\n      Revision: ");
+            printk_dec(header->revision);
+            printk("\n      OEM ID: ");
             for (int j = 0; j < 6; j++) {
                 char c = header->oem_id[j];
-                uart_putc(c >= 32 && c <= 126 ? c : '?');
+                printk_putc(c >= 32 && c <= 126 ? c : '?');
             }
-            uart_puts("\n");
+            printk("\n");
 
             // Add detailed logging for specific table types
             if (memcmp(header->signature, "APIC", 4) == 0) {
                 dump_madt_details(header);
             }
-            uart_puts("\n");
+            printk("\n");
         }
     }
 
-    uart_puts("\n");
+    printk("\n");
 }
 
 // Read RAM size from fw_cfg

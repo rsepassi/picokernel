@@ -115,8 +115,3 @@ void acpi_dump_tables(void);
 // fw_cfg accessors
 uint64_t fw_cfg_read_ram_size(void);
 uint32_t fw_cfg_read_nb_cpus(void);
-
-// Helper functions (implemented in devinfo.c)
-void print_hex32(uint32_t val);
-void print_hex64(uint64_t val);
-void uart_putdec(uint32_t value);

@@ -2,57 +2,14 @@
 // Parses the FDT (Flattened Device Tree) passed by the bootloader
 
 #include "fdt.h"
+#include "printk.h"
 #include <stdint.h>
-
-// External UART functions
-void uart_puts(const char* str);
-void uart_putc(char);
-
-// Helper to convert uint32 to hex string
-static void print_hex32(uint32_t val)
-{
-    const char hex[] = "0123456789abcdef";
-    uart_puts("0x");
-    for (int i = 28; i >= 0; i -= 4) {
-        uart_putc(hex[(val >> i) & 0xf]);
-    }
-}
-
-// Helper to convert uint64 to hex string
-static void print_hex64(uint64_t val)
-{
-    const char hex[] = "0123456789abcdef";
-    uart_puts("0x");
-    for (int i = 60; i >= 0; i -= 4) {
-        uart_putc(hex[(val >> i) & 0xf]);
-    }
-}
-
-// Helper to print decimal number
-static void print_dec(uint32_t val)
-{
-    if (val == 0) {
-        uart_putc('0');
-        return;
-    }
-
-    char buf[12];
-    int i = 0;
-    while (val > 0) {
-        buf[i++] = '0' + (val % 10);
-        val /= 10;
-    }
-    // Print in reverse
-    while (i > 0) {
-        uart_putc(buf[--i]);
-    }
-}
 
 // Helper to print indentation
 static void print_indent(int depth)
 {
     for (int i = 0; i < depth * 2; i++) {
-        uart_putc(' ');
+        printk_putc(' ');
     }
 }
 
@@ -60,7 +17,7 @@ static void print_indent(int depth)
 static void print_prop_data(const uint8_t* data, uint32_t len)
 {
     if (len == 0) {
-        uart_puts("<empty>");
+        printk("<empty>");
         return;
     }
 
@@ -79,37 +36,37 @@ static void print_prop_data(const uint8_t* data, uint32_t len)
         }
     }
     if (is_string && data[len - 1] == 0) {
-        uart_putc('"');
-        uart_puts((const char*)data);
-        uart_putc('"');
+        printk_putc('"');
+        printk((const char*)data);
+        printk_putc('"');
         return;
     }
 
     // Try to print as cells (32-bit values) if length is multiple of 4
     if (len % 4 == 0 && len <= 16) {
-        uart_putc('<');
+        printk_putc('<');
         for (uint32_t i = 0; i < len; i += 4) {
-            if (i > 0) uart_putc(' ');
+            if (i > 0) printk_putc(' ');
             uint32_t cell = (data[i] << 24) | (data[i+1] << 16) |
                            (data[i+2] << 8) | data[i+3];
-            print_hex32(cell);
+            printk_hex32(cell);
         }
-        uart_putc('>');
+        printk_putc('>');
         return;
     }
 
     // Otherwise print as hex bytes
-    uart_putc('[');
+    printk_putc('[');
     for (uint32_t i = 0; i < len && i < 32; i++) {
-        if (i > 0) uart_putc(' ');
+        if (i > 0) printk_putc(' ');
         const char hex[] = "0123456789abcdef";
-        uart_putc(hex[data[i] >> 4]);
-        uart_putc(hex[data[i] & 0xf]);
+        printk_putc(hex[data[i] >> 4]);
+        printk_putc(hex[data[i] & 0xf]);
     }
     if (len > 32) {
-        uart_puts("...");
+        printk("...");
     }
-    uart_putc(']');
+    printk_putc(']');
 }
 
 // Walk and print the device tree structure
@@ -126,10 +83,10 @@ static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int d
     const char* name = (const char*)ptr;
     print_indent(depth);
     if (name[0] == '\0') {
-        uart_puts("/ {\n");
+        printk("/ {\n");
     } else {
-        uart_puts(name);
-        uart_puts(" {\n");
+        printk(name);
+        printk(" {\n");
     }
 
     // Skip name (null-terminated, 4-byte aligned)
@@ -151,12 +108,12 @@ static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int d
             const uint8_t* value = (const uint8_t*)ptr;
 
             print_indent(depth + 1);
-            uart_puts(strings + nameoff);
+            printk(strings + nameoff);
             if (len > 0) {
-                uart_puts(" = ");
+                printk(" = ");
                 print_prop_data(value, len);
             }
-            uart_puts(";\n");
+            printk(";\n");
 
             ptr = (uint32_t*)(((uint64_t)value + len + 3) & ~3);
 
@@ -166,7 +123,7 @@ static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int d
 
         } else if (token == FDT_END_NODE) {
             print_indent(depth);
-            uart_puts("}\n");
+            printk("}\n");
             break;
 
         } else if (token == FDT_NOP) {
@@ -176,9 +133,9 @@ static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int d
             break;
 
         } else {
-            uart_puts("Unknown token: ");
-            print_hex32(token);
-            uart_puts("\n");
+            printk("Unknown token: ");
+            printk_hex32(token);
+            printk("\n");
             break;
         }
     }
@@ -192,7 +149,7 @@ static void* fdt_find(void)
     // QEMU typically places DTB at end of RAM or specific locations
     // Try multiple ranges with different alignments
 
-    uart_puts("Scanning for device tree...\n");
+    printk("Scanning for device tree...\n");
 
     // First, try common high addresses (QEMU often places DTB near end of RAM)
     // 128 MB RAM = 0x08000000, so end is at 0x48000000
@@ -212,15 +169,15 @@ static void* fdt_find(void)
             uint32_t magic = fdt32_to_cpu(ptr[0]);
 
             if (magic == FDT_MAGIC) {
-                uart_puts("Found FDT at ");
-                print_hex64(addr);
-                uart_puts("\n");
+                printk("Found FDT at ");
+                printk_hex64(addr);
+                printk("\n");
                 return (void*)addr;
             }
         }
     }
 
-    uart_puts("Device tree not found in memory scan\n");
+    printk("Device tree not found in memory scan\n");
     return 0;
 }
 
@@ -229,10 +186,10 @@ void fdt_dump(void* fdt)
 {
     // If fdt is NULL, try to find it in memory
     if (!fdt) {
-        uart_puts("Warning: NULL device tree pointer, scanning memory...\n");
+        printk("Warning: NULL device tree pointer, scanning memory...\n");
         fdt = fdt_find();
         if (!fdt) {
-            uart_puts("Error: Could not locate device tree\n");
+            printk("Error: Could not locate device tree\n");
             return;
         }
     }
@@ -242,27 +199,27 @@ void fdt_dump(void* fdt)
     // Verify magic number
     uint32_t magic = fdt32_to_cpu(header->magic);
     if (magic != FDT_MAGIC) {
-        uart_puts("Error: Invalid FDT magic: ");
-        print_hex32(magic);
-        uart_puts("\n");
+        printk("Error: Invalid FDT magic: ");
+        printk_hex32(magic);
+        printk("\n");
         return;
     }
 
-    uart_puts("\n=== Device Tree ===\n");
-    uart_puts("FDT at ");
-    print_hex64((uint64_t)fdt);
-    uart_puts("\n");
+    printk("\n=== Device Tree ===\n");
+    printk("FDT at ");
+    printk_hex64((uint64_t)fdt);
+    printk("\n");
 
     uint32_t totalsize = fdt32_to_cpu(header->totalsize);
     uint32_t version = fdt32_to_cpu(header->version);
 
-    uart_puts("Total size: ");
-    print_dec(totalsize);
-    uart_puts(" bytes\n");
+    printk("Total size: ");
+    printk_dec(totalsize);
+    printk(" bytes\n");
 
-    uart_puts("Version: ");
-    print_dec(version);
-    uart_puts("\n\n");
+    printk("Version: ");
+    printk_dec(version);
+    printk("\n\n");
 
     // Get offsets
     uint32_t off_struct = fdt32_to_cpu(header->off_dt_struct);
@@ -273,5 +230,5 @@ void fdt_dump(void* fdt)
     const char* strings = (const char*)fdt + off_strings;
     fdt_walk_node(struct_block, strings, 0);
 
-    uart_puts("\n=== End of Device Tree ===\n\n");
+    printk("\n=== End of Device Tree ===\n\n");
 }
