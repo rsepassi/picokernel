@@ -10,7 +10,7 @@ SECTIONS
     . = 0x100000;
 
     .note.Xen : {
-        *(.note.Xen)
+      *(.note.Xen)
     }
 
     .text : {
