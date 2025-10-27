@@ -1,11 +1,8 @@
 // vmos kernel entry point
 
 #include "printk.h"
+#include "platform.h"
 
-void fdt_dump(void* fdt);
-void platform_timer_init(void);  // Platform-specific timer initialization
-
-volatile int back_in_loop = 0;
 extern volatile int timer_fired;
 
 void main(void* fdt)
@@ -20,19 +17,17 @@ void main(void* fdt)
     // Initialize platform-specific timer (if available)
     platform_timer_init();
 
-    // Infinite loop - check for timer
+    // Halt CPU until timer interrupt fires
     printk("\n\nWaiting for timer interrupt...\n\n");
-    while (1) {
-        if (timer_fired) {
-            printk("Timer interrupt fired successfully!\n");
-            printk("Interrupt handler returned to main loop.\n\n");
-            break;
-        }
+    while (!timer_fired) {
+        cpu_halt();  // Halt CPU until interrupt wakes it up
     }
+    printk("Timer interrupt fired successfully!\n");
+    printk("Interrupt handler returned to main loop.\n\n");
 
-    // Just spin forever after demonstrating the timer works
-    printk("Test complete. Spinning forever...\n");
+    // Just halt forever after demonstrating the timer works
+    printk("Test complete. Halting forever...\n");
     while (1) {
-        // Infinite loop - kernel stays alive
+        cpu_halt();  // Idle loop - halt until next interrupt
     }
 }

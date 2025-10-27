@@ -134,16 +134,22 @@ static void calibrate_timer(void)
     lapic_write(LAPIC_TIMER_INIT, 0xFFFFFFFF);
 
     // Wait for PIT to finish counting down to near zero
-    while (1) {
+    // Add timeout to prevent infinite loop if PIT fails
+    uint32_t timeout = 1000000;  // Large enough for legitimate delays
+    while (timeout-- > 0) {
         outb(PIT_COMMAND, 0x00);  // Latch channel 0 count
         uint8_t low = inb(PIT_CHANNEL0);
         uint8_t high = inb(PIT_CHANNEL0);
         uint16_t current = (high << 8) | low;
 
         // Check if counter has counted down to near zero
-        if (current < 100) {
+        if (current < 10) {  // Changed to 10 for better accuracy
             break;
         }
+    }
+
+    if (timeout == 0) {
+        printk("WARNING: PIT calibration timeout, using default ticks/ms\n");
     }
 
     // Read LAPIC timer counter value
@@ -173,20 +179,21 @@ void timer_init(void)
     // Read and verify LAPIC base address from MSR
     uint64_t apic_base_msr = read_msr(MSR_IA32_APIC_BASE);
 
-    // Extract base address (bits 12-35, page-aligned)
-    g_lapic_base = apic_base_msr & 0xFFFFF000UL;
+    // Extract base address (bits 12-MAXPHYADDR-1, page-aligned)
+    // Mask off lower 12 bits (page offset) and upper bits
+    g_lapic_base = apic_base_msr & 0xFFFFFFFFFF000ULL;
 
     // Validate LAPIC base address
     if (g_lapic_base == 0 || g_lapic_base < 0x1000) {
-        printk("ERROR: Invalid LAPIC base address: 0x");
-        printk_hex32((uint32_t)g_lapic_base);
+        printk("ERROR: Invalid LAPIC base address: ");
+        printk_hex64(g_lapic_base);
         printk("\n");
         printk("LAPIC may not be supported on this system\n");
         return;
     }
 
-    printk("LAPIC base address: 0x");
-    printk_hex32((uint32_t)g_lapic_base);
+    printk("LAPIC base address: ");
+    printk_hex64(g_lapic_base);
     printk("\n");
 
     // Check and enable LAPIC via MSR if not already enabled
