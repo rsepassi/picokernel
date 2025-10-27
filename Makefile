@@ -18,7 +18,12 @@ CC = clang
 LD = ld.lld
 
 # Compiler flags
-CFLAGS = --target=$(TARGET) -ffreestanding -nostdlib -Wall -Wextra -Werror -O2 $(PLATFORM_CFLAGS)
+CFLAGS = --target=$(TARGET) \
+				 -ffreestanding -nostdlib \
+				 -fwrapv -fno-strict-aliasing \
+				 -Wall -Wextra -Werror \
+				 -O2 \
+				 $(PLATFORM_CFLAGS)
 LDFLAGS = -nostdlib $(PLATFORM_LDFLAGS)
 
 # Source files
@@ -28,7 +33,7 @@ BOOT_ASM = $(PLATFORM_DIR)/boot.S
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
 
 # Platform-specific C sources
-PLATFORM_SRCS = $(PLATFORM_DIR)/uart.c
+PLATFORM_SRCS = $(PLATFORM_DIR)/uart.c $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_ADDITIONAL_SRCS))
 
 # Shared sources (selected by platform.mk via PLATFORM_SHARED_SRCS)
 SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
@@ -70,7 +75,8 @@ run: $(KERNEL)
 		-nographic -nodefaults \
 		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
-		-kernel $(KERNEL)
+		-kernel $(KERNEL) \
+		-no-reboot
 
 clean:
 	rm -rf build
