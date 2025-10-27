@@ -37,7 +37,7 @@ PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 
 # Common C sources
-C_SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/printk.c
+C_SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/printk.c $(SRC_DIR)/platform.c
 
 # Object files in build directory
 PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/%.o,$(PLATFORM_C_SOURCES))

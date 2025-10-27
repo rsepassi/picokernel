@@ -3,11 +3,11 @@
 
 #pragma once
 
-// Halt the CPU until an interrupt fires
-// This puts the processor in a low-power state instead of busy-waiting
-// When an interrupt occurs, the CPU wakes up, handles the interrupt,
-// and execution continues at the next instruction after hlt
-static inline void cpu_halt(void)
-{
-    __asm__ volatile("hlt");
-}
+#include <stdint.h>
+
+// x64 platform-specific state
+// This structure can hold platform-specific data (for future use)
+typedef struct {
+    uint32_t last_interrupt;  // Last interrupt reason code
+    // Future: could add ACPI tables pointer, device state, etc.
+} platform_t;

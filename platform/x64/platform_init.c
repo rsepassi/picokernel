@@ -1,23 +1,38 @@
 // x64 Platform Initialization
-// Sets up interrupts and timer with a demo callback
+// Sets up interrupts, timer, and device enumeration
 
+#include "platform.h"
 #include "interrupt.h"
 #include "timer.h"
 #include "printk.h"
+#include <stddef.h>
 
-// Global flag set by timer
-volatile int timer_fired = 0;
+// Forward declare internal device enumeration function
+void fdt_dump(void* fdt);
 
-// Timer callback function - just set a flag
-static void timer_callback(void)
+// Global platform state for interrupt tracking
+static platform_t* g_platform = NULL;
+
+// Track last interrupt type
+static volatile uint32_t g_last_interrupt = PLATFORM_INT_UNKNOWN;
+static volatile int g_wfi_done = 0;
+
+// Timer callback function - record timeout and wake from WFI
+static void wfi_timer_callback(void)
 {
-    timer_fired = 1;
+    g_last_interrupt = PLATFORM_INT_TIMEOUT;
+    g_wfi_done = 1;
 }
 
 // Platform-specific initialization
-void platform_timer_init(void)
+void platform_init(platform_t* platform, void* fdt)
 {
-    printk("Initializing x64 interrupts and timer...\n");
+    (void)fdt;  // x64 doesn't use FDT, but keep parameter for consistency
+
+    g_platform = platform;
+    platform->last_interrupt = PLATFORM_INT_UNKNOWN;
+
+    printk("Initializing x64 platform...\n");
 
     // Initialize interrupt handling (IDT)
     interrupt_init();
@@ -25,11 +40,39 @@ void platform_timer_init(void)
     // Initialize Local APIC timer
     timer_init();
 
-    // Set a short 1000ms one-shot timer for testing
-    timer_set_oneshot_ms(1000, timer_callback);
-
     // Enable interrupts globally
     interrupt_enable();
 
-    printk("Interrupts enabled. Waiting for timer...\n\n");
+    printk("Interrupts enabled.\n\n");
+
+    // Parse and display device tree (ACPI-based on x64)
+    fdt_dump(NULL);
+
+    printk("Platform initialization complete.\n\n");
+}
+
+// Wait for interrupt with timeout
+// timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
+// Returns: reason code indicating what interrupt fired
+uint32_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
+{
+    g_last_interrupt = PLATFORM_INT_UNKNOWN;
+    g_wfi_done = 0;
+
+    // Set timeout timer if not UINT64_MAX
+    if (timeout_ms != UINT64_MAX) {
+        // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
+        uint32_t timeout_ms_32 = (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
+        timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+    }
+
+    // Wait for interrupt
+    while (!g_wfi_done) {
+        __asm__ volatile("hlt");
+    }
+
+    // Update platform state
+    platform->last_interrupt = g_last_interrupt;
+
+    return g_last_interrupt;
 }

@@ -1,33 +1,36 @@
 // vmos kernel entry point
 
-#include "printk.h"
 #include "platform.h"
+#include "printk.h"
 
-extern volatile int timer_fired;
+// Kernel state structure
+typedef struct {
+    platform_t platform;
+} kernel_t;
 
 void main(void* fdt)
 {
     printk("vmos kernel starting...\n\n");
 
-    // Parse and display device tree
-    fdt_dump(fdt);
+    kernel_t k;
 
+    // Initialize platform (interrupts, timers, device enumeration)
+    platform_init(&k.platform, fdt);
     printk("Kernel initialization complete.\n\n");
 
-    // Initialize platform-specific timer (if available)
-    platform_timer_init();
-
-    // Halt CPU until timer interrupt fires
-    printk("\n\nWaiting for timer interrupt...\n\n");
-    while (!timer_fired) {
-        cpu_halt();  // Halt CPU until interrupt wakes it up
-    }
-    printk("Timer interrupt fired successfully!\n");
+    // Wait for interrupt with 1000ms timeout
+    printk("\n\nWaiting for interrupt (1000ms timeout)...\n\n");
+    uint32_t reason = platform_wfi(&k.platform, 1000);
+    printk("Interrupt received: ");
+    printk(platform_int_reason_str(reason));
+    printk("\n");
     printk("Interrupt handler returned to main loop.\n\n");
 
-    // Just halt forever after demonstrating the timer works
-    printk("Test complete. Halting forever...\n");
+    printk("kloop...\n");
     while (1) {
-        cpu_halt();  // Idle loop - halt until next interrupt
+      uint32_t reason = platform_wfi(&k.platform, UINT64_MAX);
+      printk("Interrupt received: ");
+      printk(platform_int_reason_str(reason));
+      printk("\n");
     }
 }
