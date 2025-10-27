@@ -4,33 +4,21 @@
 #include "platform.h"
 #include "interrupt.h"
 #include "timer.h"
+#include "virtio_pci.h"
 #include "printk.h"
 #include <stddef.h>
 
 // Forward declare internal device enumeration function
 void fdt_dump(void* fdt);
 
-// Global platform state for interrupt tracking
-static platform_t* g_platform = NULL;
-
-// Track last interrupt type
-static volatile uint32_t g_last_interrupt = PLATFORM_INT_UNKNOWN;
-static volatile int g_wfi_done = 0;
-
-// Timer callback function - record timeout and wake from WFI
-static void wfi_timer_callback(void)
-{
-    g_last_interrupt = PLATFORM_INT_TIMEOUT;
-    g_wfi_done = 1;
-}
+static void wfi_timer_callback(void) {}
 
 // Platform-specific initialization
 void platform_init(platform_t* platform, void* fdt)
 {
     (void)fdt;  // x64 doesn't use FDT, but keep parameter for consistency
 
-    g_platform = platform;
-    platform->last_interrupt = PLATFORM_INT_UNKNOWN;
+    platform->virtio_rng = NULL;
 
     printk("Initializing x64 platform...\n");
 
@@ -40,24 +28,34 @@ void platform_init(platform_t* platform, void* fdt)
     // Initialize Local APIC timer
     timer_init();
 
-    // Enable interrupts globally
-    interrupt_enable();
-
-    printk("Interrupts enabled.\n\n");
+    // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
+    // to avoid spurious interrupts during device enumeration
 
     // Parse and display device tree (ACPI-based on x64)
     fdt_dump(NULL);
 
-    printk("Platform initialization complete.\n\n");
+    printk("\n");
+
+    // Scan PCI bus for VirtIO devices
+    pci_scan_devices(platform);
+
+    printk("\nPlatform initialization complete.\n\n");
 }
 
 // Wait for interrupt with timeout
 // timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
-// Returns: reason code indicating what interrupt fired
-uint32_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
+// Returns: current time in milliseconds
+uint64_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
 {
-    g_last_interrupt = PLATFORM_INT_UNKNOWN;
-    g_wfi_done = 0;
+    // Disable interrupts to check condition atomically
+    __asm__ volatile("cli");
+
+    // Check if an interrupt has already fired
+    virtio_rng_t* rng = platform->virtio_rng;
+    if (rng != NULL && rng->irq_pending) {
+        __asm__ volatile("sti");  // Re-enable interrupts before returning
+        return timer_get_current_time_ms();
+    }
 
     // Set timeout timer if not UINT64_MAX
     if (timeout_ms != UINT64_MAX) {
@@ -66,13 +64,11 @@ uint32_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
         timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
     }
 
-    // Wait for interrupt
-    while (!g_wfi_done) {
-        __asm__ volatile("hlt");
-    }
+    // Atomically enable interrupts and halt
+    // Hardware guarantees: if interrupt arrives between sti and hlt,
+    // the CPU will service it and not actually halt
+    __asm__ volatile("sti; hlt");
 
-    // Update platform state
-    platform->last_interrupt = g_last_interrupt;
-
-    return g_last_interrupt;
+    // Return current time
+    return timer_get_current_time_ms();
 }

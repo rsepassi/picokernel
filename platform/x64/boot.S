@@ -56,18 +56,20 @@ _start:
 
     // Set up PD at 0x4000 for MMIO region (3-4GB range, PDPT[3])
     // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
-    // LAPIC at 0xFEE00000: offset = 0xFEE00000 - 0xC0000000 = 0x3EE00000
-    // PD entry = 0x3EE00000 / 2MB = 503, byte offset = 503 * 8 = 4024
-    mov $0x4000, %edi
-    add $4024, %edi             // PD[503] for 0xFEE00000 region
-    mov $0xFEE0009B, %eax       // 0xFEE00000 (LAPIC) | Present | Writable | Huge page | PCD | PWT
-    mov %eax, (%edi)
+    // Map 0xFE000000-0xFF000000 (16 MiB) to cover PCI BARs, IOAPIC, LAPIC
+    // This is PD entries 496-503 (8 entries, each covering 2 MiB)
 
-    // Also map IOAPIC at 0xFEC00000
-    // Offset: 0xFEC00000 - 0xC0000000 = 0x3EC00000, PD entry = 502
-    sub $8, %edi                // Back up to PD[502]
-    mov $0xFEC0009B, %eax       // 0xFEC00000 (IOAPIC) | Present | Writable | Huge page | PCD | PWT
+    mov $0x4000, %edi
+    add $3968, %edi             // PD[496] = 496 * 8 = 3968
+    mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT
+
+    // Map 8 consecutive 2 MiB pages
+    mov $8, %ecx
+.Lmap_mmio_loop:
     mov %eax, (%edi)
+    add $8, %edi                // Next PD entry
+    add $0x200000, %eax         // Next 2 MiB physical address
+    loop .Lmap_mmio_loop
 
     // Load CR3 with PML4 address
     mov $0x1000, %eax
@@ -112,14 +114,21 @@ long_mode_start:
     and $-16, %rsp              // Align to 16 bytes
     sub $8, %rsp                // Adjust so after call we're 16-byte aligned
 
+    // Clear direction flag (required for string operations)
+    cld
+
+    // Zero BSS section (required for C runtime)
+    lea __bss_start(%rip), %rdi
+    lea __bss_end(%rip), %rcx
+    sub %rdi, %rcx              // Calculate BSS size
+    xor %rax, %rax              // Zero value
+    rep stosb                   // memset(bss_start, 0, bss_size)
+
     // Restore saved info pointer and pass to main (x64 calling convention: first arg in RDI)
     mov %rsi, %rdi
 
-    // Clear direction flag
-    cld
-
     // Branch to C entry point
-    call main
+    call kmain
 
     // If main returns, hang
 hang:

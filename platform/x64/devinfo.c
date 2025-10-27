@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "acpi.h"
 #include "printk.h"
+#include "kernel.h"
 
 #define NULL ((void*)0)
 

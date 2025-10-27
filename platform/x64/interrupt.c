@@ -2,8 +2,12 @@
 // IDT (Interrupt Descriptor Table) setup and interrupt handlers
 
 #include "interrupt.h"
+#include "timer.h"
+#include "ioapic.h"
+#include "io.h"
 #include "printk.h"
 #include <stdint.h>
+#include <stddef.h>
 
 #define IDT_ENTRIES 256
 
@@ -66,11 +70,38 @@ extern void isr_stub_31(void);
 // Timer interrupt (vector 32)
 extern void isr_stub_32(void);
 
+// IRQ interrupts (vectors 33-47 for PCI IRQs)
+extern void isr_stub_33(void);
+extern void isr_stub_34(void);
+extern void isr_stub_35(void);
+extern void isr_stub_36(void);
+extern void isr_stub_37(void);
+extern void isr_stub_38(void);
+extern void isr_stub_39(void);
+extern void isr_stub_40(void);
+extern void isr_stub_41(void);
+extern void isr_stub_42(void);
+extern void isr_stub_43(void);
+extern void isr_stub_44(void);
+extern void isr_stub_45(void);
+extern void isr_stub_46(void);
+extern void isr_stub_47(void);
+
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
 
-// Forward declare timer handler
-void lapic_timer_handler(void);
+// Forward declare interrupt handler
+void interrupt_handler(uint64_t vector);
+
+// IRQ routing table
+#define MAX_IRQ_VECTORS 256
+
+typedef struct {
+    void* context;
+    void (*handler)(void* context);
+} irq_entry_t;
+
+static irq_entry_t g_irq_table[MAX_IRQ_VECTORS];
 
 // Set an IDT entry
 static void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector, uint8_t flags)
@@ -104,6 +135,7 @@ void interrupt_handler(uint64_t vector)
         lapic_timer_handler();
     } else if (vector == 255) {
         // Spurious interrupt - should not reach here (minimal stub)
+        // Do nothing
     } else if (vector < 32) {
         // CPU exception - print diagnostic and halt
         printk("\n!!! EXCEPTION: ");
@@ -117,14 +149,31 @@ void interrupt_handler(uint64_t vector)
             __asm__ volatile("hlt");
         }
     } else {
-        // Unhandled interrupt - for now just ignore
-        // (could add logging here if needed)
+        // IRQ - dispatch to registered handler
+        irq_dispatch(vector);
     }
+}
+
+// Disable legacy PIC (8259) - we use IOAPIC instead
+static void pic_disable(void)
+{
+    // Mask all interrupts on both PICs
+    // This prevents spurious interrupts from the legacy PIC
+    outb(0x21, 0xFF);  // Master PIC: mask all
+    outb(0xA1, 0xFF);  // Slave PIC: mask all
+
+    printk("Legacy PIC disabled (all IRQs masked)\n");
 }
 
 // Initialize the IDT
 void interrupt_init(void)
 {
+    // Disable legacy PIC (we use IOAPIC)
+    pic_disable();
+
+    // Initialize IOAPIC
+    ioapic_init();
+
     // Array of exception handler pointers for vectors 0-31
     void (*exception_handlers[32])(void) = {
         isr_stub_0,  isr_stub_1,  isr_stub_2,  isr_stub_3,
@@ -142,13 +191,24 @@ void interrupt_init(void)
     idtp.base = (uint64_t)&idt;
 
     // Install exception handlers (vectors 0-31)
-    // Flags: 0x8E = Present, DPL=0, Interrupt Gate (64-bit)
     for (int i = 0; i < 32; i++) {
         idt_set_gate(i, (uint64_t)exception_handlers[i], 0x08, 0x8E);
     }
 
     // Install timer interrupt handler (vector 32)
     idt_set_gate(32, (uint64_t)isr_stub_32, 0x08, 0x8E);
+
+    // Install IRQ interrupt handlers (vectors 33-47)
+    void (*irq_handlers[15])(void) = {
+        isr_stub_33, isr_stub_34, isr_stub_35, isr_stub_36,
+        isr_stub_37, isr_stub_38, isr_stub_39, isr_stub_40,
+        isr_stub_41, isr_stub_42, isr_stub_43, isr_stub_44,
+        isr_stub_45, isr_stub_46, isr_stub_47
+    };
+
+    for (int i = 0; i < 15; i++) {
+        idt_set_gate(33 + i, (uint64_t)irq_handlers[i], 0x08, 0x8E);
+    }
 
     // Install spurious interrupt handler (vector 255)
     idt_set_gate(255, (uint64_t)isr_stub_255, 0x08, 0x8E);
@@ -169,4 +229,50 @@ void interrupt_enable(void)
 void interrupt_disable(void)
 {
     __asm__ volatile("cli");
+}
+
+// Register IRQ handler
+void irq_register(uint8_t vector, void (*handler)(void*), void* context)
+{
+    g_irq_table[vector].handler = handler;
+    g_irq_table[vector].context = context;
+
+    // Route the IRQ through IOAPIC
+    // Vector 32 is timer (LAPIC, not IOAPIC)
+    // Vectors 33+ are device IRQs
+    if (vector >= 33) {
+        uint8_t irq = vector - 32;
+        uint8_t apic_id = 0;  // BSP APIC ID
+
+        ioapic_route_irq(irq, vector, apic_id);
+    }
+}
+
+// Enable (unmask) a specific IRQ
+void irq_enable(uint8_t vector)
+{
+    // Unmask the IRQ in the IOAPIC
+    // Vector 32 is timer (LAPIC), vectors 33+ are device IRQs (IOAPIC)
+    if (vector >= 33) {
+        uint8_t irq = vector - 32;
+        ioapic_unmask_irq(irq);
+    }
+}
+
+// Debug counters for irq_dispatch
+static volatile uint32_t g_irq_dispatch_count = 0;
+static volatile uint32_t g_irq_eoi_count = 0;
+
+// Dispatch IRQ to registered handler
+void irq_dispatch(uint8_t vector)
+{
+    g_irq_dispatch_count++;
+
+    if (g_irq_table[vector].handler != NULL) {
+        g_irq_table[vector].handler(g_irq_table[vector].context);
+    }
+
+    // Send EOI to LAPIC for all IRQs
+    lapic_send_eoi();
+    g_irq_eoi_count++;
 }

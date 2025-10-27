@@ -79,14 +79,22 @@ isr_common_handler:
     push %r15
 
     // At this point stack has:
-    // [regs, error_code, vector_num, RIP, CS, RFLAGS, ...]
-    // Vector number is at offset 15*8 = 120 bytes from RSP
+    // [regs(120 bytes), error_code(8), vector_num(8), RIP, CS, RFLAGS, ...]
+    // Vector number is at offset 15*8 + 8 = 128 bytes from RSP
+    // Need to align stack to 16 bytes before call (x86-64 ABI requirement)
+
+    // Align stack to 16 bytes
+    sub $8, %rsp
 
     // Load vector number into RDI (first argument)
-    mov 120(%rsp), %rdi
+    // After sub $8, offset is now 128 + 8 = 136
+    mov 136(%rsp), %rdi
 
     // Call C interrupt handler
     call interrupt_handler
+
+    // Remove alignment padding
+    add $8, %rsp
 
     // Restore all registers
     pop %r15
@@ -132,15 +140,17 @@ isr_stub_32:
     push %r14
     push %r15
 
-    // CPU pushes: In 64-bit mode without privilege change:
-    //   - RIP, CS, RFLAGS (24 bytes)
-    // We pushed 120 bytes (15 registers)
-    // Total: 144 bytes = 16-byte aligned
-    // CALL adds 8 bytes, making RSP 8-byte aligned in function (correct for ABI)
+    // Align stack to 16 bytes for x86-64 ABI
+    // CPU pushed 24 bytes (RIP+CS+RFLAGS), we pushed 120 bytes (15 regs) = 144 total
+    // Need to push 8 more bytes so RSP is 16-byte aligned before CALL
+    sub $8, %rsp
 
     // Call C interrupt handler with vector number 32
     mov $32, %rdi           // First argument: vector number
     call interrupt_handler
+
+    // Remove alignment padding
+    add $8, %rsp
 
     // Restore all registers
     pop %r15
@@ -161,6 +171,76 @@ isr_stub_32:
 
     // Return from interrupt
     iretq
+
+// IRQ interrupt stubs (vectors 33-47)
+// Macro to create IRQ stubs
+.macro ISR_IRQ num
+.global isr_stub_\num
+.type isr_stub_\num, @function
+isr_stub_\num:
+    // Save all registers
+    push %rax
+    push %rbx
+    push %rcx
+    push %rdx
+    push %rsi
+    push %rdi
+    push %rbp
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+
+    // Align stack to 16 bytes for x86-64 ABI
+    // CPU pushed 24 bytes (RIP+CS+RFLAGS), we pushed 120 bytes (15 regs) = 144 total
+    // Need to push 8 more bytes so RSP is 16-byte aligned before CALL
+    sub $8, %rsp
+
+    mov $\num, %rdi
+    call interrupt_handler
+
+    // Remove alignment padding
+    add $8, %rsp
+
+    // Restore all registers
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rbp
+    pop %rdi
+    pop %rsi
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    iretq
+.endm
+
+ISR_IRQ 33
+ISR_IRQ 34
+ISR_IRQ 35
+ISR_IRQ 36
+ISR_IRQ 37
+ISR_IRQ 38
+ISR_IRQ 39
+ISR_IRQ 40
+ISR_IRQ 41
+ISR_IRQ 42
+ISR_IRQ 43
+ISR_IRQ 44
+ISR_IRQ 45
+ISR_IRQ 46
+ISR_IRQ 47
 
 // Spurious interrupt stub (vector 255)
 // Minimal handler - spurious interrupts don't need EOI or processing

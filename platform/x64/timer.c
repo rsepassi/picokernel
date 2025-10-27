@@ -57,6 +57,17 @@ static timer_callback_t g_timer_callback = NULL;
 // Will be calibrated during initialization
 static uint32_t g_ticks_per_ms = 62500;  // Default: ~1GHz bus / 16 divisor
 
+// Time tracking using RDTSC
+static uint64_t g_tsc_start = 0;
+static uint64_t g_tsc_per_ms = 0;
+
+// Read TSC (Time Stamp Counter)
+static inline uint64_t rdtsc(void) {
+    uint32_t low, high;
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return ((uint64_t)high << 32) | low;
+}
+
 // Timer interrupt handler (called from interrupt.c)
 void lapic_timer_handler(void)
 {
@@ -99,14 +110,6 @@ static inline uint8_t inb(uint16_t port)
     return value;
 }
 
-// Disable the legacy 8259 PIC (we're using APIC instead)
-static void disable_pic(void)
-{
-    // Mask all interrupts on both PICs
-    outb(0x21, 0xFF);  // Master PIC data port
-    outb(0xA1, 0xFF);  // Slave PIC data port
-}
-
 // Calibrate the LAPIC timer frequency using PIT
 // PIT runs at fixed 1.193182 MHz, making it ideal for calibration
 static void calibrate_timer(void)
@@ -116,9 +119,6 @@ static void calibrate_timer(void)
 
     // Disable timer during calibration (set vector 32, masked)
     lapic_write(LAPIC_LVT_TIMER, 32 | 0x10000);
-
-    // Disable legacy PIC to prevent spurious IRQs during calibration
-    disable_pic();
 
     // Configure PIT channel 0 for one-shot mode
     // Command: Channel 0, Access mode lobyte/hibyte, Mode 0 (interrupt on terminal count), Binary
@@ -132,6 +132,9 @@ static void calibrate_timer(void)
 
     // Start LAPIC timer at maximum value
     lapic_write(LAPIC_TIMER_INIT, 0xFFFFFFFF);
+
+    // Also read TSC at start for TSC calibration
+    uint64_t tsc_before = rdtsc();
 
     // Wait for PIT to finish counting down to near zero
     // Add timeout to prevent infinite loop if PIT fails
@@ -148,6 +151,9 @@ static void calibrate_timer(void)
         }
     }
 
+    // Read TSC at end
+    uint64_t tsc_after = rdtsc();
+
     if (timeout == 0) {
         printk("WARNING: PIT calibration timeout, using default ticks/ms\n");
     }
@@ -159,17 +165,30 @@ static void calibrate_timer(void)
     lapic_write(LAPIC_LVT_TIMER, 32 | 0x10000);
     lapic_write(LAPIC_TIMER_INIT, 0);
 
-    // Calculate ticks per ms
+    // Calculate LAPIC ticks per ms
     // We measured ~10ms, so divide by 10
     if (lapic_elapsed > 0) {
         g_ticks_per_ms = lapic_elapsed / 10;
         printk("Timer calibrated: ");
         printk_dec(g_ticks_per_ms);
-        printk(" ticks/ms (PIT-based)\n");
+        printk(" LAPIC ticks/ms (PIT-based)\n");
     } else {
         printk("Timer calibration failed, using default ");
         printk_dec(g_ticks_per_ms);
         printk(" ticks/ms\n");
+    }
+
+    // Calculate TSC ticks per ms
+    uint64_t tsc_elapsed = tsc_after - tsc_before;
+    if (tsc_elapsed > 0) {
+        g_tsc_per_ms = tsc_elapsed / 10;
+        printk("TSC calibrated: ");
+        printk_dec((uint32_t)(g_tsc_per_ms / 1000));
+        printk(" MHz\n");
+    } else {
+        // Default to 1GHz if calibration fails
+        g_tsc_per_ms = 1000000;
+        printk("TSC calibration failed, assuming 1GHz\n");
     }
 }
 
@@ -215,6 +234,26 @@ void timer_init(void)
 
     // Calibrate timer frequency
     calibrate_timer();
+
+    // Capture start time
+    g_tsc_start = rdtsc();
+}
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+    uint64_t tsc_now = rdtsc();
+    uint64_t tsc_elapsed = tsc_now - g_tsc_start;
+
+    if (g_tsc_per_ms == 0) {
+        return 0;
+    }
+
+    return tsc_elapsed / g_tsc_per_ms;
+}
+
+// Send EOI (End Of Interrupt) to Local APIC
+void lapic_send_eoi(void) {
+    lapic_write(LAPIC_EOI, 0);
 }
 
 // Set a one-shot timer to fire after specified milliseconds
@@ -238,10 +277,4 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback)
 
     // Set initial count (starts the timer)
     lapic_write(LAPIC_TIMER_INIT, ticks);
-
-    printk("Timer set for ");
-    printk_dec(milliseconds);
-    printk("ms (");
-    printk_dec(ticks);
-    printk(" ticks)\n");
 }

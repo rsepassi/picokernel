@@ -2,6 +2,7 @@
 // 8250/16550 serial port (COM1) for QEMU microvm/q35
 
 #include "io.h"
+#include "kernel.h"
 
 // COM1 serial port I/O port base address
 #define COM1_PORT 0x3F8

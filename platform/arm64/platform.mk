@@ -7,7 +7,7 @@ QEMU_MACHINE = virt
 QEMU_CPU = cortex-a57
 QEMU_EXTRA_ARGS =
 
-PLATFORM_CFLAGS =
+PLATFORM_CFLAGS = -mgeneral-regs-only
 PLATFORM_LDFLAGS =
 
 # Platform-specific sources
