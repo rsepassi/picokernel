@@ -6,8 +6,8 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Place kernel at start of RAM */
-    . = 0x80000000;
+    /* Place kernel after OpenSBI at 2MB offset */
+    . = 0x80200000;
 
     .text : {
         *(.text.boot)

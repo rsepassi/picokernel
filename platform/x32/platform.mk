@@ -12,5 +12,5 @@ PLATFORM_CFLAGS = -mx32 -mno-red-zone
 PLATFORM_LDFLAGS = -m elf32_x86_64
 
 # Platform-specific sources
-PLATFORM_C_SRCS = uart.c devinfo.c acpi.c
-PLATFORM_S_SRCS = boot.S
+PLATFORM_C_SRCS = uart.c devinfo.c acpi.c interrupt.c timer.c platform_init.c
+PLATFORM_S_SRCS = boot.S isr.S

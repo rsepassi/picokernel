@@ -1,0 +1,82 @@
+// ARM64 Platform Initialization
+// Sets up interrupts, timer, and device enumeration
+
+#include "platform.h"
+#include "interrupt.h"
+#include "timer.h"
+#include "printk.h"
+#include <stddef.h>
+
+// Forward declare internal device enumeration function
+void fdt_dump(void* fdt);
+
+// Global platform state for interrupt tracking
+static platform_t* g_platform = NULL;
+
+// Track last interrupt type
+static volatile uint32_t g_last_interrupt = PLATFORM_INT_UNKNOWN;
+static volatile int g_wfi_done = 0;
+
+// Timer callback function - record timeout and wake from WFI
+static void wfi_timer_callback(void)
+{
+    g_last_interrupt = PLATFORM_INT_TIMEOUT;
+    g_wfi_done = 1;
+}
+
+// Platform-specific initialization
+void platform_init(platform_t* platform, void* fdt)
+{
+    g_platform = platform;
+    platform->last_interrupt = PLATFORM_INT_UNKNOWN;
+    platform->timer_freq_hz = 0;
+
+    printk("Initializing ARM64 platform...\n");
+
+    // Initialize exception vectors and GIC
+    interrupt_init();
+
+    // Initialize ARM Generic Timer
+    timer_init();
+
+    // Read and store timer frequency
+    platform->timer_freq_hz = timer_get_frequency();
+
+    // Enable interrupts globally
+    interrupt_enable();
+
+    printk("Interrupts enabled.\n\n");
+
+    // Parse and display device tree
+    fdt_dump(fdt);
+
+    printk("Platform initialization complete.\n\n");
+}
+
+// Wait for interrupt with timeout
+// timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
+// Returns: reason code indicating what interrupt fired
+uint32_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
+{
+    g_last_interrupt = PLATFORM_INT_UNKNOWN;
+    g_wfi_done = 0;
+
+    // Set timeout timer if not UINT64_MAX
+    if (timeout_ms != UINT64_MAX) {
+        // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
+        uint32_t timeout_ms_32 = (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
+        timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+    }
+
+    // Wait for interrupt using WFI instruction
+    // WFI (Wait For Interrupt) puts the processor in a low-power state
+    // until an interrupt arrives
+    while (!g_wfi_done) {
+        __asm__ volatile("wfi");
+    }
+
+    // Update platform state
+    platform->last_interrupt = g_last_interrupt;
+
+    return g_last_interrupt;
+}

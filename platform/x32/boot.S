@@ -24,10 +24,12 @@ _start:
 
     // Set up page tables for long mode
     // Identity map first 4 MiB (covers kernel at 1 MiB + stack)
+    // Also map high MMIO region for LAPIC, IOAPIC, etc.
 
-    // Clear page table area (4096 * 3 bytes starting at 0x1000)
+    // Clear page table area (4096 * 5 bytes starting at 0x1000)
+    // PML4 at 0x1000, PDPT at 0x2000, PD0 at 0x3000, PD3 at 0x4000, PD_MMIO at 0x5000
     mov $0x1000, %edi
-    mov $0x3000, %ecx
+    mov $0x5000, %ecx
     xor %eax, %eax
     rep stosb
 
@@ -38,16 +40,34 @@ _start:
 
     // Set up PDPT (Page Directory Pointer Table) at 0x2000
     mov $0x2000, %edi
-    mov $0x3003, %eax           // Address of PD | Present | Writable
+    mov $0x3003, %eax           // PDPT[0] -> PD at 0x3000 (for 0-1GB)
+    mov %eax, (%edi)
+    add $24, %edi               // PDPT[3] (3 * 8 bytes)
+    mov $0x4003, %eax           // PDPT[3] -> PD at 0x4000 (for 3-4GB, MMIO region)
     mov %eax, (%edi)
 
-    // Set up PD (Page Directory) at 0x3000
+    // Set up PD (Page Directory) at 0x3000 for first 1GB
     // Identity map first 4 MiB using two 2 MiB pages
     mov $0x3000, %edi
     mov $0x0083, %eax           // Address 0 | Present | Writable | Huge page
     mov %eax, (%edi)
     add $8, %edi
     mov $0x200083, %eax         // Address 2 MiB | Present | Writable | Huge page
+    mov %eax, (%edi)
+
+    // Set up PD at 0x4000 for MMIO region (3-4GB range, PDPT[3])
+    // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
+    // LAPIC at 0xFEE00000: offset = 0xFEE00000 - 0xC0000000 = 0x3EE00000
+    // PD entry = 0x3EE00000 / 2MB = 503, byte offset = 503 * 8 = 4024
+    mov $0x4000, %edi
+    add $4024, %edi             // PD[503] for 0xFEE00000 region
+    mov $0xFEE0009B, %eax       // 0xFEE00000 (LAPIC) | Present | Writable | Huge page | PCD | PWT
+    mov %eax, (%edi)
+
+    // Also map IOAPIC at 0xFEC00000
+    // Offset: 0xFEC00000 - 0xC0000000 = 0x3EC00000, PD entry = 502
+    sub $8, %edi                // Back up to PD[502]
+    mov $0xFEC0009B, %eax       // 0xFEC00000 (IOAPIC) | Present | Writable | Huge page | PCD | PWT
     mov %eax, (%edi)
 
     // Load CR3 with PML4 address

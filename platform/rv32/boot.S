@@ -5,12 +5,13 @@
 .global _start
 
 _start:
+    // OpenSBI will call us in S-mode with:
+    // a0 = hartid (hardware thread ID)
+    // a1 = pointer to device tree blob
+
     // Set up stack pointer
     la sp, stack_top
 
-    // RISC-V boot protocol:
-    // a0 = hartid (hardware thread ID)
-    // a1 = pointer to device tree blob
     // Pass DTB pointer as first argument to main
     mv a0, a1
 

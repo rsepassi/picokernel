@@ -11,8 +11,8 @@ PLATFORM_CFLAGS =
 PLATFORM_LDFLAGS =
 
 # Platform-specific sources
-PLATFORM_C_SRCS = uart.c
-PLATFORM_S_SRCS = boot.S
+PLATFORM_C_SRCS = uart.c platform_init.c interrupt.c timer.c
+PLATFORM_S_SRCS = boot.S vectors.S
 
 # Shared sources from src/ that this platform uses
 PLATFORM_SHARED_SRCS = devicetree.c
