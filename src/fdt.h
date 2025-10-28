@@ -50,5 +50,16 @@ static inline uint64_t fdt64_to_cpu(uint64_t x) {
     return __builtin_bswap64(x);
 }
 
+// VirtIO MMIO device info
+typedef struct {
+    uint64_t base_addr;
+    uint64_t size;
+    uint32_t irq;
+} virtio_mmio_device_t;
+
 // FDT parsing functions
 void fdt_dump(void *fdt);
+
+// Find VirtIO MMIO devices in device tree
+// Returns: number of devices found (up to max_devices)
+int fdt_find_virtio_mmio(void* fdt, virtio_mmio_device_t* devices, int max_devices);

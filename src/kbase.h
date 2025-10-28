@@ -19,7 +19,7 @@
     ((x) & ~((align) - 1))
 
 /* Cast pointer asserting alignment */
-#define KALIGN_CAST(ptr, type) ((type)(void*)(ptr))
+#define KALIGN_CAST(type, ptr) ((type)(void*)(ptr))
 
 /* Min/max of two values */
 #define KMIN(a, b) (((a) < (b)) ? (a) : (b))

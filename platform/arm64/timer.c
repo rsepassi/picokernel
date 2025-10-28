@@ -10,6 +10,9 @@
 // Global timer frequency (read from CNTFRQ_EL0)
 static uint64_t g_timer_freq_hz = 0;
 
+// Start time counter value
+static uint64_t g_timer_start = 0;
+
 // Global callback function pointer
 static timer_callback_t g_timer_callback = NULL;
 
@@ -18,6 +21,13 @@ static inline uint64_t read_cntfrq_el0(void)
 {
     uint64_t val;
     __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(val));
+    return val;
+}
+
+static inline uint64_t read_cntpct_el0(void)
+{
+    uint64_t val;
+    __asm__ volatile("mrs %0, cntpct_el0" : "=r"(val));
     return val;
 }
 
@@ -69,6 +79,9 @@ void timer_init(void)
 
     // Disable timer initially
     write_cntp_ctl_el0(0);
+
+    // Capture start time for timer_get_current_time_ms()
+    g_timer_start = read_cntpct_el0();
 }
 
 // Get timer frequency in Hz
@@ -119,4 +132,18 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback)
     // Bit 1 = IMASK (interrupt not masked)
     // Bit 2 = ISTATUS (read-only, condition met status)
     write_cntp_ctl_el0(1);  // Enable timer, interrupt unmasked
+}
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+    uint64_t counter_now = read_cntpct_el0();
+    uint64_t counter_elapsed = counter_now - g_timer_start;
+
+    if (g_timer_freq_hz == 0) {
+        return 0;
+    }
+
+    // Convert counter ticks to milliseconds
+    // ms = (ticks * 1000) / freq_hz
+    return (counter_elapsed * 1000) / g_timer_freq_hz;
 }

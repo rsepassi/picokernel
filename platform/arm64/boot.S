@@ -13,14 +13,14 @@ _start:
     ldr x1, =stack_top
     mov sp, x1
 
-    // Pass device tree pointer to main in x0
+    // Pass device tree pointer to kmain in x0
     // For ELF kernels, QEMU places DTB at start of RAM
     ldr x0, =0x40000000
 
     // Branch to C entry point
-    bl main
+    bl kmain
 
-    // If main returns, hang
+    // If kmain returns, hang
 hang:
     wfe
     b hang

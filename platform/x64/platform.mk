@@ -3,7 +3,7 @@
 TARGET = x86_64-none-elf
 
 QEMU = qemu-system-x86_64
-QEMU_MACHINE = pc
+QEMU_MACHINE = q35
 QEMU_CPU = max
 QEMU_EXTRA_ARGS = -device virtio-rng-pci
 

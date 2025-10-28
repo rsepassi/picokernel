@@ -1,6 +1,7 @@
 // PL011 UART driver for debugging
 // The ARM virt machine has a PL011 UART at 0x09000000
 
+#include "kernel.h"
 #include <stdint.h>
 
 #define UART_BASE 0x09000000UL

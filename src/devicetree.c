@@ -1,6 +1,7 @@
 // Device Tree parsing for ARM64
 // Parses the FDT (Flattened Device Tree) passed by the bootloader
 
+#include "kbase.h"
 #include "fdt.h"
 #include "printk.h"
 #include <stdint.h>
@@ -72,7 +73,7 @@ static void print_prop_data(const uint8_t* data, uint32_t len)
 // Walk and print the device tree structure
 static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int depth)
 {
-    const uint32_t* ptr = (const uint32_t*)p;
+    const uint32_t* ptr = KALIGN_CAST(const uint32_t*, p);
     uint32_t token = fdt32_to_cpu(*ptr++);
 
     if (token != FDT_BEGIN_NODE) {
@@ -115,11 +116,11 @@ static const uint8_t* fdt_walk_node(const uint8_t* p, const char* strings, int d
             }
             printk(";\n");
 
-            ptr = (uint32_t*)(((uint64_t)value + len + 3) & ~3);
+            ptr = KALIGN_CAST(const uint32_t*, (const uint8_t*)(((uint64_t)value + len + 3) & ~3));
 
         } else if (token == FDT_BEGIN_NODE) {
             // Process child node recursively
-            ptr = (uint32_t*)fdt_walk_node((const uint8_t*)ptr - 4, strings, depth + 1);
+            ptr = KALIGN_CAST(uint32_t*, fdt_walk_node((const uint8_t*)ptr - 4, strings, depth + 1));
 
         } else if (token == FDT_END_NODE) {
             print_indent(depth);
@@ -231,4 +232,132 @@ void fdt_dump(void* fdt)
     fdt_walk_node(struct_block, strings, 0);
 
     printk("\n=== End of Device Tree ===\n\n");
+}
+
+// Helper: Compare string with null-terminated string
+static int str_equal(const char* a, const char* b) {
+    while (*a && *b) {
+        if (*a != *b) return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+// Simpler approach: iterate through all "virtio,mmio" compatible strings
+// and extract their properties
+static int fdt_count_virtio_devices(void* fdt, virtio_mmio_device_t* devices, int max_devices)
+{
+    struct fdt_header* header = (struct fdt_header*)fdt;
+
+    uint32_t off_struct = fdt32_to_cpu(header->off_dt_struct);
+    uint32_t off_strings = fdt32_to_cpu(header->off_dt_strings);
+    uint32_t size_struct = fdt32_to_cpu(header->size_dt_struct);
+
+    const uint8_t* struct_start = (const uint8_t*)fdt + off_struct;
+    const uint8_t* struct_end = struct_start + size_struct;
+    const char* strings = (const char*)fdt + off_strings;
+
+    int count = 0;
+    uint64_t current_reg_addr = 0;
+    uint64_t current_reg_size = 0;
+    uint32_t current_irq = 0;
+    int in_virtio_node = 0;
+
+    const uint8_t* p = struct_start;
+
+    while (p < struct_end && count < max_devices) {
+        const uint32_t* ptr = KALIGN_CAST(const uint32_t*, p);
+        uint32_t token = fdt32_to_cpu(*ptr++);
+
+        if (token == FDT_BEGIN_NODE) {
+            // Reset state for new node
+            in_virtio_node = 0;
+            current_reg_addr = 0;
+            current_reg_size = 0;
+            current_irq = 0;
+
+            // Skip node name
+            const char* name = KALIGN_CAST(const char*, ptr);
+            while (*name) name++;
+            name++;
+            ptr = KALIGN_CAST(const uint32_t*, (const uint8_t*)(((uintptr_t)name + 3) & ~3));
+
+        } else if (token == FDT_PROP) {
+            uint32_t len = fdt32_to_cpu(*ptr++);
+            uint32_t nameoff = fdt32_to_cpu(*ptr++);
+            const uint8_t* value = (const uint8_t*)ptr;
+            const char* prop_name = strings + nameoff;
+
+            // Check if this is a virtio,mmio node
+            if (str_equal(prop_name, "compatible") && len >= 11) {
+                if (str_equal((const char*)value, "virtio,mmio")) {
+                    in_virtio_node = 1;
+                }
+            }
+
+            // Collect reg property (regardless of compatible - we'll check later)
+            if (str_equal(prop_name, "reg") && len >= 16) {
+                uint32_t addr_high = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+                uint32_t addr_low = (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
+                uint32_t size_high = (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
+                uint32_t size_low = (value[12] << 24) | (value[13] << 16) | (value[14] << 8) | value[15];
+
+                current_reg_addr = ((uint64_t)addr_high << 32) | addr_low;
+                current_reg_size = ((uint64_t)size_high << 32) | size_low;
+            }
+
+            // Collect interrupts property (regardless of compatible - we'll check later)
+            if (str_equal(prop_name, "interrupts") && len >= 12) {
+                uint32_t irq_type = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+                uint32_t irq_num = (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
+
+                if (irq_type == 0) {  // SPI
+                    current_irq = 32 + irq_num;
+                }
+            }
+
+            ptr = KALIGN_CAST(const uint32_t*, (const uint8_t*)(((uintptr_t)value + len + 3) & ~3));
+
+        } else if (token == FDT_END_NODE) {
+            // If this was a virtio,mmio node and we collected required info, save it
+            if (in_virtio_node && current_reg_addr != 0) {
+                devices[count].base_addr = current_reg_addr;
+                devices[count].size = current_reg_size;
+                devices[count].irq = current_irq;
+                count++;
+            }
+            // Reset for next node
+            in_virtio_node = 0;
+
+        } else if (token == FDT_NOP) {
+            // Skip NOPs
+            continue;
+
+        } else if (token == FDT_END) {
+            break;
+        }
+
+        p = KALIGN_CAST(const uint8_t*, ptr);
+    }
+
+    return count;
+}
+
+// Find VirtIO MMIO devices in device tree
+int fdt_find_virtio_mmio(void* fdt, virtio_mmio_device_t* devices, int max_devices)
+{
+    if (!fdt || !devices || max_devices <= 0) {
+        return 0;
+    }
+
+    struct fdt_header* header = (struct fdt_header*)fdt;
+
+    // Verify magic number
+    uint32_t magic = fdt32_to_cpu(header->magic);
+    if (magic != FDT_MAGIC) {
+        return 0;
+    }
+
+    return fdt_count_virtio_devices(fdt, devices, max_devices);
 }

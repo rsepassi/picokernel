@@ -13,3 +13,15 @@ void interrupt_enable(void);
 
 // Disable interrupts (mask DAIF)
 void interrupt_disable(void);
+
+// Register IRQ handler
+void irq_register(uint32_t irq_num, void (*handler)(void*), void* context);
+
+// Enable (unmask) a specific IRQ in the GIC
+void irq_enable(uint32_t irq_num);
+
+// Dispatch IRQ (called from exception handler)
+void irq_dispatch(uint32_t irq_num);
+
+// Dump GIC configuration for a specific IRQ (for debugging)
+void irq_dump_config(uint32_t irq_num);
