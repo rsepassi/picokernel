@@ -43,6 +43,9 @@ C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
             $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c \
             $(SRC_DIR)/virtio/virtio.c
 
+# Header files (all .o files depend on all headers)
+HEADERS = $(shell find $(SRC_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
+
 # Object files in build directory (maintaining source tree structure)
 PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
 PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
@@ -60,16 +63,16 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/src/virtio
 	mkdir -p $(BUILD_DIR)/platform
 
-$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
-$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
+$(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(SHARED_SOURCES) $(HEADERS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
 run: $(KERNEL)
