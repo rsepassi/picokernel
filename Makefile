@@ -4,8 +4,11 @@
 # Default architecture
 ARCH ?= arm64
 
+IMG_FILE ?= /tmp/disk.img
+
 # Build directory
 BUILD_DIR = build/$(ARCH)
+
 
 # Platform configuration
 PLATFORM_DIR = platform/$(ARCH)
@@ -91,6 +94,7 @@ $(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(SHARED_SOURCES) $
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
 run: $(KERNEL)
+	touch $(IMG_FILE)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults \
