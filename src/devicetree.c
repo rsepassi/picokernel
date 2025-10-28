@@ -183,7 +183,7 @@ static void *fdt_find(void) {
 }
 
 // Main function to dump the device tree
-void fdt_dump(void *fdt) {
+void platform_fdt_dump(void *fdt) {
   // If fdt is NULL, try to find it in memory
   if (!fdt) {
     printk("Warning: NULL device tree pointer, scanning memory...\n");

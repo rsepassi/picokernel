@@ -9,7 +9,7 @@
 void interrupt_init(void);
 
 // Enable interrupts (set SIE bit in sstatus)
-void interrupt_enable(void);
+void platform_interrupt_enable(void);
 
 // Disable interrupts (clear SIE bit in sstatus)
-void interrupt_disable(void);
+void platform_interrupt_disable(void);

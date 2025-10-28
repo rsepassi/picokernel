@@ -11,23 +11,23 @@ void kmain(void *fdt) {
 
   // Initialize
   kernel_t k;
-  kinit(&k, fdt);
-  printk("[KMAIN] kinit ok\n");
+  kmain_init(&k, fdt);
+  printk("[KMAIN] kmain_init ok\n");
 
   // User kickoff
   kuser_t user;
   user.kernel = &k;
-  kusermain(&user);
-  printk("[KMAIN] kusermain ok\n");
+  kmain_usermain(&user);
+  printk("[KMAIN] kmain_usermain ok\n");
 
   // Event loop
-  interrupt_enable();
+  platform_interrupt_enable();
   printk("[KMAIN] kloop...\n");
   uint64_t current_time = 0;
   while (1) {
     printk("[KLOOP] tick\n");
-    ktick(&k, current_time);
-    uint64_t timeout = knext_delay(&k);
+    kmain_tick(&k, current_time);
+    uint64_t timeout = kmain_next_delay(&k);
     if (timeout > MAX_TIMEOUT)
       timeout = MAX_TIMEOUT;
     printk("[KLOOP] wfi\n");

@@ -185,7 +185,7 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts
-void interrupt_enable(void) { __asm__ volatile("sti"); }
+void platform_interrupt_enable(void) { __asm__ volatile("sti"); }
 
 // Disable interrupts
-void interrupt_disable(void) { __asm__ volatile("cli"); }
+void platform_interrupt_disable(void) { __asm__ volatile("cli"); }

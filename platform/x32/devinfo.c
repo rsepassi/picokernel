@@ -105,9 +105,9 @@ static void parse_madt(void) {
 }
 
 // x32-specific device enumeration
-// This function provides the same interface as fdt_dump() but enumerates
+// This function provides the same interface as platform_fdt_dump() but enumerates
 // x32 devices using ACPI tables
-void fdt_dump(void *dummy) {
+void platform_fdt_dump(void *dummy) {
   (void)dummy;
   printk("=== x32 Device Enumeration ===\n\n");
 

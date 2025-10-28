@@ -118,7 +118,7 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts globally
-void interrupt_enable(void) { set_csr(sstatus, SSTATUS_SIE); }
+void platform_interrupt_enable(void) { set_csr(sstatus, SSTATUS_SIE); }
 
 // Disable interrupts globally
-void interrupt_disable(void) { clear_csr(sstatus, SSTATUS_SIE); }
+void platform_interrupt_disable(void) { clear_csr(sstatus, SSTATUS_SIE); }

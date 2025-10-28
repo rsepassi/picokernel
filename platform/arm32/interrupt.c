@@ -182,7 +182,7 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts (clear I bit in CPSR)
-void interrupt_enable(void) {
+void platform_interrupt_enable(void) {
   __asm__ volatile("mrs r0, cpsr\n"
                    "bic r0, r0, #0x80\n" // Clear I bit (bit 7)
                    "msr cpsr_c, r0\n" ::
@@ -190,7 +190,7 @@ void interrupt_enable(void) {
 }
 
 // Disable interrupts (set I bit in CPSR)
-void interrupt_disable(void) {
+void platform_interrupt_disable(void) {
   __asm__ volatile("mrs r0, cpsr\n"
                    "orr r0, r0, #0x80\n" // Set I bit (bit 7)
                    "msr cpsr_c, r0\n" ::

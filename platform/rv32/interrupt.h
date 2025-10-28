@@ -9,10 +9,10 @@
 void interrupt_init(void);
 
 // Enable interrupts globally
-void interrupt_enable(void);
+void platform_interrupt_enable(void);
 
 // Disable interrupts globally
-void interrupt_disable(void);
+void platform_interrupt_disable(void);
 
 // Common trap handler (called from trap.S)
 void trap_handler(void);

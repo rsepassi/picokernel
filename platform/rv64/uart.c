@@ -29,7 +29,7 @@ static inline unsigned char uart_read_reg(unsigned int offset) {
   return *reg;
 }
 
-void uart_putc(char c) {
+void platform_uart_putc(char c) {
   // Wait until the transmit holding register is empty
   while ((uart_read_reg(UART_LSR) & UART_LSR_THRE) == 0) {
     // Busy wait
@@ -39,11 +39,11 @@ void uart_putc(char c) {
   uart_write_reg(UART_THR, (unsigned char)c);
 }
 
-void uart_puts(const char *str) {
+void platform_uart_puts(const char *str) {
   while (*str) {
     if (*str == '\n') {
-      uart_putc('\r'); // Add carriage return before newline
+      platform_uart_putc('\r'); // Add carriage return before newline
     }
-    uart_putc(*str++);
+    platform_uart_putc(*str++);
   }
 }

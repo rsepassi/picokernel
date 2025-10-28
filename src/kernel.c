@@ -83,7 +83,7 @@ static void expire_timers(kernel_t *k) {
 }
 
 // Initialize kernel
-void kinit(kernel_t *k, void *fdt) {
+void kmain_init(kernel_t *k, void *fdt) {
   // Set platform backpointer to kernel BEFORE platform_init
   // (platform_init may register interrupt handlers that need this)
   k->platform.kernel = k;
@@ -104,7 +104,7 @@ void kinit(kernel_t *k, void *fdt) {
   // Initialize platform
   platform_init(&k->platform, fdt);
 
-  printk("kinit complete\n");
+  printk("kmain_init complete\n");
 }
 
 // Submit work item
@@ -154,7 +154,7 @@ kerr_t kcancel(kernel_t *k, kwork_t *work) {
 }
 
 // Get next timeout for platform_wfi
-uint64_t knext_delay(kernel_t *k) {
+uint64_t kmain_next_delay(kernel_t *k) {
   if (k->timer_list_head == NULL) {
     return UINT64_MAX; // No timers, wait forever
   }
@@ -182,7 +182,7 @@ uint64_t knext_delay(kernel_t *k) {
 }
 
 // Process kernel tick
-void ktick(kernel_t *k, uint64_t current_time) {
+void kmain_tick(kernel_t *k, uint64_t current_time) {
   // 1. Update kernel time
   k->current_time_ms = current_time;
 

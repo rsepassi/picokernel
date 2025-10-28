@@ -27,13 +27,13 @@ struct kernel {
 void kmain(void *fdt);
 
 // Initialize kernel
-void kinit(kernel_t *k, void *fdt);
+void kmain_init(kernel_t *k, void *fdt);
 
 // Get next timeout for platform_wfi
-uint64_t knext_delay(kernel_t *k);
+uint64_t kmain_next_delay(kernel_t *k);
 
 // Process kernel tick (expire timers, run callbacks, submit work)
-void ktick(kernel_t *k, uint64_t current_time);
+void kmain_tick(kernel_t *k, uint64_t current_time);
 
 // Platform → Kernel Interface (called by platform code)
 

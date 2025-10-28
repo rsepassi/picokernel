@@ -29,8 +29,8 @@ static void on_random_ready(kwork_t *work) {
 }
 
 // User entry point
-void kusermain(kuser_t *user) {
-  printk("kusermain: Requesting 32 random bytes...\n");
+void kmain_usermain(kuser_t *user) {
+  printk("kmain_usermain: Requesting 32 random bytes...\n");
 
   // Setup RNG request
   user->rng_req.work.op = KWORK_OP_RNG_READ;

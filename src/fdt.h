@@ -54,7 +54,7 @@ typedef struct {
 } virtio_mmio_device_t;
 
 // FDT parsing functions
-void fdt_dump(void *fdt);
+void platform_fdt_dump(void *fdt);
 
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)

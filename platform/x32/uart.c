@@ -21,7 +21,7 @@
 #define UART_LSR_THRE (1 << 5) // Transmit Holding Register Empty
 #define UART_LSR_DR (1 << 0)   // Data Ready
 
-void uart_putc(char c) {
+void platform_uart_putc(char c) {
   // Wait until the transmit holding register is empty
   while ((inb(COM1_PORT + UART_LSR) & UART_LSR_THRE) == 0) {
     // Busy wait
@@ -31,11 +31,11 @@ void uart_putc(char c) {
   outb(COM1_PORT + UART_DATA, (unsigned char)c);
 }
 
-void uart_puts(const char *str) {
+void platform_uart_puts(const char *str) {
   while (*str) {
     if (*str == '\n') {
-      uart_putc('\r'); // Add carriage return before newline
+      platform_uart_putc('\r'); // Add carriage return before newline
     }
-    uart_putc(*str++);
+    platform_uart_putc(*str++);
   }
 }

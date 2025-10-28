@@ -11,7 +11,7 @@
 
 #define UART_FR_TXFF (1 << 5) // Transmit FIFO full
 
-void uart_putc(char c) {
+void platform_uart_putc(char c) {
   volatile uint32_t *uart = (volatile uint32_t *)UART_BASE;
 
   // Wait for TX FIFO to have space
@@ -23,11 +23,11 @@ void uart_putc(char c) {
   uart[UART_DR / 4] = c;
 }
 
-void uart_puts(const char *str) {
+void platform_uart_puts(const char *str) {
   while (*str) {
     if (*str == '\n') {
-      uart_putc('\r');
+      platform_uart_putc('\r');
     }
-    uart_putc(*str++);
+    platform_uart_putc(*str++);
   }
 }

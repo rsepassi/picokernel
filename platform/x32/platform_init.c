@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 // Forward declare internal device enumeration function
-void fdt_dump(void *fdt);
+void platform_fdt_dump(void *fdt);
 
 // Global platform state for interrupt tracking
 static platform_t *g_platform = NULL;
@@ -44,7 +44,7 @@ void platform_init(platform_t *platform, void *fdt) {
   printk("Interrupts enabled.\n\n");
 
   // Parse and display device tree (ACPI-based on x32)
-  fdt_dump(NULL);
+  platform_fdt_dump(NULL);
 
   printk("Platform initialization complete.\n\n");
 }

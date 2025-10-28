@@ -13,6 +13,6 @@ typedef struct {
 } kuser_t;
 
 // User entry point
-void kusermain(kuser_t *user);
+void kmain_usermain(kuser_t *user);
 
 #endif // USER_H
