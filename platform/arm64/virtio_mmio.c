@@ -100,7 +100,6 @@ void virtio_rng_mmio_setup(platform_t* platform, uint64_t mmio_base, uint64_t mm
     rng->mmio_base = (volatile uint8_t*)mmio_base;
     rng->mmio_size = mmio_size;
     rng->irq_num = irq_num;
-    rng->kernel = platform->kernel;
 
     printk("VirtIO MMIO device at 0x");
     printk_hex64(mmio_base);
@@ -347,7 +346,7 @@ void platform_submit(platform_t* platform, kwork_t* submissions, kwork_t* cancel
     }
 
     virtio_rng_t* rng = &platform->virtio_rng;
-    kernel_t* k = platform->kernel;
+    void* k = platform->kernel;
 
     // Process cancellations (best-effort, usually too late for RNG)
     kwork_t* work = cancellations;

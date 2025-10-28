@@ -3,9 +3,8 @@
 
 #pragma once
 
-#include "../../src/virtio/virtio.h"
-#include "../../src/kernel.h"
-#include <stdint.h>
+#include "virtio/virtio.h"
+#include "kernel.h"
 
 // VirtIO device status bits
 #define VIRTIO_STATUS_ACKNOWLEDGE  1
