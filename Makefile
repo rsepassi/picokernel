@@ -11,20 +11,20 @@ BUILD_DIR = build/$(ARCH)
 PLATFORM_DIR = platform/$(ARCH)
 include $(PLATFORM_DIR)/platform.mk
 
-# Toolchain
+# Compiler
 CC = clang
-LD = ld.lld
-
-# Compiler flags
-CFLAGS = --target=$(TARGET) \
-				 -std=c11 -Wpedantic -static -fno-pic -fno-pie \
+CFLAGS = --target=$(TARGET) -O2 -static \
 				 -ffreestanding -nostdlib -fno-builtin \
+				 -fno-pic -fno-pie \
 				 -fwrapv -fno-strict-aliasing \
+				 -std=c11 -Wpedantic \
 				 -Wall -Wextra -Werror \
 				 -Wundef -Wmissing-prototypes -Wstrict-prototypes -Wvla -Wcast-align \
-				 -O2 \
 				 $(PLATFORM_CFLAGS)
-LDFLAGS = -nostdlib $(PLATFORM_LDFLAGS)
+
+# Linker
+LD = clang
+LDFLAGS = --target=$(TARGET) -Wl,-no-pie -nostdlib -static $(PLATFORM_LDFLAGS)
 
 # Source files
 SRC_DIR = src
@@ -40,39 +40,33 @@ SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 
 # Common C sources
 C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
-            $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c
+            $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c \
+            $(SRC_DIR)/virtio/virtio.c
 
-# VirtIO sources
-VIRTIO_SOURCES = $(SRC_DIR)/virtio/virtio.c
+# Object files in build directory (maintaining source tree structure)
+PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
+PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
+SHARED_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(SHARED_SOURCES))
+C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(C_SOURCES))
 
-# Object files in build directory
-PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/%.o,$(PLATFORM_C_SOURCES))
-PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/%.o,$(PLATFORM_S_SOURCES))
-SHARED_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SHARED_SOURCES))
-C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
-VIRTIO_OBJECTS = $(patsubst $(SRC_DIR)/virtio/%.c,$(BUILD_DIR)/virtio/%.o,$(VIRTIO_SOURCES))
-
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS) $(VIRTIO_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
-.PHONY: all run clean
+.PHONY: all run clean format
 all: $(KERNEL)
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)/virtio
+	mkdir -p $(BUILD_DIR)/src/virtio
+	mkdir -p $(BUILD_DIR)/platform
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
-$(BUILD_DIR)/virtio/%.o: $(SRC_DIR)/virtio/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
-$(BUILD_DIR)/%.o: $(PLATFORM_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
-
-$(BUILD_DIR)/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
+$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
@@ -89,3 +83,6 @@ run: $(KERNEL)
 
 clean:
 	rm -rf build
+
+format:
+	clang-format -i $$(find src/ platform/ -type f \( -name '*.c' -o -name '*.h' \))
