@@ -41,10 +41,16 @@ SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 # Common C sources
 C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
             $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c \
+            $(SRC_DIR)/kcsprng.c \
             $(SRC_DIR)/virtio/virtio.c \
             $(SRC_DIR)/virtio/virtio_mmio.c \
             $(SRC_DIR)/virtio/virtio_pci.c \
             $(SRC_DIR)/virtio/virtio_rng.c
+
+# Vendor sources
+VENDOR_DIR = vendor
+VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
+                 $(VENDOR_DIR)/monocypher/monocypher-ed25519.c
 
 # Header files (all .o files depend on all headers)
 HEADERS = $(shell find $(SRC_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
@@ -54,8 +60,9 @@ PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLA
 PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
 SHARED_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(SHARED_SOURCES))
 C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(C_SOURCES))
+VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -65,9 +72,13 @@ all: $(KERNEL)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/src/virtio
 	mkdir -p $(BUILD_DIR)/platform
+	mkdir -p $(BUILD_DIR)/vendor/monocypher
 
 $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
+
+$(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
 
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
