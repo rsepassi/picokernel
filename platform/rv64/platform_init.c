@@ -1,78 +1,76 @@
 // RISC-V 64-bit Platform Initialization
 // Sets up interrupts, timer, and device enumeration
 
-#include "platform.h"
 #include "interrupt.h"
-#include "timer.h"
-#include "sbi.h"
+#include "platform.h"
 #include "printk.h"
+#include "sbi.h"
+#include "timer.h"
 #include <stddef.h>
 
 // Forward declare internal device enumeration function
-void fdt_dump(void* fdt);
+void fdt_dump(void *fdt);
 
 // Global platform state for interrupt tracking
-static platform_t* g_platform = NULL;
+static platform_t *g_platform = NULL;
 
 // Track last interrupt type
 static volatile uint32_t g_last_interrupt = PLATFORM_INT_UNKNOWN;
 static volatile int g_wfi_done = 0;
 
 // Timer callback function - record timeout and wake from WFI
-static void wfi_timer_callback(void)
-{
-    g_last_interrupt = PLATFORM_INT_TIMEOUT;
-    g_wfi_done = 1;
+static void wfi_timer_callback(void) {
+  g_last_interrupt = PLATFORM_INT_TIMEOUT;
+  g_wfi_done = 1;
 }
 
 // Platform-specific initialization
-void platform_init(platform_t* platform, void* fdt)
-{
-    g_platform = platform;
-    platform->last_interrupt = PLATFORM_INT_UNKNOWN;
-    platform->timebase_freq = 0;
+void platform_init(platform_t *platform, void *fdt) {
+  g_platform = platform;
+  platform->last_interrupt = PLATFORM_INT_UNKNOWN;
+  platform->timebase_freq = 0;
 
-    printk("Initializing RISC-V 64-bit platform...\n");
+  printk("Initializing RISC-V 64-bit platform...\n");
 
-    // Initialize interrupt handling (trap vector)
-    interrupt_init();
+  // Initialize interrupt handling (trap vector)
+  interrupt_init();
 
-    // Initialize timer and read timebase frequency from FDT
-    timer_init(fdt, &platform->timebase_freq);
+  // Initialize timer and read timebase frequency from FDT
+  timer_init(fdt, &platform->timebase_freq);
 
-    // Enable interrupts globally
-    interrupt_enable();
+  // Enable interrupts globally
+  interrupt_enable();
 
-    printk("Interrupts enabled.\n\n");
+  printk("Interrupts enabled.\n\n");
 
-    // Parse and display device tree
-    fdt_dump(fdt);
+  // Parse and display device tree
+  fdt_dump(fdt);
 
-    printk("Platform initialization complete.\n\n");
+  printk("Platform initialization complete.\n\n");
 }
 
 // Wait for interrupt with timeout
 // timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
 // Returns: reason code indicating what interrupt fired
-uint32_t platform_wfi(platform_t* platform, uint64_t timeout_ms)
-{
-    g_last_interrupt = PLATFORM_INT_UNKNOWN;
-    g_wfi_done = 0;
+uint32_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
+  g_last_interrupt = PLATFORM_INT_UNKNOWN;
+  g_wfi_done = 0;
 
-    // Set timeout timer if not UINT64_MAX
-    if (timeout_ms != UINT64_MAX) {
-        // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
-        uint32_t timeout_ms_32 = (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
-        timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
-    }
+  // Set timeout timer if not UINT64_MAX
+  if (timeout_ms != UINT64_MAX) {
+    // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
+    uint32_t timeout_ms_32 =
+        (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
+    timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+  }
 
-    // Wait for interrupt using WFI instruction
-    while (!g_wfi_done) {
-        __asm__ volatile("wfi");
-    }
+  // Wait for interrupt using WFI instruction
+  while (!g_wfi_done) {
+    __asm__ volatile("wfi");
+  }
 
-    // Update platform state
-    platform->last_interrupt = g_last_interrupt;
+  // Update platform state
+  platform->last_interrupt = g_last_interrupt;
 
-    return g_last_interrupt;
+  return g_last_interrupt;
 }

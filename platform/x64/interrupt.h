@@ -15,7 +15,7 @@ void interrupt_enable(void);
 void interrupt_disable(void);
 
 // Register IRQ handler
-void irq_register(uint8_t vector, void (*handler)(void*), void* context);
+void irq_register(uint8_t vector, void (*handler)(void *), void *context);
 
 // Enable (unmask) a specific IRQ in the PIC
 void irq_enable(uint8_t vector);

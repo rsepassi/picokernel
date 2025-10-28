@@ -8,6 +8,6 @@
 // x32 platform-specific state
 // This structure can hold platform-specific data (for future use)
 typedef struct {
-    uint32_t last_interrupt;  // Last interrupt reason code
-    // Future: could add ACPI tables pointer, device state, etc.
+  uint32_t last_interrupt; // Last interrupt reason code
+  // Future: could add ACPI tables pointer, device state, etc.
 } platform_t;

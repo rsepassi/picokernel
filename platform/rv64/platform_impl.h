@@ -7,6 +7,6 @@
 
 // rv64 platform-specific state
 typedef struct {
-    uint32_t last_interrupt;  // Last interrupt reason code
-    uint64_t timebase_freq;   // Timebase frequency in Hz (from device tree)
+  uint32_t last_interrupt; // Last interrupt reason code
+  uint64_t timebase_freq;  // Timebase frequency in Hz (from device tree)
 } platform_t;
