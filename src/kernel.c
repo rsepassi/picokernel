@@ -100,10 +100,12 @@ void kmain_init(kernel_t *k, void *fdt) {
   // Initialize timer management
   k->timer_list_head = NULL;
   k->timer_list_tail = NULL;
-  k->current_time_ms = 0;
 
   // Initialize platform
   platform_init(&k->platform, fdt);
+
+  // Initialize start time
+  k->current_time_ms = platform_wfi(&k->platform, 0);
 
   printk("kmain_init complete\n");
 }
@@ -285,8 +287,14 @@ void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
 
   // Wait for entropy by running event loop until seed is ready
   printk("Waiting for entropy...\n");
-  while (!state->seed_ready) {
+  ktime_t start_time = k->current_time_ms;
+  while (!state->seed_ready && (k->current_time_ms - start_time) < 100) {
     kmain_step(k, 10);
+  }
+
+  if (!state->seed_ready) {
+    printk("ERR: CSPRNG initializion failed\n");
+    return;
   }
 
   // Initialize CSPRNG with entropy

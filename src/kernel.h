@@ -13,6 +13,8 @@ typedef struct {
   volatile uint8_t seed_ready;
 } kcsprng_init_state_t;
 
+typedef uint64_t ktime_t;
+
 // Kernel state
 struct kernel {
   platform_t platform;
@@ -26,7 +28,7 @@ struct kernel {
   // Timer management
   kwork_t *timer_list_head; // Doubly-linked: active timers
   kwork_t *timer_list_tail;
-  uint64_t current_time_ms;
+  ktime_t current_time_ms;
 
   kcsprng_ctx rng;
 };
