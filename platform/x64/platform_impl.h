@@ -3,20 +3,21 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 // Forward declarations
-struct virtio_rng_t;
-typedef struct virtio_rng_t virtio_rng_t;
+struct virtio_rng_dev;
+typedef struct virtio_rng_dev virtio_rng_dev_t;
 
 struct kernel;
 typedef struct kernel kernel_t;
 
 // x64 platform-specific state
 typedef struct {
-  uint32_t last_interrupt;  // Last interrupt reason code
-  virtio_rng_t *virtio_rng; // VirtIO-RNG device (NULL if not present)
-  kernel_t *kernel;         // Back-pointer to kernel
+  uint32_t last_interrupt;     // Last interrupt reason code
+  virtio_rng_dev_t *virtio_rng; // VirtIO-RNG device (NULL if not present)
+  kernel_t *kernel;             // Back-pointer to kernel
 } platform_t;
 
 // x64 RNG request platform-specific fields (VirtIO)

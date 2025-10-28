@@ -5,11 +5,14 @@
 #include "platform.h"
 #include "printk.h"
 #include "timer.h"
-#include "virtio_pci.h"
+#include "virtio/virtio_rng.h"
 #include <stddef.h>
 
 // Forward declare internal device enumeration function
 void fdt_dump(void *fdt);
+
+// Forward declaration
+extern void pci_scan_devices(platform_t *platform);
 
 static void wfi_timer_callback(void) {}
 
@@ -49,7 +52,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   __asm__ volatile("cli");
 
   // Check if an interrupt has already fired
-  virtio_rng_t *rng = platform->virtio_rng;
+  virtio_rng_dev_t *rng = platform->virtio_rng;
   if (rng != NULL && rng->irq_pending) {
     __asm__ volatile("sti"); // Re-enable interrupts before returning
     return timer_get_current_time_ms();

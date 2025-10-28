@@ -12,5 +12,5 @@ PLATFORM_LDFLAGS =
 
 # Platform-specific sources
 PLATFORM_C_SRCS = uart.c devinfo.c acpi.c interrupt.c ioapic.c timer.c platform_init.c \
-                  pci.c pci_scan.c virtio_pci.c
+                  pci.c platform_hooks.c platform_virtio.c
 PLATFORM_S_SRCS = boot.S isr.S

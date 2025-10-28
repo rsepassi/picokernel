@@ -50,7 +50,6 @@ platform/x64/virtio_pci.c        (335 lines)
 #### Platform-Specific (varies by CPU architecture)
 - ❌ Cache coherency operations (ARM64: dc cvac/ivac, x64: none, rv64: varies)
 - ❌ Memory barrier instructions (ARM64: dsb, x64: mfence, rv64: fence)
-- ❌ Physical to virtual address mapping (if MMU enabled)
 - ❌ Interrupt controller integration (GIC vs LAPIC vs PLIC)
 - ❌ Device discovery address ranges (MMIO: platform firmware determines base addresses)
 
@@ -134,18 +133,10 @@ src/virtio/
   virtio_rng.h, virtio_rng.c      # RNG device driver (new, generic)
   virtio_blk.h, virtio_blk.c      # Block driver (future)
 
-platform/arm64/
+platform/ARCH/
   platform_impl.h                 # Platform hooks (cache ops, barriers, IRQ)
   platform_virtio.c               # Device discovery, platform integration
-
-platform/x64/
-  platform_impl.h                 # Platform hooks (no-op cache, mfence, IRQ)
-  platform_virtio.c               # Device discovery, platform integration
-  pci.h, pci.c                    # Low-level PCI config access (x64-specific)
-
-platform/rv64/                    # Future platform
-  platform_impl.h                 # RISC-V hooks (fence ops, PLIC)
-  platform_virtio.c               # Can use src/virtio/virtio_mmio.c!
+  pci.h, pci.c                    # Low-level PCI config access
 ```
 
 ## API Design
