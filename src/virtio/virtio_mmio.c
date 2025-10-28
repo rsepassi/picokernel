@@ -2,7 +2,7 @@
 // Platform-agnostic MMIO transport using platform hooks
 
 #include "virtio_mmio.h"
-#include "platform_hooks.h"
+#include "platform.h"
 #include <stddef.h>
 
 // MMIO helpers using platform hooks

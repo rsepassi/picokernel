@@ -1,8 +1,8 @@
 // ARM64 Platform Hooks Implementation
 // Architecture-specific operations for VirtIO abstraction layer
 
-#include "platform_hooks.h"
 #include "interrupt.h"
+#include "platform.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -50,9 +50,7 @@ void platform_cache_invalidate(void *addr, size_t size) {
 }
 
 // Full memory barrier using ARM64 DSB instruction
-void platform_memory_barrier(void) {
-  __asm__ volatile("dsb sy" ::: "memory");
-}
+void platform_memory_barrier(void) { __asm__ volatile("dsb sy" ::: "memory"); }
 
 // IRQ registration
 int platform_irq_register(uint32_t irq_num, void (*handler)(void *),

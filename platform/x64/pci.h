@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pci_platform.h"
+#include "platform.h"
 
 // PCI config space registers
 #define PCI_REG_VENDOR_ID 0x00

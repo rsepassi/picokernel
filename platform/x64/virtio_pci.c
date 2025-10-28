@@ -56,8 +56,8 @@ static void mmio_write64(volatile uint64_t *addr, uint64_t value) {
 
 // Find VirtIO PCI capabilities
 static int virtio_find_capabilities(virtio_rng_t *rng) {
-  uint8_t cap_offset = pci_config_read8(rng->pci_bus, rng->pci_slot,
-                                        rng->pci_func, PCI_REG_CAPABILITIES);
+  uint8_t cap_offset = platform_pci_config_read8(
+      rng->pci_bus, rng->pci_slot, rng->pci_func, PCI_REG_CAPABILITIES);
 
   if (cap_offset == 0) {
     printk("No PCI capabilities found\n");
@@ -67,43 +67,43 @@ static int virtio_find_capabilities(virtio_rng_t *rng) {
   int found_common = 0, found_notify = 0, found_isr = 0;
 
   while (cap_offset != 0) {
-    uint8_t cap_id = pci_config_read8(rng->pci_bus, rng->pci_slot,
-                                      rng->pci_func, cap_offset);
+    uint8_t cap_id = platform_pci_config_read8(rng->pci_bus, rng->pci_slot,
+                                               rng->pci_func, cap_offset);
 
     if (cap_id == 0x09) { // Vendor-specific capability
-      uint8_t cfg_type = pci_config_read8(rng->pci_bus, rng->pci_slot,
-                                          rng->pci_func, cap_offset + 3);
-      uint8_t bar = pci_config_read8(rng->pci_bus, rng->pci_slot, rng->pci_func,
-                                     cap_offset + 4);
-      uint32_t offset = pci_config_read32(rng->pci_bus, rng->pci_slot,
-                                          rng->pci_func, cap_offset + 8);
+      uint8_t cfg_type = platform_pci_config_read8(
+          rng->pci_bus, rng->pci_slot, rng->pci_func, cap_offset + 3);
+      uint8_t bar = platform_pci_config_read8(rng->pci_bus, rng->pci_slot,
+                                              rng->pci_func, cap_offset + 4);
+      uint32_t offset = platform_pci_config_read32(
+          rng->pci_bus, rng->pci_slot, rng->pci_func, cap_offset + 8);
 
       if (cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
-        rng->common_cfg_bar =
-            pci_read_bar(rng->pci_bus, rng->pci_slot, rng->pci_func, bar);
+        rng->common_cfg_bar = platform_pci_read_bar(rng->pci_bus, rng->pci_slot,
+                                                    rng->pci_func, bar);
         rng->common_cfg_offset = offset;
         rng->common_cfg =
             (volatile virtio_pci_common_cfg_t *)(rng->common_cfg_bar + offset);
         found_common = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
-        rng->notify_bar =
-            pci_read_bar(rng->pci_bus, rng->pci_slot, rng->pci_func, bar);
+        rng->notify_bar = platform_pci_read_bar(rng->pci_bus, rng->pci_slot,
+                                                rng->pci_func, bar);
         rng->notify_offset = offset;
-        rng->notify_off_multiplier = pci_config_read32(
+        rng->notify_off_multiplier = platform_pci_config_read32(
             rng->pci_bus, rng->pci_slot, rng->pci_func, cap_offset + 16);
         rng->notify_base = (volatile uint32_t *)(rng->notify_bar + offset);
         found_notify = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
-        rng->isr_bar =
-            pci_read_bar(rng->pci_bus, rng->pci_slot, rng->pci_func, bar);
+        rng->isr_bar = platform_pci_read_bar(rng->pci_bus, rng->pci_slot,
+                                             rng->pci_func, bar);
         rng->isr_offset = offset;
         rng->isr_status = (volatile uint8_t *)(rng->isr_bar + offset);
         found_isr = 1;
       }
     }
 
-    cap_offset = pci_config_read8(rng->pci_bus, rng->pci_slot, rng->pci_func,
-                                  cap_offset + 1);
+    cap_offset = platform_pci_config_read8(rng->pci_bus, rng->pci_slot,
+                                           rng->pci_func, cap_offset + 1);
   }
 
   return (found_common && found_notify && found_isr) ? 0 : -1;
@@ -135,11 +135,12 @@ void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   rng->kernel = platform->kernel;
 
   // Enable PCI bus mastering and memory access, DISABLE interrupt masking
-  uint16_t command = pci_config_read16(bus, slot, func, PCI_REG_COMMAND);
+  uint16_t command =
+      platform_pci_config_read16(bus, slot, func, PCI_REG_COMMAND);
   command |= PCI_CMD_MEM_ENABLE | PCI_CMD_BUS_MASTER;
   command &=
       ~PCI_CMD_INT_DISABLE; // Clear interrupt disable bit (enable interrupts)
-  pci_config_write16(bus, slot, func, PCI_REG_COMMAND, command);
+  platform_pci_config_write16(bus, slot, func, PCI_REG_COMMAND, command);
 
   // Find VirtIO capabilities
   if (virtio_find_capabilities(rng) < 0) {
@@ -212,7 +213,8 @@ void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   rng->irq_pending = 0;
 
   // Setup interrupt
-  uint8_t irq_line = pci_config_read8(bus, slot, func, PCI_REG_INTERRUPT_LINE);
+  uint8_t irq_line =
+      platform_pci_config_read8(bus, slot, func, PCI_REG_INTERRUPT_LINE);
   rng->irq_vector = 32 + irq_line;
 
   irq_register(rng->irq_vector, virtio_rng_irq_handler, rng);

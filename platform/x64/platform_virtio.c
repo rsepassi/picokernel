@@ -1,11 +1,11 @@
 // x64 VirtIO Platform Integration
 // Discovers and initializes VirtIO devices using generic transport layer
 
-#include "platform_impl.h"
-#include "virtio/virtio_rng.h"
-#include "virtio/virtio_pci.h"
-#include "pci.h"
 #include "kernel.h"
+#include "pci.h"
+#include "platform_impl.h"
+#include "virtio/virtio_pci.h"
+#include "virtio/virtio_rng.h"
 
 // Static storage for VirtIO devices
 static virtio_pci_transport_t g_virtio_pci_transport;
@@ -45,7 +45,8 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   }
 
   // Setup interrupt
-  uint8_t irq_line = pci_config_read8(bus, slot, func, PCI_REG_INTERRUPT_LINE);
+  uint8_t irq_line =
+      platform_pci_config_read8(bus, slot, func, PCI_REG_INTERRUPT_LINE);
   uint32_t irq_vector = 32 + irq_line;
 
   platform_irq_register(irq_vector, virtio_rng_irq_handler, &g_virtio_rng);
@@ -70,7 +71,7 @@ void pci_scan_devices(platform_t *platform) {
   for (uint16_t bus = 0; bus < 4; bus++) {
     for (uint8_t slot = 0; slot < 32; slot++) {
       uint32_t vendor_device =
-          pci_config_read32(bus, slot, 0, PCI_REG_VENDOR_ID);
+          platform_pci_config_read32(bus, slot, 0, PCI_REG_VENDOR_ID);
 
       if (vendor_device == 0xFFFFFFFF) {
         continue; // No device
@@ -109,7 +110,7 @@ void pci_scan_devices(platform_t *platform) {
 }
 
 // Process deferred interrupt work (called from ktick before callbacks)
-void kplatform_tick(platform_t *platform, kernel_t *k) {
+void platform_tick(platform_t *platform, kernel_t *k) {
   if (platform->virtio_rng == (void *)0) {
     return;
   }

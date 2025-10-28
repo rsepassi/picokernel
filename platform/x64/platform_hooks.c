@@ -1,8 +1,8 @@
 // x64 Platform Hooks Implementation
 // Architecture-specific operations for VirtIO abstraction layer
 
-#include "platform_hooks.h"
 #include "interrupt.h"
+#include "platform.h"
 #include <stddef.h>
 
 // x86-64 has hardware cache coherency for DMA
@@ -20,9 +20,7 @@ void platform_cache_invalidate(void *addr, size_t size) {
 }
 
 // Full memory barrier using mfence instruction
-void platform_memory_barrier(void) {
-  __asm__ volatile("mfence" ::: "memory");
-}
+void platform_memory_barrier(void) { __asm__ volatile("mfence" ::: "memory"); }
 
 // IRQ registration
 int platform_irq_register(uint32_t irq_num, void (*handler)(void *),
@@ -32,6 +30,4 @@ int platform_irq_register(uint32_t irq_num, void (*handler)(void *),
 }
 
 // IRQ enable
-void platform_irq_enable(uint32_t irq_num) {
-  irq_enable((uint8_t)irq_num);
-}
+void platform_irq_enable(uint32_t irq_num) { irq_enable((uint8_t)irq_num); }

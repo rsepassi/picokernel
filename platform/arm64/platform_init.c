@@ -1,7 +1,6 @@
 // ARM64 Platform Initialization
 // Sets up interrupts, timer, and device enumeration
 
-#include "fdt.h"
 #include "interrupt.h"
 #include "kernel.h"
 #include "platform.h"
@@ -78,7 +77,7 @@ void platform_init(platform_t *platform, void *fdt) {
   printk("\nPlatform initialization complete.\n\n");
 }
 
-// kplatform_tick and platform_submit are now implemented in virtio_mmio.c
+// platform_tick and platform_submit are now implemented in virtio_mmio.c
 
 // Wait for interrupt with timeout
 // timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)

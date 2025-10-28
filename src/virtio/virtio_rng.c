@@ -27,8 +27,8 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   virtio_mmio_set_features(mmio, 0, 0);
 
   // Features OK
-  uint8_t status =
-      VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK;
+  uint8_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+                   VIRTIO_STATUS_FEATURES_OK;
   virtio_mmio_set_status(mmio, status);
 
   // Verify features OK
@@ -73,15 +73,14 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   virtio_pci_set_status(pci, VIRTIO_STATUS_ACKNOWLEDGE);
 
   // Driver
-  virtio_pci_set_status(pci,
-                        VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
+  virtio_pci_set_status(pci, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
 
   // Feature negotiation (RNG needs no features)
   virtio_pci_set_features(pci, 0, 0);
 
   // Features OK
-  uint8_t status =
-      VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK;
+  uint8_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
+                   VIRTIO_STATUS_FEATURES_OK;
   virtio_pci_set_status(pci, status);
 
   // Verify features OK
@@ -141,8 +140,8 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
       }
 
       // Setup descriptor (device-writable buffer)
-      virtqueue_add_desc(&rng->vq, desc_idx, (uint64_t)req->buffer,
-                         req->length, VIRTQ_DESC_F_WRITE);
+      virtqueue_add_desc(&rng->vq, desc_idx, (uint64_t)req->buffer, req->length,
+                         VIRTQ_DESC_F_WRITE);
 
       // Add to available ring
       virtqueue_add_avail(&rng->vq, desc_idx);

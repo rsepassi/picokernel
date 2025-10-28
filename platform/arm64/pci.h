@@ -4,7 +4,8 @@
 
 #pragma once
 
-#include "pci_platform.h"
+#include "platform.h"
 
 // ARM64 implements the PCI platform interface with stubs
-// These functions are never called at runtime since ARM64 only discovers MMIO devices
+// These functions are never called at runtime since ARM64 only discovers MMIO
+// devices

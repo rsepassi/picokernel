@@ -71,8 +71,7 @@ void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Initialize RNG device with MMIO transport
   if (virtio_rng_init_mmio(&platform->virtio_rng, &platform->virtio_mmio,
-                           platform->virtqueue_memory,
-                           platform->kernel) < 0) {
+                           platform->virtqueue_memory, platform->kernel) < 0) {
     printk("Failed to initialize VirtIO-RNG device\n");
     return;
   }
@@ -97,7 +96,7 @@ void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 }
 
 // Process deferred interrupt work (called from ktick before callbacks)
-void kplatform_tick(platform_t *platform, kernel_t *k) {
+void platform_tick(platform_t *platform, kernel_t *k) {
   if (!platform->virtio_rng_present) {
     return;
   }

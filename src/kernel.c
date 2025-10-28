@@ -190,7 +190,7 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
   expire_timers(k);
 
   // 3. Process deferred interrupt work (moves LIVE work to READY)
-  kplatform_tick(&k->platform, k);
+  platform_tick(&k->platform, k);
 
   // 4. Run all ready callbacks
   kwork_t *work = k->ready_queue_head;

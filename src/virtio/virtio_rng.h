@@ -4,7 +4,6 @@
 #pragma once
 
 #include "kconfig.h"
-#include "platform_hooks.h"
 #include "virtio.h"
 #include "virtio_mmio.h"
 #include "virtio_pci.h"

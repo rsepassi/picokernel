@@ -15,7 +15,7 @@ typedef struct kernel kernel_t;
 
 // x64 platform-specific state
 typedef struct {
-  uint32_t last_interrupt;     // Last interrupt reason code
+  uint32_t last_interrupt;      // Last interrupt reason code
   virtio_rng_dev_t *virtio_rng; // VirtIO-RNG device (NULL if not present)
   kernel_t *kernel;             // Back-pointer to kernel
 } platform_t;

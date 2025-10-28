@@ -2,7 +2,7 @@
 // Uses SBI timer interface for one-shot timers
 
 #include "timer.h"
-#include "fdt.h"
+#include "platform.h"
 #include "printk.h"
 #include "sbi.h"
 #include <stdint.h>

@@ -8,9 +8,9 @@
 // Built on ChaCha20 (DJB variant) with BLAKE2b for entropy mixing
 
 typedef struct {
-	uint8_t  key[32];    // ChaCha20 key
-	uint8_t  nonce[8];   // ChaCha20 nonce (DJB variant)
-	uint64_t counter;    // ChaCha20 counter
+  uint8_t key[32];  // ChaCha20 key
+  uint8_t nonce[8]; // ChaCha20 nonce (DJB variant)
+  uint64_t counter; // ChaCha20 counter
 } kcsprng_ctx;
 
 // Initialize the CSPRNG with a seed

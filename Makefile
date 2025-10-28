@@ -42,6 +42,7 @@ SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
 C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
             $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c \
             $(SRC_DIR)/kcsprng.c \
+            $(SRC_DIR)/kbase.c \
             $(SRC_DIR)/virtio/virtio.c \
             $(SRC_DIR)/virtio/virtio_mmio.c \
             $(SRC_DIR)/virtio/virtio_pci.c \

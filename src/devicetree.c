@@ -1,8 +1,8 @@
 // Device Tree parsing for ARM64
 // Parses the FDT (Flattened Device Tree) passed by the bootloader
 
-#include "fdt.h"
 #include "kbase.h"
+#include "platform.h"
 #include "printk.h"
 #include <stdint.h>
 
