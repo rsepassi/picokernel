@@ -9,7 +9,7 @@
 #include <stddef.h>
 
 // Forward declare internal device enumeration function
-void fdt_dump(void *fdt);
+void platform_fdt_dump(void *fdt);
 
 // Forward declaration
 extern void pci_scan_devices(platform_t *platform);
@@ -34,7 +34,7 @@ void platform_init(platform_t *platform, void *fdt) {
   // to avoid spurious interrupts during device enumeration
 
   // Parse and display device tree (ACPI-based on x64)
-  fdt_dump(NULL);
+  platform_fdt_dump(NULL);
 
   printk("\n");
 

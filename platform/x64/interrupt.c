@@ -235,10 +235,10 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts
-void interrupt_enable(void) { __asm__ volatile("sti"); }
+void platform_interrupt_enable(void) { __asm__ volatile("sti"); }
 
 // Disable interrupts
-void interrupt_disable(void) { __asm__ volatile("cli"); }
+void platform_interrupt_disable(void) { __asm__ volatile("cli"); }
 
 // Register IRQ handler
 void irq_register(uint8_t vector, void (*handler)(void *), void *context) {

@@ -110,9 +110,9 @@ static void print_dt_reg64(uint64_t val) {
 }
 
 // x64-specific device enumeration
-// This function provides the same interface as fdt_dump() but enumerates
+// This function provides the same interface as platform_fdt_dump() but enumerates
 // x64 devices using ACPI tables
-void fdt_dump(void *dummy) {
+void platform_fdt_dump(void *dummy) {
   (void)dummy;
   printk("=== x64 Device Enumeration ===\n\n");
 

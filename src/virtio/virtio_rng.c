@@ -2,10 +2,62 @@
 // Transport-agnostic RNG driver
 
 #include "virtio_rng.h"
-#include "virtio_pci.h"
 #include "kapi.h"
 #include "kernel.h"
 #include <stddef.h>
+
+// Initialize RNG with MMIO transport
+int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
+                         void *queue_memory, kernel_t *kernel) {
+  rng->transport = mmio;
+  rng->transport_type = VIRTIO_TRANSPORT_MMIO;
+  rng->kernel = kernel;
+
+  // Reset
+  virtio_mmio_reset(mmio);
+
+  // Acknowledge
+  virtio_mmio_set_status(mmio, VIRTIO_STATUS_ACKNOWLEDGE);
+
+  // Driver
+  virtio_mmio_set_status(mmio,
+                         VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
+
+  // Feature negotiation (RNG needs no features)
+  virtio_mmio_set_features(mmio, 0, 0);
+
+  // Features OK
+  uint8_t status =
+      VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK;
+  virtio_mmio_set_status(mmio, status);
+
+  // Verify features OK
+  if (!(virtio_mmio_get_status(mmio) & VIRTIO_STATUS_FEATURES_OK)) {
+    return -1;
+  }
+
+  // Setup queue
+  rng->vq_memory = queue_memory;
+  rng->queue_size = virtio_mmio_get_queue_size(mmio, 0);
+  if (rng->queue_size > VIRTIO_RNG_MAX_REQUESTS) {
+    rng->queue_size = VIRTIO_RNG_MAX_REQUESTS;
+  }
+
+  virtqueue_init(&rng->vq, rng->queue_size, queue_memory);
+  virtio_mmio_setup_queue(mmio, 0, &rng->vq, rng->queue_size);
+
+  // Driver OK
+  status |= VIRTIO_STATUS_DRIVER_OK;
+  virtio_mmio_set_status(mmio, status);
+
+  // Clear request tracking and irq_pending
+  rng->irq_pending = 0;
+  for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
+    rng->active_requests[i] = (void *)0;
+  }
+
+  return 0;
+}
 
 // Initialize RNG with PCI transport
 int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
@@ -116,10 +168,11 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
     platform_cache_clean(rng->vq.avail, avail_size);
 
     // Notify device (transport-specific implementation)
-    if (rng->transport_type == VIRTIO_TRANSPORT_PCI) {
+    if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
+      virtio_mmio_notify_queue((virtio_mmio_transport_t *)rng->transport, 0);
+    } else if (rng->transport_type == VIRTIO_TRANSPORT_PCI) {
       virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, 0);
     }
-    // Future: VIRTIO_TRANSPORT_MMIO support
   }
 }
 

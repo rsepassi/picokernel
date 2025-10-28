@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include "platform_hooks.h"
 #include "virtio.h"
-#include <stdint.h>
 
 // VirtIO device status bits
 #define VIRTIO_STATUS_ACKNOWLEDGE 1

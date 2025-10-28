@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <stdint.h>
+#include "pci_platform.h"
 
 // PCI config space registers
 #define PCI_REG_VENDOR_ID 0x00
@@ -38,20 +38,8 @@
 #define PCI_BAR_TYPE_MMIO 0
 #define PCI_BAR_TYPE_IO 1
 
-// Read/write PCI config space
-uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func,
-                         uint8_t offset);
-uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func,
-                           uint8_t offset);
-uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func,
-                           uint8_t offset);
+// x64 implements the PCI platform interface (see pci_platform.h)
+// Additional x64-specific PCI functions:
 
-void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
-                       uint8_t value);
-void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
-                        uint16_t value);
 void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
                         uint32_t value);
-
-// Read BAR address (returns 0 if BAR is not present)
-uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func, uint8_t bar_num);

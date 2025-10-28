@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include "kconfig.h"
 #include "platform_hooks.h"
 #include "virtio.h"
+#include "virtio_mmio.h"
 #include "virtio_pci.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -42,6 +44,10 @@ typedef struct virtio_rng_dev {
   // Kernel reference
   kernel_t *kernel;
 } virtio_rng_dev_t;
+
+// Initialize RNG with MMIO transport
+int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
+                         void *queue_memory, kernel_t *kernel);
 
 // Initialize RNG with PCI transport
 int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,

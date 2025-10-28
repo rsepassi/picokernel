@@ -9,10 +9,10 @@
 void interrupt_init(void);
 
 // Enable interrupts (unmask DAIF)
-void interrupt_enable(void);
+void platform_interrupt_enable(void);
 
 // Disable interrupts (mask DAIF)
-void interrupt_disable(void);
+void platform_interrupt_disable(void);
 
 // Register IRQ handler
 void irq_register(uint32_t irq_num, void (*handler)(void *), void *context);

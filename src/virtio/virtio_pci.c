@@ -3,22 +3,7 @@
 
 #include "virtio_pci.h"
 #include "platform_hooks.h"
-#include <stddef.h>
-
-// Platform-provided PCI config space access functions
-// These must be implemented by each platform (x64 uses I/O ports, ARM64 uses MMIO)
-extern uint8_t pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func,
-                                uint8_t offset);
-extern uint16_t pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func,
-                                  uint8_t offset);
-extern uint32_t pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func,
-                                  uint8_t offset);
-extern void pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func,
-                              uint8_t offset, uint8_t value);
-extern void pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func,
-                               uint8_t offset, uint16_t value);
-extern uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func,
-                             uint8_t bar_num);
+#include "pci_platform.h"
 
 // PCI config space register offsets
 #define PCI_REG_COMMAND 0x04

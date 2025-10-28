@@ -9,10 +9,10 @@
 void interrupt_init(void);
 
 // Enable interrupts (sti instruction)
-void interrupt_enable(void);
+void platform_interrupt_enable(void);
 
 // Disable interrupts (cli instruction)
-void interrupt_disable(void);
+void platform_interrupt_disable(void);
 
 // Register IRQ handler
 void irq_register(uint8_t vector, void (*handler)(void *), void *context);

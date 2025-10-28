@@ -224,7 +224,7 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts (unmask IRQ and FIQ in DAIF)
-void interrupt_enable(void) {
+void platform_interrupt_enable(void) {
   // Clear I (IRQ mask) and F (FIQ mask) bits in DAIF
   // DAIF bits: D=Debug, A=SError, I=IRQ, F=FIQ
   __asm__ volatile("msr daifclr, #0x3"); // Clear I and F bits
@@ -232,7 +232,7 @@ void interrupt_enable(void) {
 }
 
 // Disable interrupts (mask IRQ and FIQ in DAIF)
-void interrupt_disable(void) {
+void platform_interrupt_disable(void) {
   // Set I (IRQ mask) and F (FIQ mask) bits in DAIF
   __asm__ volatile("msr daifset, #0x3"); // Set I and F bits
   __asm__ volatile("isb");
