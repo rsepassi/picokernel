@@ -4,6 +4,14 @@
 #pragma once
 
 #include "kapi.h"
+#include "kcsprng.h"
+
+// CSPRNG initialization state (stack-allocated by caller)
+typedef struct {
+  uint8_t seed_buffer[64];
+  krng_req_t seed_req;
+  volatile uint8_t seed_ready;
+} kcsprng_init_state_t;
 
 // Kernel state
 struct kernel {
@@ -19,6 +27,8 @@ struct kernel {
   kwork_t *timer_list_head; // Doubly-linked: active timers
   kwork_t *timer_list_tail;
   uint64_t current_time_ms;
+
+  kcsprng_ctx rng;
 };
 
 // Internal Kernel API
@@ -29,11 +39,17 @@ void kmain(void *fdt);
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt);
 
+// Initialize CSPRNG with strong entropy from virtio-rng
+void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state);
+
 // Get next timeout for platform_wfi
 uint64_t kmain_next_delay(kernel_t *k);
 
 // Process kernel tick (expire timers, run callbacks, submit work)
 void kmain_tick(kernel_t *k, uint64_t current_time);
+
+// ktick + platform_wfi
+void kmain_step(kernel_t *k, uint64_t max_timeout);
 
 // Platform → Kernel Interface (called by platform code)
 
@@ -47,9 +63,3 @@ void kplatform_cancel_work(kernel_t *k, kwork_t *work);
 
 // Process deferred interrupt work (called from ktick before callbacks)
 void kplatform_tick(platform_t *platform, kernel_t *k);
-
-// Submit work and cancellations to platform (called from ktick)
-// submissions: singly-linked list of work to submit (or NULL)
-// cancellations: singly-linked list of work to cancel (or NULL)
-void platform_submit(platform_t *platform, kwork_t *submissions,
-                     kwork_t *cancellations);

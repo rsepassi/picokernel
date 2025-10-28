@@ -116,6 +116,11 @@ void platform_init(platform_t *platform, void *fdt);
 // Returns: current time in milliseconds after waking
 uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms);
 
+// Submit work and cancellations to platform (called from ktick)
+// submissions: singly-linked list of work to submit (or NULL)
+// cancellations: singly-linked list of work to cancel (or NULL)
+void platform_submit(platform_t *platform, kwork_t *submissions,
+                     kwork_t *cancellations);
 // ===========================================================================
 // SECTION 4: Interrupt Control
 // ===========================================================================

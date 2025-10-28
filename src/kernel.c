@@ -1,6 +1,7 @@
 // vmos Async Work Queue Kernel Implementation
 
 #include "kernel.h"
+#include "monocypher/monocypher.h"
 #include "printk.h"
 #include <stddef.h>
 
@@ -237,4 +238,72 @@ void kplatform_cancel_work(kernel_t *k, kwork_t *work) {
   work->result = KERR_CANCELLED;
   work->state = KWORK_STATE_READY;
   enqueue_ready(k, work);
+}
+
+// CSPRNG initialization
+static void csprng_seed_callback(kwork_t *work) {
+  if (work->result != KERR_OK) {
+    printk("ERROR: Failed to get entropy for CSPRNG: error ");
+    printk_dec(work->result);
+    printk("\n");
+    return;
+  }
+
+  krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
+  printk("Got ");
+  printk_dec(req->completed);
+  printk(" bytes of entropy from virtio-rng\n");
+
+  // Mark seed as ready (state is in ctx)
+  kcsprng_init_state_t *state = (kcsprng_init_state_t *)work->ctx;
+  state->seed_ready = 1;
+}
+
+void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
+  printk("Initializing CSPRNG with virtio-rng entropy...\n");
+
+  state->seed_ready = 0;
+
+  // Setup RNG request for entropy
+  state->seed_req.work.op = KWORK_OP_RNG_READ;
+  state->seed_req.work.callback = csprng_seed_callback;
+  state->seed_req.work.ctx = state;
+  state->seed_req.work.state = KWORK_STATE_DEAD;
+  state->seed_req.work.flags = 0;
+  state->seed_req.buffer = state->seed_buffer;
+  state->seed_req.length = 64;
+  state->seed_req.completed = 0;
+
+  // Submit request
+  kerr_t err = ksubmit(k, &state->seed_req.work);
+  if (err != KERR_OK) {
+    printk("ERROR: Failed to submit entropy request: error ");
+    printk_dec(err);
+    printk("\n");
+    return;
+  }
+
+  // Wait for entropy by running event loop until seed is ready
+  printk("Waiting for entropy...\n");
+  while (!state->seed_ready) {
+    kmain_step(k, 10);
+  }
+
+  // Initialize CSPRNG with entropy
+  kcsprng_init(&k->rng, state->seed_buffer, sizeof(state->seed_buffer));
+
+  // Wipe seed buffer for security
+  crypto_wipe(state->seed_buffer, sizeof(state->seed_buffer));
+
+  printk("CSPRNG initialized\n");
+}
+
+void kmain_step(kernel_t *k, uint64_t max_timeout) {
+  printk("[KLOOP] tick\n");
+  kmain_tick(k, k->current_time_ms);
+  uint64_t timeout = kmain_next_delay(k);
+  if (timeout > max_timeout)
+    timeout = max_timeout;
+  printk("[KLOOP] wfi\n");
+  k->current_time_ms = platform_wfi(&k->platform, timeout);
 }

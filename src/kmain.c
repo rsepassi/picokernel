@@ -14,6 +14,15 @@ void kmain(void *fdt) {
   kmain_init(&k, fdt);
   printk("[KMAIN] kmain_init ok\n");
 
+  // Enable interrupts (required for virtio-rng)
+  platform_interrupt_enable();
+  printk("[KMAIN] interrupts enabled\n");
+
+  // Initialize CSPRNG with strong entropy (state stack-allocated)
+  kcsprng_init_state_t csprng_state;
+  kmain_init_csprng(&k, &csprng_state);
+  printk("[KMAIN] CSPRNG ready\n");
+
   // User kickoff
   kuser_t user;
   user.kernel = &k;
@@ -21,16 +30,8 @@ void kmain(void *fdt) {
   printk("[KMAIN] kmain_usermain ok\n");
 
   // Event loop
-  platform_interrupt_enable();
   printk("[KMAIN] kloop...\n");
-  uint64_t current_time = 0;
   while (1) {
-    printk("[KLOOP] tick\n");
-    kmain_tick(&k, current_time);
-    uint64_t timeout = kmain_next_delay(&k);
-    if (timeout > MAX_TIMEOUT)
-      timeout = MAX_TIMEOUT;
-    printk("[KLOOP] wfi\n");
-    current_time = platform_wfi(&k.platform, timeout);
+    kmain_step(&k, MAX_TIMEOUT);
   }
 }
