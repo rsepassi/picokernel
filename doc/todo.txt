@@ -1,1 +1,2 @@
-microvm needs virtio mmio
+* compiler-rt
+* mimalloc-style memory allocator

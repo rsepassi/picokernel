@@ -37,7 +37,6 @@ vmos/
 │   ├── net.c               # virtio Network device driver
 │   ├── block.c             # virtio Block device driver
 │   ├── rng.c               # virtio RNG driver
-│   ├── console.c           # virtio console driver
 │   └── printf.c            # Formatted output
 ```
 
@@ -62,7 +61,8 @@ All three platforms use QEMU with minimal virtual hardware:
 
 ### Platform-Specific QEMU Machines
 
-- Devices: virtio console, virtio-net, virtio-blk, virtio-rng
+- Devices: timer/clock, uart, interrupt controller, virtio-net, virtio-blk,
+  virtio-rng
 - arm64 virt, rv64 virt, x64 microvm (or q35)
 
 ## Implementation Goals and Sequence
