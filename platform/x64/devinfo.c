@@ -4,9 +4,6 @@
 #include "acpi.h"
 #include "kernel.h"
 #include "printk.h"
-#include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Parse and display MADT (Multiple APIC Description Table)
 static void parse_madt(void) {

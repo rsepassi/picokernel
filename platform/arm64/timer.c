@@ -3,9 +3,6 @@
 
 #include "timer.h"
 #include "printk.h"
-#include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Global timer frequency (read from CNTFRQ_EL0)
 static uint64_t g_timer_freq_hz = 0;

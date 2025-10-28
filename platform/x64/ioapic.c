@@ -4,10 +4,6 @@
 #include "ioapic.h"
 #include "acpi.h"
 #include "printk.h"
-#include <stddef.h>
-#include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Default IOAPIC address (can be overridden by ACPI MADT)
 #define IOAPIC_DEFAULT_BASE 0xFEC00000

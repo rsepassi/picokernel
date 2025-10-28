@@ -4,9 +4,6 @@
 #include "acpi.h"
 #include "io.h"
 #include "printk.h"
-#include <stdint.h>
-
-#define NULL ((void *)0)
 
 // QEMU fw_cfg interface (IOport-based for x86)
 #define FW_CFG_PORT_SEL 0x510

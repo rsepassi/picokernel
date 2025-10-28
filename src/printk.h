@@ -1,7 +1,7 @@
 #ifndef PRINTK_H
 #define PRINTK_H
 
-#include <stdint.h>
+#include "kbase.h"
 
 void printk(const char *str);
 void printk_putc(char c);

@@ -3,9 +3,6 @@
 
 #include "timer.h"
 #include "printk.h"
-#include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Local APIC register offsets from base address
 // Base address will be read from IA32_APIC_BASE MSR during init
