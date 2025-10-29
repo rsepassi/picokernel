@@ -1,5 +1,13 @@
+* reliability of virtio-rng poll/interrupt
+* virtio-blk
+* virtio-net
+* smp 2
+* KLOG macros with file name, line number, time
 * Should PCI code be shared?
+* Use MSI-X interrupts instead of legacy INTx (PCI_REG_INTERRUPT_LINE)
 * hostfwd=udp::5000-10.0.2.15:8080
 * Centralize static allocations into platform_t
 * compiler-rt
+* rm cache operations?
+* arm32 runtime.c
 * mimalloc-style memory allocator
