@@ -1,5 +1,5 @@
-* virtio-blk
-* virtio-net
+* doc/virtio-net-blk.md
+* Make sure work is DEAD when callback is called (if it's not a "standing" work item)
 * smp 2
 * mimalloc-style memory allocator
 * Should PCI code be shared?
