@@ -3,7 +3,7 @@
 
 # Options
 PLATFORM ?= arm64
-USE_PCI ?= 0  # PCI or MMIO
+USE_PCI ?= 0
 DRIVE ?= 0
 PORT ?= 0
 
