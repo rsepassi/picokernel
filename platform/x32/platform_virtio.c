@@ -5,6 +5,7 @@
 #include "kernel.h"
 #include "pci.h"
 #include "platform_impl.h"
+#include "printk.h"
 #include "virtio/virtio.h"
 #include "virtio/virtio_mmio.h"
 #include "virtio/virtio_pci.h"
@@ -124,10 +125,6 @@ static const char *virtio_device_name(uint16_t device_id) {
 
 // Scan PCI bus for VirtIO devices
 void pci_scan_devices(platform_t *platform) {
-  extern void printk(const char *s);
-  extern void printk_dec(uint64_t n);
-  extern void printk_hex16(uint16_t n);
-
   printk("Scanning PCI bus for VirtIO devices...\n");
 
   int devices_found = 0;
@@ -241,10 +238,6 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 // Probe for VirtIO MMIO devices at known addresses
 // QEMU microvm places VirtIO MMIO devices at 0xFEB00000
 void mmio_scan_devices(platform_t *platform) {
-  extern void printk(const char *s);
-  extern void printk_dec(uint64_t n);
-  extern void printk_hex64(uint64_t n);
-
 // QEMU microvm VirtIO MMIO region layout
 // QEMU places devices starting at 0xFEB02A00 with 0x200 byte spacing
 #define VIRTIO_MMIO_BASE 0xFEB00000ULL

@@ -1,6 +1,3 @@
-Corruption on x32 (mmio and pci)
-pci/mmio crashes on x64
-
 * virtio-blk
 * virtio-net
 * smp 2

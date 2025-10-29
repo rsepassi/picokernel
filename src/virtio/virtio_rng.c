@@ -70,9 +70,6 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   rng->irq_pending = 0;
   rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
-    if (i % 64 == 0) {
-      printk_dec(i);
-    }
     rng->active_requests[i] = (void *)0;
   }
 

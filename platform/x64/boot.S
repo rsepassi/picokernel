@@ -148,9 +148,9 @@ gdt_descriptor:
     .word gdt_end - gdt_start - 1
     .long gdt_start
 
-// Stack space (16 KiB)
+// Stack space (64 KiB)
 .section .bss
 .align 16
 stack_bottom:
-    .skip 16384
+    .skip 65536
 stack_top:
