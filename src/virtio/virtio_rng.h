@@ -37,6 +37,9 @@ typedef struct virtio_rng_dev {
   // Use void* to avoid circular dependency
   void *active_requests[VIRTIO_RNG_MAX_REQUESTS];
 
+  // Track number of outstanding requests
+  volatile uint16_t outstanding_requests;
+
   // Interrupt pending flag (set by ISR, cleared by processing)
   volatile uint8_t irq_pending;
 

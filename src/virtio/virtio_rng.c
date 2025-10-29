@@ -42,6 +42,7 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
 
   // Verify features OK
   if (!(virtio_mmio_get_status(mmio) & VIRTIO_STATUS_FEATURES_OK)) {
+    printk("      FAILED: features not OK\n");
     return -1;
   }
 
@@ -62,12 +63,17 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
 
   // Check if device failed
   if (virtio_mmio_get_status(mmio) & 0x80) { // VIRTIO_STATUS_FAILED
+    printk("      FAILED: device failed\n");
     return -1;
   }
 
-  // Clear request tracking and irq_pending
+  // Clear request tracking, outstanding counter, and irq_pending
   rng->irq_pending = 0;
+  rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
+    if (i % 64 == 0) {
+      printk_dec(i);
+    }
     rng->active_requests[i] = (void *)0;
   }
 
@@ -123,8 +129,9 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   status |= VIRTIO_STATUS_DRIVER_OK;
   virtio_pci_set_status(pci, status);
 
-  // Clear request tracking and irq_pending
+  // Clear request tracking, outstanding counter, and irq_pending
   rng->irq_pending = 0;
+  rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
     rng->active_requests[i] = (void *)0;
   }
@@ -167,6 +174,7 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
 
       // Mark as live
       work->state = KWORK_STATE_LIVE;
+      rng->outstanding_requests++;
       submitted++;
     }
 
@@ -184,43 +192,12 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
     // Notify device (transport-specific implementation)
     if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)rng->transport, 0);
-
-      // Poll for completion (MMIO RNG is fast, no need to wait for interrupt)
-      size_t used_size = 4 + rng->queue_size * sizeof(virtq_used_elem_t) + 2;
-
-      for (int poll_iter = 0; poll_iter < 1000; poll_iter++) {
-        // Invalidate used ring cache before checking
-        platform_cache_invalidate(rng->vq.used, used_size);
-
-        // Check if device has completed any work
-        if (virtqueue_has_used(&rng->vq)) {
-          // Process all available completions
-          while (virtqueue_has_used(&rng->vq)) {
-            uint16_t desc_idx;
-            uint32_t len;
-            virtqueue_get_used(&rng->vq, &desc_idx, &len);
-
-            krng_req_t *req = rng->active_requests[desc_idx];
-            if (req != (void *)0) {
-              // Invalidate buffer cache
-              platform_cache_invalidate(req->buffer, req->length);
-
-              req->completed = len;
-              kplatform_complete_work(k, &req->work, KERR_OK);
-              rng->active_requests[desc_idx] = (void *)0;
-            }
-
-            virtqueue_free_desc(&rng->vq, desc_idx);
-          }
-
-          // Signal completion to wake up kernel (acts like interrupt)
-          rng->irq_pending = 1;
-          break; // All completions processed
-        }
-      }
     } else if (rng->transport_type == VIRTIO_TRANSPORT_PCI) {
       virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, 0);
     }
+
+    // Signal that there's work to check (keep polling in event loop)
+    rng->irq_pending = 1;
   }
 }
 
@@ -229,12 +206,12 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
   if (!rng->irq_pending) {
     return;
   }
-  rng->irq_pending = 0;
 
   // Invalidate used ring cache (ARM64 will invalidate, x64 is no-op)
   size_t used_size = 4 + rng->queue_size * sizeof(virtq_used_elem_t) + 2;
   platform_cache_invalidate(rng->vq.used, used_size);
 
+  // Process all available completions
   while (virtqueue_has_used(&rng->vq)) {
     uint16_t desc_idx;
     uint32_t len;
@@ -248,8 +225,15 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
       req->completed = len;
       kplatform_complete_work(k, &req->work, KERR_OK);
       rng->active_requests[desc_idx] = (void *)0;
+      rng->outstanding_requests--;
     }
 
     virtqueue_free_desc(&rng->vq, desc_idx);
   }
+
+  // Only clear irq_pending when all work is done
+  if (rng->outstanding_requests == 0) {
+    rng->irq_pending = 0;
+  }
+  // Otherwise keep it high so we get called again next iteration
 }

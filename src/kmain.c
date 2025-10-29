@@ -10,7 +10,7 @@ void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
 
   // Initialize
-  kernel_t k;
+  kernel_t k = {0};
   kmain_init(&k, fdt);
   printk("[KMAIN] kmain_init ok\n");
 
