@@ -2,6 +2,7 @@
 // GICv2 (Generic Interrupt Controller) setup and interrupt handlers
 
 #include "interrupt.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stdint.h>
 
@@ -48,20 +49,15 @@ static inline uint32_t gicc_read32(uint32_t offset) {
   return *(volatile uint32_t *)(GICC_BASE + offset);
 }
 
-// Maximum number of IRQs supported by GICv2
-#define MAX_IRQS 1024
-
-// IRQ handler table entry
-typedef struct {
-  void *context;
-  void (*handler)(void *context);
-} irq_entry_t;
-
-// IRQ dispatch table
-static irq_entry_t g_irq_table[MAX_IRQS];
+// Module-local platform pointer for interrupt_handler()
+// This is needed because interrupt_handler() is called from assembly (vectors.S)
+// and cannot receive parameters. This is an architectural limitation common to
+// all platforms with exception vectors in assembly.
+// Scope: Only used for interrupt dispatch, not a general-purpose global.
+static platform_t *g_current_platform = NULL;
 
 // Forward declare timer handler
-void timer_handler(void);
+void timer_handler(platform_t *platform);
 
 // Exception names for debugging
 static const char *exception_names[8] = {"Reset",
@@ -86,7 +82,7 @@ void interrupt_handler(uint32_t vector) {
 
     if (irq == TIMER_IRQ) {
       // Timer interrupt
-      timer_handler();
+      timer_handler(g_current_platform);
     } else if (irq >= 1020) {
       // Spurious interrupt (1020-1023 are special values)
       // No EOI needed for spurious interrupts
@@ -119,7 +115,8 @@ void interrupt_handler(uint32_t vector) {
 }
 
 // Initialize GIC
-static void gic_init(void) {
+static void gic_init(platform_t *platform) {
+  (void)platform; // Not used yet but will be needed for platform state
   // Disable distributor
   gicd_write32(GICD_CTLR, 0);
 
@@ -179,7 +176,10 @@ extern void set_vbar(uint32_t addr);
 extern uint32_t vectors_start;
 
 // Initialize interrupts and exception vectors
-void interrupt_init(void) {
+void interrupt_init(platform_t *platform) {
+  // Store platform pointer for interrupt handler
+  g_current_platform = platform;
+
   // Set vector table address
   set_vbar((uint32_t)&vectors_start);
 
@@ -188,11 +188,12 @@ void interrupt_init(void) {
   printk("\n");
 
   // Initialize GIC
-  gic_init();
+  gic_init(platform);
 }
 
 // Enable interrupts (clear I bit in CPSR)
-void platform_interrupt_enable(void) {
+void platform_interrupt_enable(platform_t *platform) {
+  (void)platform; // Unused on ARM32
   __asm__ volatile("mrs r0, cpsr\n"
                    "bic r0, r0, #0x80\n" // Clear I bit (bit 7)
                    "msr cpsr_c, r0\n" ::
@@ -200,7 +201,8 @@ void platform_interrupt_enable(void) {
 }
 
 // Disable interrupts (set I bit in CPSR)
-void platform_interrupt_disable(void) {
+void platform_interrupt_disable(platform_t *platform) {
+  (void)platform; // Unused on ARM32
   __asm__ volatile("mrs r0, cpsr\n"
                    "orr r0, r0, #0x80\n" // Set I bit (bit 7)
                    "msr cpsr_c, r0\n" ::
@@ -233,13 +235,14 @@ static void irq_set_trigger(uint32_t irq_num, uint32_t trigger) {
 }
 
 // Register IRQ handler
-void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
+void irq_register(platform_t *platform, uint32_t irq_num,
+                  void (*handler)(void *), void *context) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  g_irq_table[irq_num].handler = handler;
-  g_irq_table[irq_num].context = context;
+  platform->irq_table[irq_num].handler = handler;
+  platform->irq_table[irq_num].context = context;
 
   // VirtIO MMIO interrupts are edge-triggered (from device tree)
   // Configure as edge-triggered for all non-timer IRQs
@@ -255,7 +258,8 @@ void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
 }
 
 // Enable (unmask) a specific IRQ in the GIC
-void irq_enable(uint32_t irq_num) {
+void irq_enable(platform_t *platform, uint32_t irq_num) {
+  (void)platform; // Not used in this function but kept for API consistency
   if (irq_num >= MAX_IRQS) {
     return;
   }
@@ -276,8 +280,9 @@ void irq_dispatch(uint32_t irq_num) {
     return;
   }
 
-  if (g_irq_table[irq_num].handler != NULL) {
-    g_irq_table[irq_num].handler(g_irq_table[irq_num].context);
+  if (g_current_platform->irq_table[irq_num].handler != NULL) {
+    g_current_platform->irq_table[irq_num].handler(
+        g_current_platform->irq_table[irq_num].context);
   } else {
     // Unknown interrupt - just print a warning
     printk("Unhandled IRQ: ");

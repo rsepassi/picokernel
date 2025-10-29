@@ -4,8 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Forward declare memset from kbase.c
+// Forward declare memset and memcpy from kbase.c
 void *memset(void *s, int c, size_t n);
+void *memcpy(void *dest, const void *src, size_t n);
 
 // ARM EABI function prototypes
 void __aeabi_uldivmod(void);
@@ -14,6 +15,9 @@ uint32_t __aeabi_uidiv(uint32_t numerator, uint32_t denominator);
 void __aeabi_memclr(void);
 void __aeabi_memclr4(void);
 void __aeabi_memclr8(void);
+void __aeabi_memcpy(void);
+void __aeabi_memcpy4(void);
+void __aeabi_memcpy8(void);
 
 // Helper for 64-bit division - takes pointers for output
 __attribute__((used)) static void do_uldivmod_helper(uint64_t numerator,
@@ -200,5 +204,33 @@ __attribute__((naked)) void __aeabi_memclr8(void) {
   __asm__ volatile("mov r2, r1\n" // r2 = count (3rd param)
                    "mov r1, #0\n" // r1 = value (2nd param) = 0
                    "b memset\n" // Tail call to memset(r0=dest, r1=0, r2=count)
+  );
+}
+
+// ARM EABI memory copy functions
+// These are called by the compiler for struct assignment
+
+// __aeabi_memcpy - copy memory (byte-aligned)
+// Input: r0 = dest pointer, r1 = src pointer, r2 = byte count
+// Just tail-call to memcpy
+__attribute__((naked)) void __aeabi_memcpy(void) {
+  __asm__ volatile("b memcpy\n" // Tail call to memcpy(r0=dest, r1=src,
+                                // r2=count)
+  );
+}
+
+// __aeabi_memcpy4 - copy memory (4-byte aligned, count multiple of 4)
+// Input: r0 = dest pointer, r1 = src pointer, r2 = byte count
+__attribute__((naked)) void __aeabi_memcpy4(void) {
+  __asm__ volatile("b memcpy\n" // Tail call to memcpy(r0=dest, r1=src,
+                                // r2=count)
+  );
+}
+
+// __aeabi_memcpy8 - copy memory (8-byte aligned, count multiple of 8)
+// Input: r0 = dest pointer, r1 = src pointer, r2 = byte count
+__attribute__((naked)) void __aeabi_memcpy8(void) {
+  __asm__ volatile("b memcpy\n" // Tail call to memcpy(r0=dest, r1=src,
+                                // r2=count)
   );
 }

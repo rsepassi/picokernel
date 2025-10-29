@@ -55,10 +55,6 @@ struct fdt_reserve_entry {
   uint64_t size;
 };
 
-// Utility functions for endianness conversion
-static inline uint32_t fdt32_to_cpu(uint32_t x) { return __builtin_bswap32(x); }
-static inline uint64_t fdt64_to_cpu(uint64_t x) { return __builtin_bswap64(x); }
-
 // VirtIO MMIO device info
 typedef struct {
   uint64_t base_addr;
@@ -67,12 +63,13 @@ typedef struct {
 } virtio_mmio_device_t;
 
 // FDT parsing functions
-void platform_fdt_dump(void *fdt);
+void platform_fdt_dump(platform_t *platform, void *fdt);
 
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)
-int fdt_find_virtio_mmio(void *fdt, virtio_mmio_device_t *devices,
-                         int max_devices);
+int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
+                                   virtio_mmio_device_t *devices,
+                                   int max_devices);
 
 // ===========================================================================
 // SECTION 2: PCI - PCI configuration space access
@@ -83,25 +80,28 @@ int fdt_find_virtio_mmio(void *fdt, virtio_mmio_device_t *devices,
 // Platforms without PCI support should provide stubs that return error values
 
 // Read from PCI configuration space
-uint8_t platform_pci_config_read8(uint8_t bus, uint8_t slot, uint8_t func,
-                                  uint8_t offset);
-uint16_t platform_pci_config_read16(uint8_t bus, uint8_t slot, uint8_t func,
-                                    uint8_t offset);
-uint32_t platform_pci_config_read32(uint8_t bus, uint8_t slot, uint8_t func,
-                                    uint8_t offset);
+uint8_t platform_pci_config_read8(platform_t *platform, uint8_t bus,
+                                  uint8_t slot, uint8_t func, uint8_t offset);
+uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
+                                    uint8_t slot, uint8_t func, uint8_t offset);
+uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
+                                    uint8_t slot, uint8_t func, uint8_t offset);
 
 // Write to PCI configuration space
-void platform_pci_config_write8(uint8_t bus, uint8_t slot, uint8_t func,
-                                uint8_t offset, uint8_t value);
-void platform_pci_config_write16(uint8_t bus, uint8_t slot, uint8_t func,
-                                 uint8_t offset, uint16_t value);
-void platform_pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func,
-                                 uint8_t offset, uint32_t value);
+void platform_pci_config_write8(platform_t *platform, uint8_t bus,
+                                uint8_t slot, uint8_t func, uint8_t offset,
+                                uint8_t value);
+void platform_pci_config_write16(platform_t *platform, uint8_t bus,
+                                 uint8_t slot, uint8_t func, uint8_t offset,
+                                 uint16_t value);
+void platform_pci_config_write32(platform_t *platform, uint8_t bus,
+                                 uint8_t slot, uint8_t func, uint8_t offset,
+                                 uint32_t value);
 
 // Read Base Address Register (BAR)
 // Returns the physical address mapped by the BAR, or 0 if BAR is not present
-uint64_t platform_pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func,
-                               uint8_t bar_num);
+uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
+                               uint8_t func, uint8_t bar_num);
 
 // ===========================================================================
 // SECTION 3: Platform Lifecycle
@@ -134,10 +134,10 @@ void platform_abort(void) __attribute__((noreturn));
 // ===========================================================================
 
 // Enable interrupts globally
-void platform_interrupt_enable(void);
+void platform_interrupt_enable(platform_t *platform);
 
 // Disable interrupts globally
-void platform_interrupt_disable(void);
+void platform_interrupt_disable(platform_t *platform);
 
 // ===========================================================================
 // SECTION 5: UART - Debug output
@@ -154,16 +154,18 @@ void platform_uart_putc(char c);
 // ===========================================================================
 
 // Register an interrupt handler
+// platform: platform state structure
 // irq_num: platform-specific IRQ number
 // handler: function to call when interrupt fires
 // context: opaque context pointer passed to handler
 // Returns: 0 on success, negative on error
-int platform_irq_register(uint32_t irq_num, void (*handler)(void *),
-                          void *context);
+int platform_irq_register(platform_t *platform, uint32_t irq_num,
+                          void (*handler)(void *), void *context);
 
 // Enable (unmask) a specific IRQ
+// platform: platform state structure
 // irq_num: platform-specific IRQ number
-void platform_irq_enable(uint32_t irq_num);
+void platform_irq_enable(platform_t *platform, uint32_t irq_num);
 
 // ===========================================================================
 // SECTION 8: Work Submission - Process work queue changes

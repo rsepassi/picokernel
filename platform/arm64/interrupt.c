@@ -2,6 +2,7 @@
 // Exception vector setup and GIC (Generic Interrupt Controller) initialization
 
 #include "interrupt.h"
+#include "platform.h"
 #include "printk.h"
 #include "timer.h"
 #include <stddef.h>
@@ -226,7 +227,8 @@ void interrupt_init(platform_t *platform) {
 }
 
 // Enable interrupts (unmask IRQ and FIQ in DAIF)
-void platform_interrupt_enable(void) {
+void platform_interrupt_enable(platform_t *platform) {
+  (void)platform; // Platform not needed for DAIF operations
   // Clear I (IRQ mask) and F (FIQ mask) bits in DAIF
   // DAIF bits: D=Debug, A=SError, I=IRQ, F=FIQ
   __asm__ volatile("msr daifclr, #0x3"); // Clear I and F bits
@@ -234,7 +236,8 @@ void platform_interrupt_enable(void) {
 }
 
 // Disable interrupts (mask IRQ and FIQ in DAIF)
-void platform_interrupt_disable(void) {
+void platform_interrupt_disable(platform_t *platform) {
+  (void)platform; // Platform not needed for DAIF operations
   // Set I (IRQ mask) and F (FIQ mask) bits in DAIF
   __asm__ volatile("msr daifset, #0x3"); // Set I and F bits
   __asm__ volatile("isb");
@@ -313,6 +316,17 @@ void irq_dispatch(platform_t *platform, uint32_t irq_num) {
   if (platform->irq_table[irq_num].handler != NULL) {
     platform->irq_table[irq_num].handler(platform->irq_table[irq_num].context);
   }
+}
+
+// Platform API wrappers
+int platform_irq_register(platform_t *platform, uint32_t irq_num,
+                          void (*handler)(void *), void *context) {
+  irq_register(platform, irq_num, handler, context);
+  return 0; // Success
+}
+
+void platform_irq_enable(platform_t *platform, uint32_t irq_num) {
+  irq_enable(platform, irq_num);
 }
 
 // Dump GIC configuration for a specific IRQ (for debugging)

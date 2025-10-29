@@ -22,23 +22,20 @@
 #define IOAPIC_TRIGGER_LEVEL 0x00008000 // Level triggered
 #define IOAPIC_MASK 0x00010000          // Interrupt masked
 
-// IOAPIC state structure
-typedef struct {
-  uint32_t base_addr;  // MMIO base address
-  uint32_t gsi_base;   // Global System Interrupt base
-  uint8_t id;          // IOAPIC ID
-  uint8_t max_entries; // Number of redirection entries
-} ioapic_t;
+// Forward declarations
+typedef struct platform_t platform_t;
+typedef struct ioapic_t ioapic_t;
 
 // Initialize IOAPIC (finds base address from ACPI MADT)
-void ioapic_init(void);
+void ioapic_init(platform_t *platform);
 
 // Route an IRQ to a vector
-void ioapic_route_irq(uint8_t irq, uint8_t vector, uint8_t apic_id);
+void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
+                      uint8_t apic_id);
 
 // Mask/unmask an IRQ
-void ioapic_mask_irq(uint8_t irq);
-void ioapic_unmask_irq(uint8_t irq);
+void ioapic_mask_irq(platform_t *platform, uint8_t irq);
+void ioapic_unmask_irq(platform_t *platform, uint8_t irq);
 
 // Get IOAPIC info for debugging
-const ioapic_t *ioapic_get_info(void);
+const ioapic_t *ioapic_get_info(platform_t *platform);

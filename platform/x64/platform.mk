@@ -3,16 +3,13 @@
 TARGET = x86_64-none-elf
 
 QEMU = qemu-system-x86_64
+QEMU_CPU = qemu64
 
 # Machine type selection (controlled by USE_PCI in main Makefile)
-# USE_PCI=0: microvm with MMIO devices (lightweight, fast boot)
-# USE_PCI=1: q35 with PCI devices (default, more compatible)
-ifeq ($(USE_PCI),0)
-  QEMU_MACHINE = microvm
-  QEMU_CPU = qemu64
-else
+ifeq ($(USE_PCI),1)
   QEMU_MACHINE = q35
-  QEMU_CPU = qemu64
+else
+  QEMU_MACHINE = microvm
 endif
 
 QEMU_EXTRA_ARGS =

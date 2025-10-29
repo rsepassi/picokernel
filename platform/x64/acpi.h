@@ -107,11 +107,15 @@ struct acpi_madt_interrupt_override {
   uint16_t flags;      // Polarity and trigger mode
 } __attribute__((packed));
 
+// Forward declaration and typedef for platform
+struct platform_t;
+typedef struct platform_t platform_t;
+
 // Function declarations
 void *acpi_find_rsdp(void);
-struct acpi_table_header *acpi_find_table(const char *signature);
-void acpi_init(void);
-void acpi_dump_tables(void);
+struct acpi_table_header *acpi_find_table(platform_t *platform, const char *signature);
+void acpi_init(platform_t *platform);
+void acpi_dump_tables(platform_t *platform);
 
 // fw_cfg accessors
 uint64_t fw_cfg_read_ram_size(void);

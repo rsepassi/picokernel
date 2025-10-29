@@ -5,17 +5,18 @@
 
 #include <stdint.h>
 
-// Callback function type for timer events
-typedef void (*timer_callback_t)(void);
+// Forward declaration
+typedef struct platform_t platform_t;
 
 // Initialize the Local APIC timer
-void timer_init(void);
+void timer_init(platform_t *platform);
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback);
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
+                          void (*callback)(void));
 
 // Get current time in milliseconds
-uint64_t timer_get_current_time_ms(void);
+uint64_t timer_get_current_time_ms(platform_t *platform);
 
 // LAPIC timer interrupt handler
-void lapic_timer_handler(void);
+void lapic_timer_handler(platform_t *platform);

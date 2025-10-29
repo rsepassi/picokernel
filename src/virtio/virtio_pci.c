@@ -36,8 +36,8 @@ static inline void mmio_write64(volatile uint64_t *addr, uint64_t value) {
 
 // Find and map VirtIO PCI capabilities
 static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
-  uint8_t cap_offset = platform_pci_config_read8(pci->bus, pci->slot, pci->func,
-                                                 PCI_REG_CAPABILITIES);
+  uint8_t cap_offset = platform_pci_config_read8(
+      pci->platform, pci->bus, pci->slot, pci->func, PCI_REG_CAPABILITIES);
 
   if (cap_offset == 0) {
     return -1; // No capabilities
@@ -46,19 +46,21 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
   int found_common = 0, found_notify = 0, found_isr = 0;
 
   while (cap_offset != 0) {
-    uint8_t cap_id =
-        platform_pci_config_read8(pci->bus, pci->slot, pci->func, cap_offset);
+    uint8_t cap_id = platform_pci_config_read8(pci->platform, pci->bus,
+                                               pci->slot, pci->func, cap_offset);
 
     if (cap_id == 0x09) { // Vendor-specific capability
-      uint8_t cfg_type = platform_pci_config_read8(pci->bus, pci->slot,
-                                                   pci->func, cap_offset + 3);
-      uint8_t bar = platform_pci_config_read8(pci->bus, pci->slot, pci->func,
-                                              cap_offset + 4);
-      uint32_t offset = platform_pci_config_read32(pci->bus, pci->slot,
-                                                   pci->func, cap_offset + 8);
+      uint8_t cfg_type =
+          platform_pci_config_read8(pci->platform, pci->bus, pci->slot,
+                                    pci->func, cap_offset + 3);
+      uint8_t bar = platform_pci_config_read8(pci->platform, pci->bus,
+                                              pci->slot, pci->func, cap_offset + 4);
+      uint32_t offset =
+          platform_pci_config_read32(pci->platform, pci->bus, pci->slot,
+                                     pci->func, cap_offset + 8);
 
       uint64_t bar_base =
-          platform_pci_read_bar(pci->bus, pci->slot, pci->func, bar);
+          platform_pci_read_bar(pci->platform, pci->bus, pci->slot, pci->func, bar);
 
       if (cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
         pci->common_cfg =
@@ -67,7 +69,7 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
       } else if (cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
         pci->notify_base = bar_base + offset;
         pci->notify_off_multiplier = platform_pci_config_read32(
-            pci->bus, pci->slot, pci->func, cap_offset + 16);
+            pci->platform, pci->bus, pci->slot, pci->func, cap_offset + 16);
         found_notify = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
         pci->isr_status = (volatile uint8_t *)(bar_base + offset);
@@ -76,26 +78,28 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
     }
 
     // Next capability
-    cap_offset = platform_pci_config_read8(pci->bus, pci->slot, pci->func,
-                                           cap_offset + 1);
+    cap_offset = platform_pci_config_read8(pci->platform, pci->bus, pci->slot,
+                                           pci->func, cap_offset + 1);
   }
 
   return (found_common && found_notify && found_isr) ? 0 : -1;
 }
 
 // Initialize PCI transport
-int virtio_pci_init(virtio_pci_transport_t *pci, uint8_t bus, uint8_t slot,
-                    uint8_t func) {
+int virtio_pci_init(virtio_pci_transport_t *pci, platform_t *platform,
+                    uint8_t bus, uint8_t slot, uint8_t func) {
+  pci->platform = platform;
   pci->bus = bus;
   pci->slot = slot;
   pci->func = func;
 
   // Enable PCI bus mastering and memory access, disable interrupt masking
   uint16_t command =
-      platform_pci_config_read16(bus, slot, func, PCI_REG_COMMAND);
+      platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
   command |= PCI_CMD_MEM_ENABLE | PCI_CMD_BUS_MASTER;
   command &= ~PCI_CMD_INT_DISABLE;
-  platform_pci_config_write16(bus, slot, func, PCI_REG_COMMAND, command);
+  platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                              command);
 
   // Find and map capabilities
   if (virtio_find_capabilities(pci) < 0) {

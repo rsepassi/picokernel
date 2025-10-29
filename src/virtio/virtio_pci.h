@@ -39,8 +39,14 @@ typedef struct {
   uint64_t queue_device;
 } __attribute__((packed)) virtio_pci_common_cfg_t;
 
+// Forward declaration
+struct platform_t;
+
 // VirtIO PCI transport state
 typedef struct {
+  // Platform pointer (for PCI config space access)
+  struct platform_t *platform;
+
   // PCI location
   uint8_t bus, slot, func;
 
@@ -53,8 +59,8 @@ typedef struct {
 
 // Initialize PCI transport (parses capabilities)
 // Returns 0 on success, -1 on failure
-int virtio_pci_init(virtio_pci_transport_t *pci, uint8_t bus, uint8_t slot,
-                    uint8_t func);
+int virtio_pci_init(virtio_pci_transport_t *pci, struct platform_t *platform,
+                    uint8_t bus, uint8_t slot, uint8_t func);
 
 // Device control
 void virtio_pci_reset(virtio_pci_transport_t *pci);

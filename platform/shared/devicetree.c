@@ -74,7 +74,7 @@ static void print_prop_data(const uint8_t *data, uint32_t len) {
 static const uint8_t *fdt_walk_node(const uint8_t *p, const char *strings,
                                     int depth) {
   const uint32_t *ptr = KALIGN_CAST(const uint32_t *, p);
-  uint32_t token = fdt32_to_cpu(*ptr++);
+  uint32_t token = kbe32toh(*ptr++);
 
   if (token != FDT_BEGIN_NODE) {
     return (const uint8_t *)ptr;
@@ -101,11 +101,11 @@ static const uint8_t *fdt_walk_node(const uint8_t *p, const char *strings,
 
   // Process properties and child nodes
   while (1) {
-    token = fdt32_to_cpu(*ptr++);
+    token = kbe32toh(*ptr++);
 
     if (token == FDT_PROP) {
-      uint32_t len = fdt32_to_cpu(*ptr++);
-      uint32_t nameoff = fdt32_to_cpu(*ptr++);
+      uint32_t len = kbe32toh(*ptr++);
+      uint32_t nameoff = kbe32toh(*ptr++);
       const uint8_t *value = (const uint8_t *)ptr;
 
       print_indent(depth + 1);
@@ -167,7 +167,7 @@ static void *fdt_find(void) {
 
     for (uint64_t addr = start; addr < end; addr += align) {
       uint32_t *ptr = (uint32_t *)addr;
-      uint32_t magic = fdt32_to_cpu(ptr[0]);
+      uint32_t magic = kbe32toh(ptr[0]);
 
       if (magic == FDT_MAGIC) {
         printk("Found FDT at ");
@@ -183,7 +183,8 @@ static void *fdt_find(void) {
 }
 
 // Main function to dump the device tree
-void platform_fdt_dump(void *fdt) {
+void platform_fdt_dump(platform_t *platform, void *fdt) {
+  (void)platform; // Unused parameter
   // If fdt is NULL, try to find it in memory
   if (!fdt) {
     printk("Warning: NULL device tree pointer, scanning memory...\n");
@@ -197,7 +198,7 @@ void platform_fdt_dump(void *fdt) {
   struct fdt_header *header = (struct fdt_header *)fdt;
 
   // Verify magic number
-  uint32_t magic = fdt32_to_cpu(header->magic);
+  uint32_t magic = kbe32toh(header->magic);
   if (magic != FDT_MAGIC) {
     printk("Error: Invalid FDT magic: ");
     printk_hex32(magic);
@@ -210,8 +211,8 @@ void platform_fdt_dump(void *fdt) {
   printk_hex64((uint64_t)fdt);
   printk("\n");
 
-  uint32_t totalsize = fdt32_to_cpu(header->totalsize);
-  uint32_t version = fdt32_to_cpu(header->version);
+  uint32_t totalsize = kbe32toh(header->totalsize);
+  uint32_t version = kbe32toh(header->version);
 
   printk("Total size: ");
   printk_dec(totalsize);
@@ -222,8 +223,8 @@ void platform_fdt_dump(void *fdt) {
   printk("\n\n");
 
   // Get offsets
-  uint32_t off_struct = fdt32_to_cpu(header->off_dt_struct);
-  uint32_t off_strings = fdt32_to_cpu(header->off_dt_strings);
+  uint32_t off_struct = kbe32toh(header->off_dt_struct);
+  uint32_t off_strings = kbe32toh(header->off_dt_strings);
 
   // Walk the structure
   const uint8_t *struct_block = (const uint8_t *)fdt + off_struct;
@@ -250,9 +251,9 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
                                     int max_devices) {
   struct fdt_header *header = (struct fdt_header *)fdt;
 
-  uint32_t off_struct = fdt32_to_cpu(header->off_dt_struct);
-  uint32_t off_strings = fdt32_to_cpu(header->off_dt_strings);
-  uint32_t size_struct = fdt32_to_cpu(header->size_dt_struct);
+  uint32_t off_struct = kbe32toh(header->off_dt_struct);
+  uint32_t off_strings = kbe32toh(header->off_dt_strings);
+  uint32_t size_struct = kbe32toh(header->size_dt_struct);
 
   const uint8_t *struct_start = (const uint8_t *)fdt + off_struct;
   const uint8_t *struct_end = struct_start + size_struct;
@@ -268,7 +269,7 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
 
   while (p < struct_end && count < max_devices) {
     const uint32_t *ptr = KALIGN_CAST(const uint32_t *, p);
-    uint32_t token = fdt32_to_cpu(*ptr++);
+    uint32_t token = kbe32toh(*ptr++);
 
     if (token == FDT_BEGIN_NODE) {
       // Reset state for new node
@@ -286,8 +287,8 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
                         (const uint8_t *)(((uintptr_t)name + 3) & ~3));
 
     } else if (token == FDT_PROP) {
-      uint32_t len = fdt32_to_cpu(*ptr++);
-      uint32_t nameoff = fdt32_to_cpu(*ptr++);
+      uint32_t len = kbe32toh(*ptr++);
+      uint32_t nameoff = kbe32toh(*ptr++);
       const uint8_t *value = (const uint8_t *)ptr;
       const char *prop_name = strings + nameoff;
 
@@ -355,8 +356,10 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
 }
 
 // Find VirtIO MMIO devices in device tree
-int fdt_find_virtio_mmio(void *fdt, virtio_mmio_device_t *devices,
-                         int max_devices) {
+int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
+                                   virtio_mmio_device_t *devices,
+                                   int max_devices) {
+  (void)platform; // Platform not needed for FDT parsing
   if (!fdt || !devices || max_devices <= 0) {
     return 0;
   }
@@ -364,7 +367,7 @@ int fdt_find_virtio_mmio(void *fdt, virtio_mmio_device_t *devices,
   struct fdt_header *header = (struct fdt_header *)fdt;
 
   // Verify magic number
-  uint32_t magic = fdt32_to_cpu(header->magic);
+  uint32_t magic = kbe32toh(header->magic);
   if (magic != FDT_MAGIC) {
     return 0;
   }

@@ -3,33 +3,16 @@
 
 #include "interrupt.h"
 #include "ioapic.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stdint.h>
 
-#define IDT_ENTRIES 256
-#define MAX_IRQS 256
-
-// IDT Gate descriptor structure
-// Note: Even in x32 mode, IDT entries are 64-bit mode descriptors
-struct idt_entry {
-  uint16_t offset_low;  // Offset bits 0-15
-  uint16_t selector;    // Code segment selector
-  uint8_t ist;          // Interrupt Stack Table (bits 0-2), reserved (bits 3-7)
-  uint8_t flags;        // Type and attributes
-  uint16_t offset_mid;  // Offset bits 16-31
-  uint32_t offset_high; // Offset bits 32-63
-  uint32_t reserved;    // Reserved (must be zero)
-} __attribute__((packed));
-
-// IDT Pointer structure
-struct idt_ptr {
-  uint16_t limit;
-  uint64_t base;
-} __attribute__((packed));
-
-// IDT table and pointer
-static struct idt_entry idt[IDT_ENTRIES];
-static struct idt_ptr idtp;
+// Module-local platform pointer
+// REASON: interrupt_handler() and irq_dispatch() are called from assembly
+// (isr_stubs.S) and cannot receive platform_t* as a parameter. This is an
+// architectural limitation common to all platforms with exception vectors in
+// assembly.
+static platform_t *g_current_platform = NULL;
 
 // External interrupt handler stubs (defined in assembly)
 // Exception vectors 0-31
@@ -89,22 +72,12 @@ extern void isr_stub_47(void);
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
 
-// Forward declare timer handler
-void lapic_timer_handler(void);
-
-// IRQ handler table
-typedef struct {
-  void *context;
-  void (*handler)(void *context);
-} irq_entry_t;
-
-static irq_entry_t g_irq_table[MAX_IRQS];
 
 // Set an IDT entry
 // Note: In x32, function pointers are 32-bit, but we need to convert to 64-bit
 // for IDT
-static void idt_set_gate(uint8_t num, uint64_t handler, uint16_t selector,
-                         uint8_t flags) {
+static void idt_set_gate(struct idt_entry *idt, uint8_t num, uint64_t handler,
+                         uint16_t selector, uint8_t flags) {
   idt[num].offset_low = handler & 0xFFFF;
   idt[num].selector = selector;
   idt[num].ist = 0;
@@ -148,11 +121,14 @@ static const char *exception_names[32] = {"Divide Error",
                                           "Security Exception",
                                           "Reserved"};
 
+// Forward declaration
+void lapic_timer_handler(platform_t *platform);
+
 // Common interrupt handler dispatcher
 void interrupt_handler(uint64_t vector) {
   if (vector == 32) {
     // Timer interrupt (vector 32)
-    lapic_timer_handler();
+    lapic_timer_handler(g_current_platform);
   } else if (vector == 255) {
     // Spurious interrupt - should not reach here (minimal stub)
   } else if (vector < 32) {
@@ -174,7 +150,10 @@ void interrupt_handler(uint64_t vector) {
 }
 
 // Initialize the IDT
-void interrupt_init(void) {
+void interrupt_init(platform_t *platform) {
+  // Save platform pointer for interrupt dispatch
+  g_current_platform = platform;
+
   // Array of exception handler pointers for vectors 0-31
   // In x32, these are 32-bit pointers, but we need to convert to 64-bit for IDT
   void (*exception_handlers[32])(void) = {
@@ -187,76 +166,108 @@ void interrupt_init(void) {
       isr_stub_30, isr_stub_31};
 
   // Set up IDT pointer
-  idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
+  platform->idtp.limit = (sizeof(struct idt_entry) * IDT_ENTRIES) - 1;
   // In x32, pointers are 32-bit but we store them in a 64-bit field
   // The cast through uintptr_t ensures correct conversion
-  idtp.base = (uint64_t)(uintptr_t)&idt;
+  platform->idtp.base = (uint64_t)(uintptr_t)&platform->idt;
 
   // Install exception handlers (vectors 0-31)
   // Flags: 0x8E = Present, DPL=0, Interrupt Gate (64-bit)
   for (int i = 0; i < 32; i++) {
     // Convert 32-bit pointer to 64-bit address for IDT
-    idt_set_gate(i, (uint64_t)(uintptr_t)exception_handlers[i], 0x08, 0x8E);
+    idt_set_gate(platform->idt, i, (uint64_t)(uintptr_t)exception_handlers[i],
+                 0x08, 0x8E);
   }
 
   // Install timer interrupt handler (vector 32)
-  idt_set_gate(32, (uint64_t)(uintptr_t)isr_stub_32, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 32, (uint64_t)(uintptr_t)isr_stub_32, 0x08,
+               0x8E);
 
   // Install IRQ interrupt handlers (vectors 33-47)
-  idt_set_gate(33, (uint64_t)(uintptr_t)isr_stub_33, 0x08, 0x8E);
-  idt_set_gate(34, (uint64_t)(uintptr_t)isr_stub_34, 0x08, 0x8E);
-  idt_set_gate(35, (uint64_t)(uintptr_t)isr_stub_35, 0x08, 0x8E);
-  idt_set_gate(36, (uint64_t)(uintptr_t)isr_stub_36, 0x08, 0x8E);
-  idt_set_gate(37, (uint64_t)(uintptr_t)isr_stub_37, 0x08, 0x8E);
-  idt_set_gate(38, (uint64_t)(uintptr_t)isr_stub_38, 0x08, 0x8E);
-  idt_set_gate(39, (uint64_t)(uintptr_t)isr_stub_39, 0x08, 0x8E);
-  idt_set_gate(40, (uint64_t)(uintptr_t)isr_stub_40, 0x08, 0x8E);
-  idt_set_gate(41, (uint64_t)(uintptr_t)isr_stub_41, 0x08, 0x8E);
-  idt_set_gate(42, (uint64_t)(uintptr_t)isr_stub_42, 0x08, 0x8E);
-  idt_set_gate(43, (uint64_t)(uintptr_t)isr_stub_43, 0x08, 0x8E);
-  idt_set_gate(44, (uint64_t)(uintptr_t)isr_stub_44, 0x08, 0x8E);
-  idt_set_gate(45, (uint64_t)(uintptr_t)isr_stub_45, 0x08, 0x8E);
-  idt_set_gate(46, (uint64_t)(uintptr_t)isr_stub_46, 0x08, 0x8E);
-  idt_set_gate(47, (uint64_t)(uintptr_t)isr_stub_47, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 33, (uint64_t)(uintptr_t)isr_stub_33, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 34, (uint64_t)(uintptr_t)isr_stub_34, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 35, (uint64_t)(uintptr_t)isr_stub_35, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 36, (uint64_t)(uintptr_t)isr_stub_36, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 37, (uint64_t)(uintptr_t)isr_stub_37, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 38, (uint64_t)(uintptr_t)isr_stub_38, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 39, (uint64_t)(uintptr_t)isr_stub_39, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 40, (uint64_t)(uintptr_t)isr_stub_40, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 41, (uint64_t)(uintptr_t)isr_stub_41, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 42, (uint64_t)(uintptr_t)isr_stub_42, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 43, (uint64_t)(uintptr_t)isr_stub_43, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 44, (uint64_t)(uintptr_t)isr_stub_44, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 45, (uint64_t)(uintptr_t)isr_stub_45, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 46, (uint64_t)(uintptr_t)isr_stub_46, 0x08,
+               0x8E);
+  idt_set_gate(platform->idt, 47, (uint64_t)(uintptr_t)isr_stub_47, 0x08,
+               0x8E);
 
   // Install spurious interrupt handler (vector 255)
-  idt_set_gate(255, (uint64_t)(uintptr_t)isr_stub_255, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 255, (uint64_t)(uintptr_t)isr_stub_255, 0x08,
+               0x8E);
 
   // Load IDT
-  __asm__ volatile("lidt %0" : : "m"(idtp));
+  __asm__ volatile("lidt %0" : : "m"(platform->idtp));
 
   printk("IDT initialized (256 entries)\n");
 
   // Initialize IOAPIC
-  ioapic_init();
+  ioapic_init(platform);
 }
 
 // Enable interrupts
-void platform_interrupt_enable(void) { __asm__ volatile("sti"); }
+void platform_interrupt_enable(platform_t *platform) {
+  (void)platform; // Unused on x32
+  __asm__ volatile("sti");
+}
 
 // Disable interrupts
-void platform_interrupt_disable(void) { __asm__ volatile("cli"); }
+void platform_interrupt_disable(platform_t *platform) {
+  (void)platform; // Unused on x32
+  __asm__ volatile("cli");
+}
 
 // Register IRQ handler
-void irq_register(uint8_t irq_num, void (*handler)(void *), void *context) {
-  g_irq_table[irq_num].handler = handler;
-  g_irq_table[irq_num].context = context;
+void irq_register(platform_t *platform, uint8_t irq_num,
+                  void (*handler)(void *), void *context) {
+  platform->irq_table[irq_num].handler = handler;
+  platform->irq_table[irq_num].context = context;
 
   // Route IRQ through IOAPIC (APIC ID 0 for BSP)
-  ioapic_route_irq(irq_num, irq_num, 0);
+  ioapic_route_irq(platform, irq_num, irq_num, 0);
 }
 
 // Enable (unmask) a specific IRQ
-void irq_enable(uint8_t irq_num) { ioapic_unmask_irq(irq_num); }
+void irq_enable(platform_t *platform, uint8_t irq_num) {
+  ioapic_unmask_irq(platform, irq_num);
+}
 
 // Dispatch IRQ (called from exception handler)
 void irq_dispatch(uint8_t irq_num) {
-  irq_entry_t *entry = &g_irq_table[irq_num];
+  if (g_current_platform == NULL) {
+    return;
+  }
+
+  irq_entry_t *entry = &g_current_platform->irq_table[irq_num];
   if (entry->handler != NULL) {
     entry->handler(entry->context);
   }
 
   // Send EOI to Local APIC
-  volatile uint32_t *lapic_eoi = (volatile uint32_t *)(uintptr_t)0xFEE000B0;
+  volatile uint32_t *lapic_eoi =
+      (volatile uint32_t *)(uintptr_t)(g_current_platform->lapic_base + 0xB0);
   *lapic_eoi = 0;
 }

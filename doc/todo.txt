@@ -1,8 +1,11 @@
-* Centralize static allocations into platform_t
+Corruption on x32 (mmio and pci)
+pci/mmio crashes on x64
+
 * virtio-blk
 * virtio-net
 * smp 2
-* Should PCI code be shared?
 * mimalloc-style memory allocator
+* Should PCI code be shared?
+* Share 32-bit / 64-bit code?
 * Use MSI-X interrupts instead of legacy INTx (PCI_REG_INTERRUPT_LINE)
 * compiler-rt, arm32 runtime.c

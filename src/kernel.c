@@ -106,7 +106,7 @@ void kmain_init(kernel_t *k, void *fdt) {
   k->current_time_ms = platform_wfi(&k->platform, 0);
 
   // Enable interrupts
-  platform_interrupt_enable();
+  platform_interrupt_enable(&k->platform);
   KLOG("interrupts enabled");
 
   // Initialize CSPRNG with strong entropy

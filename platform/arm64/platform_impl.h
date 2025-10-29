@@ -29,7 +29,7 @@ typedef struct {
 #define MAX_IRQS 1024
 
 // ARM64 platform-specific state
-typedef struct {
+struct platform_t {
   // Timer state
   uint64_t timer_freq_hz;          // Timer frequency from CNTFRQ_EL0
   uint64_t timer_start;            // Start time counter value
@@ -48,7 +48,8 @@ typedef struct {
 
   // Back-pointer to kernel
   void *kernel;
-} platform_t;
+};
+typedef struct platform_t platform_t;
 
 // ARM64 RNG request platform-specific fields (VirtIO)
 typedef struct {

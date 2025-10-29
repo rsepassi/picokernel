@@ -21,7 +21,7 @@ void pci_scan_devices(platform_t *platform) {
   for (uint16_t bus = 0; bus < 4; bus++) {
     for (uint8_t slot = 0; slot < 32; slot++) {
       uint32_t vendor_device =
-          platform_pci_config_read32(bus, slot, 0, PCI_REG_VENDOR_ID);
+          platform_pci_config_read32(platform, bus, slot, 0, PCI_REG_VENDOR_ID);
 
       if (vendor_device == 0xFFFFFFFF) {
         continue; // No device

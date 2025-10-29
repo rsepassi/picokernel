@@ -8,27 +8,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Global callback function pointer
-static timer_callback_t g_timer_callback = NULL;
+// Timer interrupt handler (called from interrupt.c's trap_handler)
+// Platform pointer passed from interrupt.c which has it as module-local
+void timer_handler(platform_t *platform) {
+  if (!platform) {
+    return;
+  }
 
-// Timer frequency in Hz (read from device tree)
-static uint64_t g_timebase_freq = 10000000; // Default: 10 MHz (common in QEMU)
-
-// Start time counter value
-static uint64_t g_timer_start = 0;
-
-// Forward declaration from interrupt.h
-void timer_handler(void);
-
-// Timer interrupt handler (called from interrupt.c)
-void timer_handler(void) {
   // Disable timer interrupt by setting timer to max value
   sbi_set_timer(~0ULL);
 
   // Call the user's callback if set
-  if (g_timer_callback) {
-    timer_callback_t cb = g_timer_callback;
-    g_timer_callback = NULL; // Clear before calling
+  if (platform->timer_callback) {
+    timer_callback_t cb = platform->timer_callback;
+    platform->timer_callback = NULL; // Clear before calling
     cb();
   }
 }
@@ -47,14 +40,14 @@ static uint64_t find_timebase_frequency(void *fdt) {
   struct fdt_header *header = (struct fdt_header *)fdt;
 
   // Verify magic number
-  uint32_t magic = fdt32_to_cpu(header->magic);
+  uint32_t magic = kbe32toh(header->magic);
   if (magic != FDT_MAGIC) {
     return 0;
   }
 
   // Get offsets
-  uint32_t off_struct = fdt32_to_cpu(header->off_dt_struct);
-  uint32_t off_strings = fdt32_to_cpu(header->off_dt_strings);
+  uint32_t off_struct = kbe32toh(header->off_dt_struct);
+  uint32_t off_strings = kbe32toh(header->off_dt_strings);
 
   const uint8_t *struct_block = (const uint8_t *)fdt + off_struct;
   const char *strings = (const char *)fdt + off_strings;
@@ -66,7 +59,7 @@ static uint64_t find_timebase_frequency(void *fdt) {
   int in_cpus = 0; // Track if we're in /cpus node
 
   while (1) {
-    uint32_t token = fdt32_to_cpu(*ptr++);
+    uint32_t token = kbe32toh(*ptr++);
 
     if (token == FDT_BEGIN_NODE) {
       // Get node name
@@ -87,8 +80,8 @@ static uint64_t find_timebase_frequency(void *fdt) {
       ptr = (uint32_t *)(((uint64_t)name_ptr + 3) & ~3);
 
     } else if (token == FDT_PROP) {
-      uint32_t len = fdt32_to_cpu(*ptr++);
-      uint32_t nameoff = fdt32_to_cpu(*ptr++);
+      uint32_t len = kbe32toh(*ptr++);
+      uint32_t nameoff = kbe32toh(*ptr++);
       const uint8_t *value = (const uint8_t *)ptr;
       const char *prop_name = strings + nameoff;
 
@@ -134,45 +127,44 @@ static uint64_t find_timebase_frequency(void *fdt) {
 }
 
 // Initialize timer
-void timer_init(void *fdt, uint64_t *out_freq) {
+void timer_init(platform_t *platform, void *fdt) {
+  // Default: 10 MHz (common in QEMU)
+  platform->timebase_freq = 10000000;
+
   // Try to read timebase frequency from device tree
   uint64_t freq = find_timebase_frequency(fdt);
 
   if (freq > 0) {
-    g_timebase_freq = freq;
+    platform->timebase_freq = freq;
     printk("Timebase frequency: ");
     printk_dec((uint32_t)(freq / 1000000));
     printk(" MHz (from device tree)\n");
   } else {
     printk("Timebase frequency: ");
-    printk_dec((uint32_t)(g_timebase_freq / 1000000));
+    printk_dec((uint32_t)(platform->timebase_freq / 1000000));
     printk(" MHz (default)\n");
   }
 
-  // Return frequency if requested
-  if (out_freq) {
-    *out_freq = g_timebase_freq;
-  }
-
   // Capture start time for timer_get_current_time_ms()
-  g_timer_start = rdtime();
+  platform->timer_start = rdtime();
+
+  // Initialize callback to NULL
+  platform->timer_callback = NULL;
 
   // Disable any pending timer interrupts
   sbi_set_timer(~0ULL);
 }
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback) {
-  if (callback == NULL) {
-    printk("timer_set_oneshot_ms: NULL callback\n");
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds) {
+  if (!platform || !platform->timer_callback) {
+    printk("timer_set_oneshot_ms: NULL platform or callback\n");
     return;
   }
 
-  g_timer_callback = callback;
-
   // Calculate ticks needed
   // ticks = (milliseconds * frequency) / 1000
-  uint64_t ticks = ((uint64_t)milliseconds * g_timebase_freq) / 1000;
+  uint64_t ticks = ((uint64_t)milliseconds * platform->timebase_freq) / 1000;
 
   // Get current time
   uint64_t now = rdtime();
@@ -189,18 +181,27 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback) {
 }
 
 // Get current timer frequency
-uint64_t timer_get_frequency(void) { return g_timebase_freq; }
+uint64_t timer_get_frequency(platform_t *platform) {
+  if (!platform) {
+    return 0;
+  }
+  return platform->timebase_freq;
+}
 
 // Get current time in milliseconds
-uint64_t timer_get_current_time_ms(void) {
-  uint64_t counter_now = rdtime();
-  uint64_t counter_elapsed = counter_now - g_timer_start;
+uint64_t timer_get_current_time_ms(platform_t *platform) {
+  if (!platform) {
+    return 0;
+  }
 
-  if (g_timebase_freq == 0) {
+  uint64_t counter_now = rdtime();
+  uint64_t counter_elapsed = counter_now - platform->timer_start;
+
+  if (platform->timebase_freq == 0) {
     return 0;
   }
 
   // Convert counter ticks to milliseconds
   // ms = (ticks * 1000) / freq_hz
-  return (counter_elapsed * 1000) / g_timebase_freq;
+  return (counter_elapsed * 1000) / platform->timebase_freq;
 }

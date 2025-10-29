@@ -8,9 +8,6 @@
 #include "virtio/virtio_rng.h"
 #include <stddef.h>
 
-// Forward declare internal device enumeration function
-void platform_fdt_dump(void *fdt);
-
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
 extern void mmio_scan_devices(platform_t *platform);
@@ -31,7 +28,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   timer_init(platform);
 
   // Parse and display device tree
-  platform_fdt_dump(fdt);
+  platform_fdt_dump(platform, fdt);
 
   // Scan for VirtIO devices via both PCI and MMIO
   printk("=== Starting VirtIO Device Scan ===\n\n");

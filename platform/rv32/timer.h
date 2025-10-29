@@ -5,21 +5,18 @@
 
 #include <stdint.h>
 
-// Timer callback function type
-typedef void (*timer_callback_t)(void);
+// Forward declaration (must match platform_impl.h exactly)
+typedef struct platform_t platform_t;
 
 // Initialize timer subsystem
 // Reads timebase-frequency from devicetree and calibrates
-void timer_init(void *fdt);
+void timer_init(platform_t *platform, void *fdt);
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback);
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds);
 
 // Timer interrupt handler (called from trap handler)
-void timer_interrupt_handler(void);
-
-// Get timer frequency in Hz
-uint64_t timer_get_frequency(void);
+void timer_interrupt_handler(platform_t *platform);
 
 // Get current time in milliseconds
-uint64_t timer_get_current_time_ms(void);
+uint64_t timer_get_current_time_ms(platform_t *platform);

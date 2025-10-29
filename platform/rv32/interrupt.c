@@ -2,6 +2,7 @@
 // Trap vector setup and interrupt dispatching
 
 #include "interrupt.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include "timer.h"
 #include <stddef.h>
@@ -75,16 +76,14 @@ static inline uint32_t mmio_read32(uint32_t addr) {
   return *(volatile uint32_t *)addr;
 }
 
-// IRQ handler table entry
-typedef struct {
-  void *context;
-  void (*handler)(void *context);
-} irq_entry_t;
+// Module-local platform pointer
+// ARCHITECTURAL LIMITATION: trap_handler() is called from assembly (trap.S)
+// and cannot receive parameters. This pointer is the only way to access
+// platform state from the exception handler. This is acceptable as it's
+// limited to interrupt dispatch and exception handling.
+static platform_t *g_current_platform = NULL;
 
-// IRQ dispatch table
-static irq_entry_t g_irq_table[MAX_IRQS];
-
-// Exception names for debugging
+// Exception names for debugging (read-only lookup table)
 static const char *exception_names[] = {"Instruction address misaligned",
                                         "Instruction access fault",
                                         "Illegal instruction",
@@ -118,8 +117,17 @@ static void plic_init(void) {
 }
 
 // Initialize interrupt handling
-void interrupt_init(void) {
+void interrupt_init(platform_t *platform) {
   printk("Setting up RISC-V trap handler...\n");
+
+  // Store platform pointer for trap handler access
+  g_current_platform = platform;
+
+  // Initialize IRQ table
+  for (int i = 0; i < MAX_IRQS; i++) {
+    platform->irq_table[i].handler = NULL;
+    platform->irq_table[i].context = NULL;
+  }
 
   // Set trap vector to our handler (direct mode)
   // In direct mode, all traps jump to the base address
@@ -140,19 +148,26 @@ void interrupt_init(void) {
 }
 
 // Enable interrupts globally
-void platform_interrupt_enable(void) { set_csr(sstatus, SSTATUS_SIE); }
+void platform_interrupt_enable(platform_t *platform) {
+  (void)platform; // Unused - global CSR operation
+  set_csr(sstatus, SSTATUS_SIE);
+}
 
 // Disable interrupts globally
-void platform_interrupt_disable(void) { clear_csr(sstatus, SSTATUS_SIE); }
+void platform_interrupt_disable(platform_t *platform) {
+  (void)platform; // Unused - global CSR operation
+  clear_csr(sstatus, SSTATUS_SIE);
+}
 
 // Register IRQ handler
-void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
+void irq_register(platform_t *platform, uint32_t irq_num,
+                  void (*handler)(void *), void *context) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  g_irq_table[irq_num].handler = handler;
-  g_irq_table[irq_num].context = context;
+  platform->irq_table[irq_num].handler = handler;
+  platform->irq_table[irq_num].context = context;
 
   printk("IRQ ");
   printk_dec(irq_num);
@@ -160,7 +175,9 @@ void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
 }
 
 // Enable (unmask) a specific IRQ in the PLIC
-void irq_enable(uint32_t irq_num) {
+void irq_enable(platform_t *platform, uint32_t irq_num) {
+  (void)platform; // Unused - PLIC enable is global
+
   if (irq_num >= MAX_IRQS) {
     return;
   }
@@ -177,13 +194,13 @@ void irq_enable(uint32_t irq_num) {
 }
 
 // Dispatch IRQ to registered handler
-void irq_dispatch(uint32_t irq_num) {
+void irq_dispatch(platform_t *platform, uint32_t irq_num) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  if (g_irq_table[irq_num].handler != NULL) {
-    g_irq_table[irq_num].handler(g_irq_table[irq_num].context);
+  if (platform->irq_table[irq_num].handler != NULL) {
+    platform->irq_table[irq_num].handler(platform->irq_table[irq_num].context);
   }
 }
 
@@ -191,6 +208,10 @@ void irq_dispatch(uint32_t irq_num) {
 void trap_handler(void) {
   unsigned long scause = read_csr(scause);
   unsigned long sepc = read_csr(sepc);
+
+  // Access platform via module-local pointer
+  // This is necessary because trap_handler() is called from assembly
+  platform_t *platform = g_current_platform;
 
   // Check if it's an interrupt or exception
   if (scause & CAUSE_INTERRUPT_BIT) {
@@ -200,7 +221,7 @@ void trap_handler(void) {
     switch (cause_code) {
     case CAUSE_TIMER_INTERRUPT:
       // Supervisor timer interrupt
-      timer_interrupt_handler();
+      timer_interrupt_handler(platform);
       break;
 
     case CAUSE_SOFTWARE_INTERRUPT:
@@ -213,7 +234,7 @@ void trap_handler(void) {
         uint32_t irq = mmio_read32(PLIC_CLAIM);
         if (irq > 0 && irq < MAX_IRQS) {
           // Dispatch to registered handler
-          irq_dispatch(irq);
+          irq_dispatch(platform, irq);
           // Complete the interrupt (write IRQ number back to PLIC)
           mmio_write32(PLIC_CLAIM, irq);
         }

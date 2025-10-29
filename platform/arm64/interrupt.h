@@ -10,10 +10,12 @@
 void interrupt_init(platform_t *platform);
 
 // Enable interrupts (unmask DAIF)
-void platform_interrupt_enable(void);
+// Declared in platform.h, implemented here
+// void platform_interrupt_enable(platform_t *platform);
 
 // Disable interrupts (mask DAIF)
-void platform_interrupt_disable(void);
+// Declared in platform.h, implemented here
+// void platform_interrupt_disable(platform_t *platform);
 
 // Register IRQ handler
 void irq_register(platform_t *platform, uint32_t irq_num,

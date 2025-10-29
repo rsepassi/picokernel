@@ -3,11 +3,12 @@
 
 #include "acpi.h"
 #include "kernel.h"
+#include "platform_impl.h"
 #include "printk.h"
 
 // Parse and display MADT (Multiple APIC Description Table)
-static void parse_madt(void) {
-  struct acpi_table_header *header = acpi_find_table(ACPI_SIG_MADT);
+static void parse_madt(platform_t *platform) {
+  struct acpi_table_header *header = acpi_find_table(platform, ACPI_SIG_MADT);
 
   if (header == NULL) {
     printk("  MADT table not found\n\n");
@@ -112,20 +113,18 @@ static void print_dt_reg64(uint64_t val) {
 // x64-specific device enumeration
 // This function provides the same interface as platform_fdt_dump() but
 // enumerates x64 devices using ACPI tables
-void platform_fdt_dump(void *dummy) {
-  (void)dummy;
+void platform_fdt_dump(platform_t *platform, void *fdt) {
+  (void)fdt; // Unused for x64
+
   printk("=== x64 Device Enumeration ===\n\n");
 
-  // Initialize ACPI subsystem
-  acpi_init();
-
-  // Dump available ACPI tables
-  acpi_dump_tables();
+  // Dump available ACPI tables (ACPI already initialized in platform_init)
+  acpi_dump_tables(platform);
 
   printk("=== Device Tree ===\n\n");
 
   // Get platform information from ACPI
-  struct acpi_table_header *fadt = acpi_find_table(ACPI_SIG_FADT);
+  struct acpi_table_header *fadt = acpi_find_table(platform, ACPI_SIG_FADT);
 
   printk("Platform: x86_64\n");
   printk("Device Discovery: ACPI\n");
@@ -148,7 +147,7 @@ void platform_fdt_dump(void *dummy) {
   printk("  #size-cells = <2>;\n\n");
 
   // Parse MADT for CPU and interrupt controller information
-  parse_madt();
+  parse_madt(platform);
 
   // Memory node - discover from fw_cfg
   uint64_t ram_size = fw_cfg_read_ram_size();

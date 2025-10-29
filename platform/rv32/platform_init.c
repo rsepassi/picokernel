@@ -9,9 +9,6 @@
 #include "virtio/virtio_rng.h"
 #include <stddef.h>
 
-// Forward declare device tree dump function
-void platform_fdt_dump(void *fdt);
-
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
 extern void mmio_scan_devices(platform_t *platform);
@@ -21,20 +18,18 @@ static void wfi_timer_callback(void) {}
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
-  platform->virtio_rng = NULL;
+  platform->virtio_rng_ptr = NULL;
   platform->timer_freq = 0;
   platform->ticks_per_ms = 0;
 
   printk("Initializing rv32 platform...\n");
 
   // Initialize interrupt handling (trap vector)
-  interrupt_init();
+  interrupt_init(platform);
 
   // Initialize timer (reads frequency from FDT)
-  timer_init(fdt);
+  timer_init(platform, fdt);
 
-  // Store timer frequency in platform state
-  platform->timer_freq = timer_get_frequency();
   // For typical timer frequencies (< 4GHz), this fits in 32-bit division
   if (platform->timer_freq < 0x100000000ULL) {
     platform->ticks_per_ms = (uint32_t)platform->timer_freq / 1000;
@@ -55,7 +50,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // to avoid spurious interrupts during device enumeration
 
   // Parse and display device tree
-  platform_fdt_dump(fdt);
+  platform_fdt_dump(platform, fdt);
 
   // Scan for VirtIO devices via both PCI and MMIO
   printk("=== Starting VirtIO Device Scan ===\n\n");
@@ -70,17 +65,17 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 // Returns: current time in milliseconds
 uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   if (timeout_ms == 0) {
-    return timer_get_current_time_ms();
+    return timer_get_current_time_ms(platform);
   }
 
   // Disable interrupts to check condition atomically
-  platform_interrupt_disable();
+  platform_interrupt_disable(platform);
 
   // Check if an interrupt has already fired
-  virtio_rng_dev_t *rng = platform->virtio_rng;
+  virtio_rng_dev_t *rng = platform->virtio_rng_ptr;
   if (rng != NULL && rng->irq_pending) {
-    platform_interrupt_enable();
-    return timer_get_current_time_ms();
+    platform_interrupt_enable(platform);
+    return timer_get_current_time_ms(platform);
   }
 
   // Set timeout timer if not UINT64_MAX
@@ -88,21 +83,25 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
     // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
-    timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+    // Set callback before calling timer_set_oneshot_ms
+    platform->timer_callback = wfi_timer_callback;
+    timer_set_oneshot_ms(platform, timeout_ms_32);
   }
 
   // Atomically enable interrupts and wait
-  platform_interrupt_enable();
+  platform_interrupt_enable(platform);
   __asm__ volatile("wfi");
 
   // Return current time
-  return timer_get_current_time_ms();
+  return timer_get_current_time_ms(platform);
 }
 
 // Abort system execution (shutdown/halt)
 void platform_abort(void) {
-  // Disable interrupts
-  platform_interrupt_disable();
+  // Note: platform_interrupt_disable requires platform_t*, but we don't have
+  // access here. The CSR manipulation below achieves the same result.
+  // Disable interrupts using raw CSR access
+  __asm__ volatile("csrc sstatus, %0" ::"r"(1 << 1)); // Clear SIE bit
   // Request shutdown via SBI (causes QEMU to exit cleanly)
   sbi_shutdown();
   // Should never reach here, but halt just in case

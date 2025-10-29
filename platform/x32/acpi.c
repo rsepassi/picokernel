@@ -4,6 +4,7 @@
 
 #include "acpi.h"
 #include "io.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -51,8 +52,6 @@ static uint8_t acpi_checksum(void *addr, uint32_t length) {
   return sum;
 }
 
-// Global pointer to RSDP (found during init)
-static struct acpi_rsdp *g_rsdp = NULL;
 
 // Byte swap helpers for big-endian fw_cfg data
 static uint32_t bswap32(uint32_t x) {
@@ -221,16 +220,17 @@ static void *fw_cfg_find_rsdp(void) {
 void *acpi_find_rsdp(void) { return fw_cfg_find_rsdp(); }
 
 // Find a specific ACPI table by signature
-struct acpi_table_header *acpi_find_table(const char *signature) {
-  if (g_rsdp == NULL) {
+struct acpi_table_header *acpi_find_table(platform_t *platform,
+                                          const char *signature) {
+  if (platform->rsdp == NULL) {
     return NULL;
   }
 
   // x32: Only use RSDT (32-bit pointers), no XSDT support
-  if (g_rsdp->rsdt_address != 0) {
+  if (platform->rsdp->rsdt_address != 0) {
     // Use RSDT (32-bit pointers)
     struct acpi_rsdt *rsdt =
-        (struct acpi_rsdt *)(uintptr_t)g_rsdp->rsdt_address;
+        (struct acpi_rsdt *)(uintptr_t)platform->rsdp->rsdt_address;
 
     // Verify RSDT checksum
     if (acpi_checksum(rsdt, rsdt->header.length) != 0) {
@@ -259,22 +259,22 @@ struct acpi_table_header *acpi_find_table(const char *signature) {
 }
 
 // Initialize ACPI subsystem
-void acpi_init(void) {
+void acpi_init(platform_t *platform) {
   // Find RSDP
-  g_rsdp = (struct acpi_rsdp *)acpi_find_rsdp();
+  platform->rsdp = (struct acpi_rsdp *)acpi_find_rsdp();
 
-  if (g_rsdp == NULL) {
+  if (platform->rsdp == NULL) {
     printk("ACPI: RSDP not found\n");
     return;
   }
 
   printk("ACPI initialized (RSDP at ");
-  printk_hex32((uint32_t)(uintptr_t)g_rsdp);
+  printk_hex32((uint32_t)(uintptr_t)platform->rsdp);
   printk(", Revision ");
-  printk_dec(g_rsdp->revision);
+  printk_dec(platform->rsdp->revision);
   printk(", OEM: ");
   for (int i = 0; i < 6; i++) {
-    char c = g_rsdp->oem_id[i];
+    char c = platform->rsdp->oem_id[i];
     printk_putc(c >= 32 && c <= 126 ? c : '?');
   }
   printk(")\n\n");
@@ -347,8 +347,8 @@ static void dump_madt_details(struct acpi_table_header *header) {
 }
 
 // Dump all ACPI tables for debugging
-void acpi_dump_tables(void) {
-  if (g_rsdp == NULL) {
+void acpi_dump_tables(platform_t *platform) {
+  if (platform->rsdp == NULL) {
     printk("ACPI not initialized\n");
     return;
   }
@@ -356,9 +356,9 @@ void acpi_dump_tables(void) {
   printk("=== ACPI Tables ===\n\n");
 
   // List all tables from RSDT (x32: no XSDT support)
-  if (g_rsdp->rsdt_address != 0) {
+  if (platform->rsdp->rsdt_address != 0) {
     struct acpi_rsdt *rsdt =
-        (struct acpi_rsdt *)(uintptr_t)g_rsdp->rsdt_address;
+        (struct acpi_rsdt *)(uintptr_t)platform->rsdp->rsdt_address;
     uint32_t entries =
         (rsdt->header.length - sizeof(struct acpi_table_header)) / 4;
 

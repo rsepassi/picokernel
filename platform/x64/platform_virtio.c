@@ -10,22 +10,12 @@
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
 
-// Static storage for VirtIO devices
-// Support both PCI and MMIO transports
-static virtio_pci_transport_t g_virtio_pci_transport;
-static virtio_mmio_transport_t g_virtio_mmio_transport;
-static virtio_rng_dev_t g_virtio_rng;
-static uint8_t g_virtqueue_memory[64 * 1024] __attribute__((aligned(4096)));
-
-// Debug counters (safe to use in IRQ context)
-static volatile uint32_t g_irq_count = 0;
-static volatile uint32_t g_last_isr_status = 0;
-
 // VirtIO-RNG interrupt handler (minimal - deferred processing pattern)
 static void virtio_rng_irq_handler(void *context) {
   virtio_rng_dev_t *rng = (virtio_rng_dev_t *)context;
+  platform_t *platform = &rng->kernel->platform;
 
-  g_irq_count++; // Track IRQ calls
+  platform->irq_count++; // Track IRQ calls
 
   // Read ISR status to acknowledge device interrupt
   // Per VirtIO spec, this MUST be read to clear the interrupt line
@@ -35,7 +25,7 @@ static void virtio_rng_irq_handler(void *context) {
   } else if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
     virtio_mmio_transport_t *mmio = (virtio_mmio_transport_t *)rng->transport;
     uint32_t isr_status = virtio_mmio_read_isr(mmio);
-    g_last_isr_status = isr_status; // Save for debug
+    platform->last_isr_status = isr_status; // Save for debug
     virtio_mmio_ack_isr(mmio, isr_status);
   }
 
@@ -53,26 +43,26 @@ void mmio_scan_devices(platform_t *platform);
 static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
   // Initialize PCI transport
-  if (virtio_pci_init(&g_virtio_pci_transport, bus, slot, func) < 0) {
+  if (virtio_pci_init(&platform->virtio_pci_transport, platform, bus, slot, func) < 0) {
     return;
   }
 
   // Initialize RNG device
-  if (virtio_rng_init_pci(&g_virtio_rng, &g_virtio_pci_transport,
-                          g_virtqueue_memory, platform->kernel) < 0) {
+  if (virtio_rng_init_pci(&platform->virtio_rng_dev, &platform->virtio_pci_transport,
+                          &platform->virtqueue_memory, platform->kernel) < 0) {
     return;
   }
 
   // Setup interrupt
   uint8_t irq_line =
-      platform_pci_config_read8(bus, slot, func, PCI_REG_INTERRUPT_LINE);
+      platform_pci_config_read8(platform, bus, slot, func, PCI_REG_INTERRUPT_LINE);
   uint32_t irq_vector = 32 + irq_line;
 
-  platform_irq_register(irq_vector, virtio_rng_irq_handler, &g_virtio_rng);
-  platform_irq_enable(irq_vector);
+  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler, &platform->virtio_rng_dev);
+  platform_irq_enable(platform, irq_vector);
 
   // Store in platform
-  platform->virtio_rng = &g_virtio_rng;
+  platform->virtio_rng = &platform->virtio_rng_dev;
 }
 
 // Setup VirtIO-RNG device via MMIO
@@ -81,29 +71,29 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
   (void)mmio_size; // Size not used in generic transport
 
   // Initialize MMIO transport
-  if (virtio_mmio_init(&g_virtio_mmio_transport, (void *)mmio_base) < 0) {
+  if (virtio_mmio_init(&platform->virtio_mmio_transport, (void *)mmio_base) < 0) {
     return;
   }
 
   // Verify device ID
-  uint32_t device_id = virtio_mmio_get_device_id(&g_virtio_mmio_transport);
+  uint32_t device_id = virtio_mmio_get_device_id(&platform->virtio_mmio_transport);
   if (device_id != VIRTIO_ID_RNG) {
     return;
   }
 
   // Initialize RNG device with MMIO transport
-  if (virtio_rng_init_mmio(&g_virtio_rng, &g_virtio_mmio_transport,
-                           g_virtqueue_memory, platform->kernel) < 0) {
+  if (virtio_rng_init_mmio(&platform->virtio_rng_dev, &platform->virtio_mmio_transport,
+                           &platform->virtqueue_memory, platform->kernel) < 0) {
     return;
   }
 
   // Setup interrupt - add 32 to convert to interrupt vector
   uint32_t irq_vector = 32 + irq_num;
-  platform_irq_register(irq_vector, virtio_rng_irq_handler, &g_virtio_rng);
-  platform_irq_enable(irq_vector);
+  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler, &platform->virtio_rng_dev);
+  platform_irq_enable(platform, irq_vector);
 
   // Store in platform
-  platform->virtio_rng = &g_virtio_rng;
+  platform->virtio_rng = &platform->virtio_rng_dev;
 }
 
 // Helper to get device type name
@@ -139,7 +129,7 @@ void pci_scan_devices(platform_t *platform) {
   for (uint16_t bus = 0; bus < 4; bus++) {
     for (uint8_t slot = 0; slot < 32; slot++) {
       uint32_t vendor_device =
-          platform_pci_config_read32(bus, slot, 0, PCI_REG_VENDOR_ID);
+          platform_pci_config_read32(platform, bus, slot, 0, PCI_REG_VENDOR_ID);
 
       if (vendor_device == 0xFFFFFFFF) {
         continue; // No device

@@ -1,15 +1,13 @@
 // x64 Platform Initialization
 // Sets up interrupts, timer, and device enumeration
 
+#include "acpi.h"
 #include "interrupt.h"
 #include "platform.h"
 #include "printk.h"
 #include "timer.h"
 #include "virtio/virtio_rng.h"
 #include <stddef.h>
-
-// Forward declare internal device enumeration function
-void platform_fdt_dump(void *fdt);
 
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
@@ -26,17 +24,20 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   printk("Initializing x64 platform...\n");
 
+  // Initialize ACPI first (needed by IOAPIC)
+  acpi_init(platform);
+
   // Initialize interrupt handling (IDT)
-  interrupt_init();
+  interrupt_init(platform);
 
   // Initialize Local APIC timer
-  timer_init();
+  timer_init(platform);
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
   // to avoid spurious interrupts during device enumeration
 
   // Parse and display device tree (ACPI-based on x64)
-  platform_fdt_dump(NULL);
+  platform_fdt_dump(platform, NULL);
 
   // Scan for VirtIO devices via both PCI and MMIO (ACPI)
   printk("=== Starting VirtIO Device Scan ===\n\n");
@@ -51,7 +52,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 // Returns: current time in milliseconds
 uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   if (timeout_ms == 0) {
-    return timer_get_current_time_ms();
+    return timer_get_current_time_ms(platform);
   }
 
   // Disable interrupts to check condition atomically
@@ -61,7 +62,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   virtio_rng_dev_t *rng = platform->virtio_rng;
   if (rng != NULL && rng->irq_pending) {
     __asm__ volatile("sti"); // Re-enable interrupts before returning
-    return timer_get_current_time_ms();
+    return timer_get_current_time_ms(platform);
   }
 
   // Set timeout timer if not UINT64_MAX
@@ -69,7 +70,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
     // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
-    timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+    timer_set_oneshot_ms(platform, timeout_ms_32, wfi_timer_callback);
   }
 
   // Atomically enable interrupts and halt
@@ -78,7 +79,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   __asm__ volatile("sti; hlt");
 
   // Return current time
-  return timer_get_current_time_ms();
+  return timer_get_current_time_ms(platform);
 }
 
 // Abort system execution (shutdown/halt)

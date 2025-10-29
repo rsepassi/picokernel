@@ -4,21 +4,23 @@
 #pragma once
 
 #include <stdint.h>
+#include "platform_impl.h"
 
 // Initialize GIC and exception vectors
-void interrupt_init(void);
+void interrupt_init(platform_t *platform);
 
 // Enable interrupts (clear I bit in CPSR)
-void platform_interrupt_enable(void);
+void platform_interrupt_enable(platform_t *platform);
 
 // Disable interrupts (set I bit in CPSR)
-void platform_interrupt_disable(void);
+void platform_interrupt_disable(platform_t *platform);
 
 // Register IRQ handler
-void irq_register(uint32_t irq_num, void (*handler)(void *), void *context);
+void irq_register(platform_t *platform, uint32_t irq_num,
+                  void (*handler)(void *), void *context);
 
 // Enable (unmask) a specific IRQ in the GIC
-void irq_enable(uint32_t irq_num);
+void irq_enable(platform_t *platform, uint32_t irq_num);
 
 // Dispatch IRQ (called from exception handler)
 void irq_dispatch(uint32_t irq_num);
