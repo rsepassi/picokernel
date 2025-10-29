@@ -27,14 +27,25 @@ _start:
     orr r0, r0, #0x13         // Set Supervisor mode (0x13)
     msr cpsr_c, r0            // Back to Supervisor mode
 
-    // Pass device tree pointer to main in r0
+    // Clear BSS section (required for C runtime)
+    ldr r0, =__bss_start
+    ldr r1, =__bss_end
+    mov r2, #0
+.Lclear_bss_loop:
+    cmp r0, r1
+    bge .Lclear_bss_done
+    str r2, [r0], #4          // Store 0 and increment r0 by 4
+    b .Lclear_bss_loop
+.Lclear_bss_done:
+
+    // Pass device tree pointer to kmain in r0
     // For ELF kernels, QEMU places DTB at start of RAM
     ldr r0, =0x40000000
 
     // Branch to C entry point
-    bl main
+    bl kmain
 
-    // If main returns, hang
+    // If kmain returns, hang
 hang:
     wfe
     b hang

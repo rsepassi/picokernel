@@ -25,8 +25,10 @@ SECTIONS
     }
 
     .bss : {
+        __bss_start = .;
         *(.bss*)
         *(COMMON)
+        __bss_end = .;
     }
 
     /* End of kernel */

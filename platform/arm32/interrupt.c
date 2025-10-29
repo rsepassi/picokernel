@@ -48,6 +48,18 @@ static inline uint32_t gicc_read32(uint32_t offset) {
   return *(volatile uint32_t *)(GICC_BASE + offset);
 }
 
+// Maximum number of IRQs supported by GICv2
+#define MAX_IRQS 1024
+
+// IRQ handler table entry
+typedef struct {
+  void *context;
+  void (*handler)(void *context);
+} irq_entry_t;
+
+// IRQ dispatch table
+static irq_entry_t g_irq_table[MAX_IRQS];
+
 // Forward declare timer handler
 void timer_handler(void);
 
@@ -80,10 +92,8 @@ void interrupt_handler(uint32_t vector) {
       // No EOI needed for spurious interrupts
       return;
     } else {
-      // Unknown interrupt - just acknowledge it
-      printk("Unhandled IRQ: ");
-      printk_dec(irq);
-      printk("\n");
+      // Dispatch to registered handler
+      irq_dispatch(irq);
     }
 
     // Send EOI (End of Interrupt)
@@ -195,4 +205,83 @@ void platform_interrupt_disable(void) {
                    "orr r0, r0, #0x80\n" // Set I bit (bit 7)
                    "msr cpsr_c, r0\n" ::
                        : "r0");
+}
+
+// Configure interrupt trigger type (level/edge)
+// trigger: 0 = level-sensitive, 1 = edge-triggered
+static void irq_set_trigger(uint32_t irq_num, uint32_t trigger) {
+  if (irq_num >= MAX_IRQS) {
+    return;
+  }
+
+  // GICD_ICFGR: 2 bits per interrupt
+  // Bit [2n+1]: 0 = level-sensitive, 1 = edge-triggered
+  // Bit [2n]: reserved (model-specific)
+  uint32_t reg = irq_num / 16;
+  uint32_t shift = (irq_num % 16) * 2;
+  uint32_t val = gicd_read32(GICD_ICFGR + (reg * 4));
+
+  // Clear the trigger bit
+  val &= ~(0x2 << shift);
+
+  // Set the trigger bit if edge-triggered
+  if (trigger) {
+    val |= (0x2 << shift);
+  }
+
+  gicd_write32(GICD_ICFGR + (reg * 4), val);
+}
+
+// Register IRQ handler
+void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
+  if (irq_num >= MAX_IRQS) {
+    return;
+  }
+
+  g_irq_table[irq_num].handler = handler;
+  g_irq_table[irq_num].context = context;
+
+  // VirtIO MMIO interrupts are edge-triggered (from device tree)
+  // Configure as edge-triggered for all non-timer IRQs
+  if (irq_num != TIMER_IRQ) {
+    irq_set_trigger(irq_num, 1); // 1 = edge-triggered
+  }
+
+  printk("IRQ ");
+  printk_dec(irq_num);
+  printk(" registered (");
+  printk(irq_num == TIMER_IRQ ? "level" : "edge");
+  printk("-triggered, target CPU 0)\n");
+}
+
+// Enable (unmask) a specific IRQ in the GIC
+void irq_enable(uint32_t irq_num) {
+  if (irq_num >= MAX_IRQS) {
+    return;
+  }
+
+  // Enable interrupt in GIC Distributor
+  uint32_t reg_idx = irq_num / 32;
+  uint32_t bit_idx = irq_num % 32;
+  gicd_write32(GICD_ISENABLER0 + (reg_idx * 4), 1 << bit_idx);
+
+  printk("IRQ ");
+  printk_dec(irq_num);
+  printk(" enabled in GIC\n");
+}
+
+// Dispatch IRQ to registered handler
+void irq_dispatch(uint32_t irq_num) {
+  if (irq_num >= MAX_IRQS) {
+    return;
+  }
+
+  if (g_irq_table[irq_num].handler != NULL) {
+    g_irq_table[irq_num].handler(g_irq_table[irq_num].context);
+  } else {
+    // Unknown interrupt - just print a warning
+    printk("Unhandled IRQ: ");
+    printk_dec(irq_num);
+    printk("\n");
+  }
 }

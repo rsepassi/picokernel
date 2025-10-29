@@ -3,9 +3,8 @@
 
 #include "timer.h"
 #include "printk.h"
+#include <stddef.h>
 #include <stdint.h>
-
-#define NULL ((void *)0)
 
 // ARM Generic Timer registers (CP15 coprocessor)
 // CNTFRQ: Counter Frequency register
@@ -26,11 +25,21 @@ static uint32_t g_timer_freq = 0;
 // Ticks per millisecond
 static uint32_t g_ticks_per_ms = 0;
 
+// Start time counter value
+static uint64_t g_timer_start = 0;
+
 // Read CNTFRQ (Counter Frequency) register
 static inline uint32_t read_cntfrq(void) {
   uint32_t value;
   __asm__ volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(value));
   return value;
+}
+
+// Read CNTVCT (Virtual Counter) register - 64-bit
+static inline uint64_t read_cntvct(void) {
+  uint32_t low, high;
+  __asm__ volatile("mrrc p15, 1, %0, %1, c14" : "=r"(low), "=r"(high));
+  return ((uint64_t)high << 32) | low;
 }
 
 // Write CNTV_TVAL (Virtual Timer TimerValue) register - 32-bit
@@ -79,6 +88,9 @@ void timer_init(void) {
 
   // Disable timer initially
   write_cntv_ctl(0);
+
+  // Capture start time for timer_get_current_time_ms()
+  g_timer_start = read_cntvct();
 }
 
 // Set a one-shot timer to fire after specified milliseconds
@@ -117,3 +129,17 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback) {
 
 // Get the timer frequency in Hz
 uint32_t timer_get_frequency(void) { return g_timer_freq; }
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+  uint64_t counter_now = read_cntvct();
+  uint64_t counter_elapsed = counter_now - g_timer_start;
+
+  if (g_timer_freq == 0) {
+    return 0;
+  }
+
+  // Convert counter ticks to milliseconds
+  // ms = (ticks * 1000) / freq_hz
+  return (counter_elapsed * 1000) / g_timer_freq;
+}
