@@ -30,7 +30,7 @@ typedef struct virtio_rng_dev {
 
   // Virtqueue
   virtqueue_t vq;
-  void *vq_memory;
+  virtqueue_memory_t *vq_memory;
   uint16_t queue_size;
 
   // Request tracking (constant-time lookup)
@@ -49,11 +49,11 @@ typedef struct virtio_rng_dev {
 
 // Initialize RNG with MMIO transport
 int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
-                         void *queue_memory, kernel_t *kernel);
+                         virtqueue_memory_t *queue_memory, kernel_t *kernel);
 
 // Initialize RNG with PCI transport
 int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
-                        void *queue_memory, kernel_t *kernel);
+                        virtqueue_memory_t *queue_memory, kernel_t *kernel);
 
 // Process interrupt (transport-agnostic)
 void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k);

@@ -8,7 +8,7 @@
 
 // Initialize RNG with MMIO transport
 int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
-                         void *queue_memory, kernel_t *kernel) {
+                         virtqueue_memory_t *queue_memory, kernel_t *kernel) {
   rng->transport = mmio;
   rng->transport_type = VIRTIO_TRANSPORT_MMIO;
   rng->kernel = kernel;
@@ -81,7 +81,7 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
 
 // Initialize RNG with PCI transport
 int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
-                        void *queue_memory, kernel_t *kernel) {
+                        virtqueue_memory_t *queue_memory, kernel_t *kernel) {
   rng->transport = pci;
   rng->transport_type = VIRTIO_TRANSPORT_PCI;
   rng->kernel = kernel;

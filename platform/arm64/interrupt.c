@@ -3,6 +3,7 @@
 
 #include "interrupt.h"
 #include "printk.h"
+#include "timer.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -41,20 +42,18 @@ static inline uint32_t mmio_read32(uint64_t addr) {
   return *(volatile uint32_t *)addr;
 }
 
-// Forward declare timer handler
-void generic_timer_handler(void);
+// Timer handler is declared in timer.h
 
 // Forward declare exception handler (called from vectors.S)
 void exception_handler(uint64_t type, uint64_t esr, uint64_t elr, uint64_t far);
 
-// IRQ handler table entry
-typedef struct {
-  void *context;
-  void (*handler)(void *context);
-} irq_entry_t;
-
-// IRQ dispatch table
-static irq_entry_t g_irq_table[MAX_IRQS];
+// IRQ dispatch table is now in platform_t
+// However, exception_handler() is called from assembly and cannot receive
+// platform_t* So we store a module-local pointer to the active platform for
+// interrupt dispatch only NOTE: This limits us to one platform instance per CPU
+// (acceptable for embedded) This pointer is ONLY used by
+// exception_handler/irq_dispatch and nowhere else
+static platform_t *g_current_platform = NULL;
 
 // External exception vector table (defined in vectors.S)
 extern void exception_vector_table(void);
@@ -96,17 +95,14 @@ void exception_handler(uint64_t type, uint64_t esr, uint64_t elr,
     // Read interrupt acknowledge register to get interrupt ID
     uint32_t irq = mmio_read32(GICC_IAR) & 0x3FF;
 
-    if (irq == TIMER_IRQ) {
-      // Timer interrupt - call timer handler
-      generic_timer_handler();
-    } else if (irq >= 1020) {
+    if (irq >= 1020) {
       // Spurious interrupt (1023) or special value
       // Don't send EOI for spurious interrupts
       return;
-    } else {
-      // Dispatch to registered handler
-      irq_dispatch(irq);
     }
+
+    // Dispatch to registered handler (including timer)
+    irq_dispatch(g_current_platform, irq);
 
     // Send End of Interrupt
     mmio_write32(GICC_EOIR, irq);
@@ -208,7 +204,10 @@ static void gic_init(void) {
 }
 
 // Initialize exception vectors and GIC
-void interrupt_init(void) {
+void interrupt_init(platform_t *platform) {
+  // Store platform pointer for exception handler access
+  g_current_platform = platform;
+
   // Install exception vector table
   // VBAR_EL1 holds the base address of exception vectors
   uint64_t vbar = (uint64_t)exception_vector_table;
@@ -221,6 +220,9 @@ void interrupt_init(void) {
 
   // Initialize GIC
   gic_init();
+
+  // Register timer interrupt with platform context
+  irq_register(platform, TIMER_IRQ, generic_timer_handler, platform);
 }
 
 // Enable interrupts (unmask IRQ and FIQ in DAIF)
@@ -264,13 +266,14 @@ static void irq_set_trigger(uint32_t irq_num, uint32_t trigger) {
 }
 
 // Register IRQ handler
-void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
+void irq_register(platform_t *platform, uint32_t irq_num,
+                  void (*handler)(void *), void *context) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  g_irq_table[irq_num].handler = handler;
-  g_irq_table[irq_num].context = context;
+  platform->irq_table[irq_num].handler = handler;
+  platform->irq_table[irq_num].context = context;
 
   // VirtIO MMIO interrupts are edge-triggered (from device tree)
   // Configure as edge-triggered for all non-timer IRQs
@@ -286,7 +289,9 @@ void irq_register(uint32_t irq_num, void (*handler)(void *), void *context) {
 }
 
 // Enable (unmask) a specific IRQ in the GIC
-void irq_enable(uint32_t irq_num) {
+void irq_enable(platform_t *platform, uint32_t irq_num) {
+  (void)platform; // Platform not needed for GIC operations
+
   if (irq_num >= MAX_IRQS) {
     return;
   }
@@ -300,18 +305,20 @@ void irq_enable(uint32_t irq_num) {
 }
 
 // Dispatch IRQ to registered handler
-void irq_dispatch(uint32_t irq_num) {
+void irq_dispatch(platform_t *platform, uint32_t irq_num) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  if (g_irq_table[irq_num].handler != NULL) {
-    g_irq_table[irq_num].handler(g_irq_table[irq_num].context);
+  if (platform->irq_table[irq_num].handler != NULL) {
+    platform->irq_table[irq_num].handler(platform->irq_table[irq_num].context);
   }
 }
 
 // Dump GIC configuration for a specific IRQ (for debugging)
-void irq_dump_config(uint32_t irq_num) {
+void irq_dump_config(platform_t *platform, uint32_t irq_num) {
+  (void)platform; // Platform not needed for GIC operations
+
   if (irq_num >= MAX_IRQS) {
     return;
   }

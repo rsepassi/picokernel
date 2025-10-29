@@ -20,21 +20,15 @@ static void wfi_timer_callback(void) {}
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
-  platform->virtio_rng = NULL;
+  platform->virtio_rng_ptr = NULL;
 
   printk("Initializing ARM64 platform...\n");
 
   // Initialize exception vectors and GIC
-  interrupt_init();
+  interrupt_init(platform);
 
   // Initialize ARM Generic Timer
-  timer_init();
-
-  // Read and store timer frequency
-  platform->timer_freq_hz = timer_get_frequency();
-
-  // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
-  // to avoid spurious interrupts during device enumeration
+  timer_init(platform);
 
   // Parse and display device tree
   platform_fdt_dump(fdt);
@@ -52,17 +46,17 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 // Returns: current time in milliseconds
 uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   if (timeout_ms == 0) {
-    return timer_get_current_time_ms();
+    return timer_get_current_time_ms(platform);
   }
 
   // Disable interrupts to check condition atomically
   __asm__ volatile("msr daifset, #2" ::: "memory"); // Disable IRQs
 
   // Check if an interrupt has already fired
-  virtio_rng_dev_t *rng = platform->virtio_rng;
+  virtio_rng_dev_t *rng = platform->virtio_rng_ptr;
   if (rng != NULL && rng->irq_pending) {
     __asm__ volatile("msr daifclr, #2" ::: "memory"); // Re-enable IRQs
-    return timer_get_current_time_ms();
+    return timer_get_current_time_ms(platform);
   }
 
   // Set timeout timer if not UINT64_MAX
@@ -70,14 +64,14 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
     // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
-    timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
+    timer_set_oneshot_ms(platform, timeout_ms_32, wfi_timer_callback);
   }
 
   // Atomically enable interrupts and wait
   __asm__ volatile("msr daifclr, #2; wfi" ::: "memory");
 
   // Return current time
-  return timer_get_current_time_ms();
+  return timer_get_current_time_ms(platform);
 }
 
 // Abort system execution (shutdown/halt)

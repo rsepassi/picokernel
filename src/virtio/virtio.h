@@ -103,6 +103,51 @@ void virtqueue_get_used(virtqueue_t *vq, uint16_t *desc_idx, uint32_t *len);
 // Free descriptor
 void virtqueue_free_desc(virtqueue_t *vq, uint16_t desc_idx);
 
+// VirtQueue Memory Layout
+// Pre-allocated memory structure for a virtqueue with max queue size.
+// This provides properly typed storage instead of using untyped byte arrays.
+//
+// The virtqueue memory consists of three parts laid out contiguously:
+// 1. Descriptor table: queue_size * sizeof(virtq_desc_t)
+// 2. Available ring: flags(2) + idx(2) + ring[queue_size](2*N) + used_event(2)
+// 3. Used ring (4K-aligned): flags(2) + idx(2) + ring[queue_size](8*N) +
+// avail_event(2)
+//
+// Maximum queue size for VirtIO-RNG is typically 256.
+// Total space requirements:
+// - Descriptor table: 256 * 16 = 4096 bytes
+// - Available ring: 4 + 512 + 2 = 518 bytes
+// - Padding to 4K alignment
+// - Used ring: 4 + 2048 + 2 = 2054 bytes
+
+#define VIRTQUEUE_MAX_SIZE 256
+
+typedef struct {
+  // Descriptor table (256 entries * 16 bytes = 4096 bytes)
+  virtq_desc_t descriptors[VIRTQUEUE_MAX_SIZE];
+
+  // Available ring (518 bytes)
+  struct {
+    uint16_t flags;
+    uint16_t idx;
+    uint16_t ring[VIRTQUEUE_MAX_SIZE];
+    uint16_t used_event; // Only used if VIRTIO_F_EVENT_IDX negotiated
+  } __attribute__((packed)) available;
+
+  // Padding to align used ring to 4K boundary
+  // Descriptor table is 4096 bytes, available ring is 518 bytes
+  // Total so far: 4614 bytes, need to pad to 8192 (next 4K boundary)
+  uint8_t padding[8192 - 4096 - 518];
+
+  // Used ring (2054 bytes)
+  struct {
+    uint16_t flags;
+    uint16_t idx;
+    virtq_used_elem_t ring[VIRTQUEUE_MAX_SIZE];
+    uint16_t avail_event; // Only used if VIRTIO_F_EVENT_IDX negotiated
+  } __attribute__((packed)) used;
+} __attribute__((aligned(4096))) virtqueue_memory_t;
+
 // Event index helpers (only valid when VIRTIO_F_EVENT_IDX negotiated)
 // Determine if event notification is needed
 static inline int virtq_need_event(uint16_t event_idx, uint16_t new_idx,

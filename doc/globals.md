@@ -273,8 +273,95 @@ src/platform.h                - Interface remains unchanged
 
 ---
 
+## ARM64 Refactoring Results (Completed 2025-10-29)
+
+### Summary
+
+ARM64 has been successfully refactored to move all globals into `platform_t`. The platform boots, runs VirtIO-RNG, and passes all functional tests.
+
+### Key Changes
+
+**1. Platform Structure Updates** (`platform/arm64/platform_impl.h`)
+- Added timer state: `timer_freq_hz`, `timer_start`, `timer_callback`
+- Added VirtIO device structures: `virtio_pci_transport`, `virtio_mmio_transport`, `virtio_rng`
+- Added VirtIO queue memory: `virtqueue_memory_t virtqueue_memory` (properly typed, not raw bytes)
+- Added IRQ table: `irq_entry_t irq_table[MAX_IRQS]` (1024 entries)
+
+**2. Function Signature Updates**
+All platform-internal functions now accept `platform_t*`:
+- `timer_init(platform_t*)`, `timer_set_oneshot_ms(platform_t*, ...)`, etc.
+- `interrupt_init(platform_t*)`, `irq_register(platform_t*, ...)`, etc.
+- VirtIO init functions now use `&platform->virtqueue_memory`
+
+**3. Unavoidable Module-Local State**
+
+One module-local pointer remains:
+```c
+// platform/arm64/interrupt.c:56
+static platform_t *g_current_platform = NULL;
+```
+
+**Reason**: `exception_handler()` is called from assembly (`vectors.S`) and cannot receive parameters. This is an architectural limitation common to all platforms with exception vectors in assembly.
+
+**Scope**: Only used for interrupt dispatch; not a general-purpose global.
+
+**4. Stack Overflow Prevention** (`src/kmain.c`)
+
+Moved `kernel_t` from stack to file-level static:
+```c
+static kernel_t g_kernel;
+```
+
+**Reason**: With IRQ table (1024 entries × 16 bytes = 16KB) and typed virtqueue memory (~16KB), `platform_t` is now ~32KB. Combined with other kernel state, stack allocation risked overflow.
+
+**Alternative Considered**: Could have kept virtqueue_memory as module-local, but properly typing it (as `virtqueue_memory_t`) was deemed more important than avoiding file-level storage.
+
+### Lessons for Other Platform Ports
+
+**1. Header Organization**
+- `platform_impl.h` needs complete type definitions (not forward declarations) for embedded structs
+- Include `virtio/virtio.h` for `virtqueue_memory_t` type
+- Define `timer_callback_t` and `irq_entry_t` in `platform_impl.h` to avoid circular dependencies
+
+**2. Exception Handlers**
+- Assembly-invoked exception handlers cannot easily receive `platform_t*`
+- Acceptable solution: module-local pointer set during `interrupt_init()`
+- Document this clearly as architectural limitation, not laziness
+
+**3. Platform Hooks** (`platform_hooks.c`)
+- Platform API functions (`platform_irq_register`, `platform_irq_enable`) don't have `platform_t*` in their signature
+- Solution: Use `extern platform_t *g_current_platform` from interrupt.c
+- Document that these hooks rely on interrupt subsystem initialization
+
+**4. Queue Memory Typing**
+- Use `virtqueue_memory_t` (defined in `virtio/virtio.h`) instead of raw byte arrays
+- This provides type safety and documents the structure layout
+- Acceptable to keep in `platform_t` despite size (~16KB) since kernel_t is now file-level
+
+**5. Build Verification**
+- Test incrementally: expand struct → update one subsystem → build → repeat
+- Watch for typedef conflicts between headers (use include guards carefully)
+- Large structs may require moving kernel_t to file-level storage
+
+**6. Files Modified Per Platform** (arm64 example)
+- `platform_impl.h` - Expand platform_t structure
+- `timer.c`, `timer.h` - Add platform_t* parameter
+- `interrupt.c`, `interrupt.h` - Add platform_t* parameter, add g_current_platform
+- `platform_virtio.c` - Use platform->virtqueue_memory
+- `platform_hooks.c` - Reference g_current_platform for API compatibility
+- `platform_init.c` - Pass platform to subsystems
+
+**7. Testing**
+- Verify device discovery (PCI/MMIO scan)
+- Verify interrupt delivery (timer + device IRQs)
+- Verify VirtIO operations (RNG entropy generation)
+- Check for stack overflows (watch boot behavior, add stack canaries if needed)
+
+---
+
 **Next Actions**:
-1. Review this document with team
-2. Choose pilot platform (recommend x64)
-3. Create feature branch for refactoring
-4. Implement, test, and iterate
+1. ~~Review this document with team~~ (DONE)
+2. ~~Choose pilot platform (recommend x64)~~ (DONE - used arm64)
+3. ~~Create feature branch for refactoring~~ (DONE)
+4. ~~Implement, test, and iterate~~ (DONE - arm64 complete)
+5. **Apply learnings to remaining platforms: arm32, rv32, rv64, x32, x64**
