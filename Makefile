@@ -24,6 +24,7 @@ BUILD_DIR = build/$(PLATFORM)
 
 # Platform configuration
 PLATFORM_DIR = platform/$(PLATFORM)
+PLATFORM_SHARED_DIR = platform/shared
 include $(PLATFORM_DIR)/platform.mk
 
 # Compiler
@@ -52,7 +53,7 @@ PLATFORM_C_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_C_SRCS))
 PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 
 # Shared sources (selected by platform.mk via PLATFORM_SHARED_SRCS)
-SHARED_SOURCES = $(addprefix $(SRC_DIR)/,$(PLATFORM_SHARED_SRCS))
+PLATFORM_SHARED_SOURCES = $(addprefix $(PLATFORM_SHARED_DIR)/,$(PLATFORM_SHARED_SRCS))
 
 # Common C sources
 C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
@@ -70,16 +71,16 @@ VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(VENDOR_DIR)/monocypher/monocypher-ed25519.c
 
 # Header files (all .o files depend on all headers)
-HEADERS = $(shell find $(SRC_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
+HEADERS = $(shell find $(SRC_DIR) $(PLATFORM_DIR) $(PLATFORM_SHARED_DIR) -name '*.h' 2>/dev/null)
 
 # Object files in build directory (maintaining source tree structure)
 PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
 PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
-SHARED_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(SHARED_SOURCES))
+PLATFORM_SHARED_OBJS = $(patsubst $(PLATFORM_SHARED_DIR)/%.c,$(BUILD_DIR)/shared/%.o,$(PLATFORM_SHARED_SOURCES))
 C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(C_SOURCES))
 VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(PLATFORM_SHARED_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -98,12 +99,21 @@ else
                 -device virtio-net-device,netdev=net0
 endif
 
-.PHONY: all run clean format
-all: $(KERNEL)
+.PHONY: default run clean format
+default: $(KERNEL)
+
+all:
+	$(MAKE) PLATFORM=rv32
+	$(MAKE) PLATFORM=rv64
+	$(MAKE) PLATFORM=x32
+	$(MAKE) PLATFORM=x64
+	$(MAKE) PLATFORM=arm32
+	$(MAKE) PLATFORM=arm64
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/src/virtio
 	mkdir -p $(BUILD_DIR)/platform
+	mkdir -p $(BUILD_DIR)/shared
 	mkdir -p $(BUILD_DIR)/vendor/monocypher
 
 $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
@@ -112,13 +122,16 @@ $(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 $(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
 
+$(BUILD_DIR)/shared/%.o: $(PLATFORM_SHARED_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
+
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
 
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(SHARED_SOURCES) $(HEADERS) $(LINKER_SCRIPT)
+$(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(PLATFORM_SHARED_SOURCES) $(HEADERS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
 run: $(KERNEL)
