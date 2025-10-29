@@ -4,17 +4,18 @@
 #include "pci.h"
 #include <stdint.h>
 
-// ECAM base address for QEMU virt machine
-// This is the standard base address used by QEMU's ARM virt platform
-#define PCI_ECAM_BASE 0x4010000000ULL
+// ECAM base address for QEMU virt machine with highmem=off
+// When highmem=off, ECAM is placed within 32-bit addressable space at 0x3f000000
+// This allows direct access without requiring LPAE (Large Physical Address Extension)
+#define PCI_ECAM_BASE 0x3f000000UL
 
 // Calculate ECAM address for PCI configuration space access
 // ECAM layout: [bus:8][device:5][function:3][offset:12]
 static inline volatile void *pci_ecam_address(uint8_t bus, uint8_t slot,
                                               uint8_t func, uint8_t offset) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) |
-                  (uint64_t)offset;
+  uint32_t addr = PCI_ECAM_BASE | ((uint32_t)bus << 20) |
+                  ((uint32_t)slot << 15) | ((uint32_t)func << 12) |
+                  (uint32_t)offset;
   return (volatile void *)addr;
 }
 

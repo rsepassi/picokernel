@@ -3,7 +3,7 @@
 TARGET = arm-none-eabi
 
 QEMU = qemu-system-arm
-QEMU_MACHINE = virt
+QEMU_MACHINE = virt,highmem=off
 QEMU_CPU = cortex-a15
 
 # VirtIO transport selection
