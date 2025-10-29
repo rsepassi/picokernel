@@ -12,11 +12,11 @@ _start:
     // Set up stack pointer
     la sp, stack_top
 
-    // Pass DTB pointer as first argument to main
+    // Pass DTB pointer as first argument to kmain
     mv a0, a1
 
     // Branch to C entry point
-    call main
+    call kmain
 
     // If main returns, hang
 hang:

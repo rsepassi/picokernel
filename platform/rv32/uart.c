@@ -1,6 +1,8 @@
 // RISC-V 32-bit UART driver
 // NS16550A UART for QEMU virt machine
 
+#include "platform.h"
+
 // NS16550A UART base address for RISC-V virt machine
 #define UART_BASE 0x10000000UL
 

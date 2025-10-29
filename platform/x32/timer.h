@@ -13,3 +13,9 @@ void timer_init(void);
 
 // Set a one-shot timer to fire after specified milliseconds
 void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback);
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void);
+
+// LAPIC timer interrupt handler
+void lapic_timer_handler(void);

@@ -9,19 +9,19 @@
 static inline sbi_ret_t sbi_ecall_impl(long ext, long fid, long arg0, long arg1,
                                        long arg2, long arg3, long arg4,
                                        long arg5) {
-  register long a0 asm("a0") = arg0;
-  register long a1 asm("a1") = arg1;
-  register long a2 asm("a2") = arg2;
-  register long a3 asm("a3") = arg3;
-  register long a4 asm("a4") = arg4;
-  register long a5 asm("a5") = arg5;
-  register long a6 asm("a6") = fid;
-  register long a7 asm("a7") = ext;
+  register long a0 __asm__("a0") = arg0;
+  register long a1 __asm__("a1") = arg1;
+  register long a2 __asm__("a2") = arg2;
+  register long a3 __asm__("a3") = arg3;
+  register long a4 __asm__("a4") = arg4;
+  register long a5 __asm__("a5") = arg5;
+  register long a6 __asm__("a6") = fid;
+  register long a7 __asm__("a7") = ext;
 
-  asm volatile("ecall"
-               : "+r"(a0), "+r"(a1)
-               : "r"(a2), "r"(a3), "r"(a4), "r"(a5), "r"(a6), "r"(a7)
-               : "memory");
+  __asm__ volatile("ecall"
+                   : "+r"(a0), "+r"(a1)
+                   : "r"(a2), "r"(a3), "r"(a4), "r"(a5), "r"(a6), "r"(a7)
+                   : "memory");
 
   sbi_ret_t ret;
   ret.error = a0;
@@ -74,11 +74,11 @@ uint64_t sbi_get_time(void) {
   // to handle overflow between low and high reads
   uint32_t hi, lo;
   do {
-    asm volatile("rdtimeh %0" : "=r"(hi));
-    asm volatile("rdtime %0" : "=r"(lo));
+    __asm__ volatile("rdtimeh %0" : "=r"(hi));
+    __asm__ volatile("rdtime %0" : "=r"(lo));
     // Read hi again to check for overflow
     uint32_t hi2;
-    asm volatile("rdtimeh %0" : "=r"(hi2));
+    __asm__ volatile("rdtimeh %0" : "=r"(hi2));
     // If hi changed, loop and try again
     if (hi == hi2) {
       break;
@@ -89,17 +89,17 @@ uint64_t sbi_get_time(void) {
 #else
   // For RV64, single instruction
   uint64_t time;
-  asm volatile("rdtime %0" : "=r"(time));
+  __asm__ volatile("rdtime %0" : "=r"(time));
   return time;
 #endif
 #else
   // Default to RV32 behavior
   uint32_t hi, lo;
   do {
-    asm volatile("rdtimeh %0" : "=r"(hi));
-    asm volatile("rdtime %0" : "=r"(lo));
+    __asm__ volatile("rdtimeh %0" : "=r"(hi));
+    __asm__ volatile("rdtime %0" : "=r"(lo));
     uint32_t hi2;
-    asm volatile("rdtimeh %0" : "=r"(hi2));
+    __asm__ volatile("rdtimeh %0" : "=r"(hi2));
     if (hi == hi2) {
       break;
     }

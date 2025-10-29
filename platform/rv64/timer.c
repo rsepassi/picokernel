@@ -5,15 +5,20 @@
 #include "platform.h"
 #include "printk.h"
 #include "sbi.h"
+#include <stddef.h>
 #include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Global callback function pointer
 static timer_callback_t g_timer_callback = NULL;
 
 // Timer frequency in Hz (read from device tree)
 static uint64_t g_timebase_freq = 10000000; // Default: 10 MHz (common in QEMU)
+
+// Start time counter value
+static uint64_t g_timer_start = 0;
+
+// Forward declaration from interrupt.h
+void timer_handler(void);
 
 // Timer interrupt handler (called from interrupt.c)
 void timer_handler(void) {
@@ -55,7 +60,9 @@ static uint64_t find_timebase_frequency(void *fdt) {
   const char *strings = (const char *)fdt + off_strings;
 
   // Walk through the device tree looking for timebase-frequency
-  const uint32_t *ptr = (const uint32_t *)struct_block;
+  // Note: alignment is guaranteed by FDT spec
+  const uint32_t *ptr;
+  __builtin_memcpy(&ptr, &struct_block, sizeof(ptr));
   int in_cpus = 0; // Track if we're in /cpus node
 
   while (1) {
@@ -147,6 +154,9 @@ void timer_init(void *fdt, uint64_t *out_freq) {
     *out_freq = g_timebase_freq;
   }
 
+  // Capture start time for timer_get_current_time_ms()
+  g_timer_start = rdtime();
+
   // Disable any pending timer interrupts
   sbi_set_timer(~0ULL);
 }
@@ -180,3 +190,17 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback) {
 
 // Get current timer frequency
 uint64_t timer_get_frequency(void) { return g_timebase_freq; }
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+  uint64_t counter_now = rdtime();
+  uint64_t counter_elapsed = counter_now - g_timer_start;
+
+  if (g_timebase_freq == 0) {
+    return 0;
+  }
+
+  // Convert counter ticks to milliseconds
+  // ms = (ticks * 1000) / freq_hz
+  return (counter_elapsed * 1000) / g_timebase_freq;
+}

@@ -3,10 +3,10 @@
 // x32 version uses 32-bit pointers
 
 #include "acpi.h"
+#include "platform.h"
 #include "printk.h"
+#include <stddef.h>
 #include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Parse and display MADT (Multiple APIC Description Table)
 static void parse_madt(void) {

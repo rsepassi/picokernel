@@ -162,6 +162,68 @@ isr_stub_32:
     // Return from interrupt
     iretq
 
+// IRQ interrupt stubs (vectors 33-47)
+// Macro to create IRQ stubs
+.macro ISR_IRQ num
+.global isr_stub_\num
+.type isr_stub_\num, @function
+isr_stub_\num:
+    // Save all registers
+    push %rax
+    push %rbx
+    push %rcx
+    push %rdx
+    push %rsi
+    push %rdi
+    push %rbp
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+
+    mov $\num, %rdi
+    call interrupt_handler
+
+    // Restore all registers
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rbp
+    pop %rdi
+    pop %rsi
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    iretq
+.endm
+
+ISR_IRQ 33
+ISR_IRQ 34
+ISR_IRQ 35
+ISR_IRQ 36
+ISR_IRQ 37
+ISR_IRQ 38
+ISR_IRQ 39
+ISR_IRQ 40
+ISR_IRQ 41
+ISR_IRQ 42
+ISR_IRQ 43
+ISR_IRQ 44
+ISR_IRQ 45
+ISR_IRQ 46
+ISR_IRQ 47
+
 // Spurious interrupt stub (vector 255)
 // Minimal handler - spurious interrupts don't need EOI or processing
 .global isr_stub_255

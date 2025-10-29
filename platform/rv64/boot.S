@@ -15,7 +15,7 @@ _start:
     mv a0, a1
 
     // Branch to C entry point
-    call main
+    call kmain
 
     // If main returns, hang
 hang:

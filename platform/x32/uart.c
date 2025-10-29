@@ -2,6 +2,7 @@
 // 8250/16550 serial port (COM1) for QEMU microvm/q35
 // (Identical to x64 version - no pointer-dependent code)
 
+#include "platform.h"
 #include "io.h"
 
 // COM1 serial port I/O port base address

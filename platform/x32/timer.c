@@ -3,9 +3,8 @@
 
 #include "timer.h"
 #include "printk.h"
+#include <stddef.h>
 #include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Local APIC register offsets from base address
 // Base address will be read from IA32_APIC_BASE MSR during init
@@ -51,12 +50,23 @@ static inline void write_msr(uint32_t msr, uint64_t value) {
   __asm__ volatile("wrmsr" : : "c"(msr), "a"(low), "d"(high));
 }
 
+// Read TSC (Time Stamp Counter)
+static inline uint64_t read_tsc(void) {
+  uint32_t low, high;
+  __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+  return ((uint64_t)high << 32) | low;
+}
+
 // Global callback function pointer
 static timer_callback_t g_timer_callback = NULL;
 
 // Calibrated timer frequency (ticks per millisecond)
 // Will be calibrated during initialization
 static uint32_t g_ticks_per_ms = 62500; // Default: ~1GHz bus / 16 divisor
+
+// Timer start time and frequency (for calculating current time in ms using TSC)
+static uint64_t g_timer_start = 0;
+static uint64_t g_tsc_freq = 0; // TSC frequency in Hz
 
 // Timer interrupt handler (called from interrupt.c)
 void lapic_timer_handler(void) {
@@ -212,6 +222,16 @@ void timer_init(void) {
 
   // Calibrate timer frequency
   calibrate_timer();
+
+  // Capture start time using TSC
+  g_timer_start = read_tsc();
+
+  // Estimate TSC frequency based on LAPIC timer calibration
+  // LAPIC timer runs at bus frequency / divisor (16)
+  // We calibrated g_ticks_per_ms, so TSC frequency is roughly similar
+  // For now, assume TSC runs at a constant rate (invariant TSC)
+  // and estimate based on calibration: TSC_freq ≈ LAPIC_ticks * divisor
+  g_tsc_freq = (uint64_t)g_ticks_per_ms * 16 * 1000; // Convert to Hz
 }
 
 // Set a one-shot timer to fire after specified milliseconds
@@ -240,4 +260,18 @@ void timer_set_oneshot_ms(uint32_t milliseconds, timer_callback_t callback) {
   printk("ms (");
   printk_dec(ticks);
   printk(" ticks)\n");
+}
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+  uint64_t tsc_now = read_tsc();
+  uint64_t tsc_elapsed = tsc_now - g_timer_start;
+
+  if (g_tsc_freq == 0) {
+    return 0;
+  }
+
+  // Convert TSC ticks to milliseconds
+  // ms = (ticks * 1000) / freq_hz
+  return (tsc_elapsed * 1000) / g_tsc_freq;
 }

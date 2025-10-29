@@ -3,10 +3,24 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
+
+// Forward declarations
+struct virtio_rng_dev;
+typedef struct virtio_rng_dev virtio_rng_dev_t;
+
+struct kernel;
+typedef struct kernel kernel_t;
 
 // rv64 platform-specific state
 typedef struct {
-  uint32_t last_interrupt; // Last interrupt reason code
-  uint64_t timebase_freq;  // Timebase frequency in Hz (from device tree)
+  uint64_t timebase_freq;       // Timebase frequency in Hz (from device tree)
+  virtio_rng_dev_t *virtio_rng; // VirtIO-RNG device (NULL if not present)
+  kernel_t *kernel;             // Back-pointer to kernel
 } platform_t;
+
+// RISC-V RNG request platform-specific fields (VirtIO)
+typedef struct {
+  uint16_t desc_idx; // VirtIO descriptor index
+} krng_req_platform_t;

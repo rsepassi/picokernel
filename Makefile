@@ -20,14 +20,15 @@ CFLAGS = --target=$(TARGET) -O2 -static \
 				 -ffreestanding -nostdlib -fno-builtin \
 				 -fno-pic -fno-pie \
 				 -fwrapv -fno-strict-aliasing \
+				 -ffunction-sections -fdata-sections \
 				 -std=c11 -Wpedantic \
 				 -Wall -Wextra -Werror \
 				 -Wundef -Wmissing-prototypes -Wstrict-prototypes -Wvla -Wcast-align \
 				 $(PLATFORM_CFLAGS)
 
 # Linker
-LD = clang
-LDFLAGS = --target=$(TARGET) -Wl,-no-pie -nostdlib -static $(PLATFORM_LDFLAGS)
+LD = ld.lld
+LDFLAGS = --no-pie -static -nostdlib --gc-sections $(PLATFORM_LDFLAGS)
 
 # Source files
 SRC_DIR = src

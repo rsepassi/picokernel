@@ -20,3 +20,6 @@ void timer_interrupt_handler(void);
 
 // Get timer frequency in Hz
 uint64_t timer_get_frequency(void);
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void);

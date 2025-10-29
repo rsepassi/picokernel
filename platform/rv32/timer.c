@@ -5,9 +5,8 @@
 #include "platform.h"
 #include "printk.h"
 #include "sbi.h"
+#include <stddef.h>
 #include <stdint.h>
-
-#define NULL ((void *)0)
 
 // Simple 64-bit division by 1000 for 32-bit platforms
 // Avoids need for compiler runtime library
@@ -54,6 +53,9 @@ static uint32_t g_timer_freq = 10000000; // Default: 10 MHz (typical for QEMU)
 static timer_callback_t g_timer_callback = NULL;
 static volatile int g_timer_fired = 0;
 
+// Start time for timer_get_current_time_ms()
+static uint64_t g_timer_start = 0;
+
 // Helper to find a property in the device tree
 // Returns NULL if not found, pointer to property data otherwise
 static const uint8_t *fdt_find_property(void *fdt, const char *node_path,
@@ -74,7 +76,8 @@ static const uint8_t *fdt_find_property(void *fdt, const char *node_path,
 
   const uint8_t *struct_block = (const uint8_t *)fdt + off_struct;
   const char *strings = (const char *)fdt + off_strings;
-  const uint32_t *ptr = (const uint32_t *)struct_block;
+  // Cast via void* to suppress alignment warnings
+  const uint32_t *ptr = (const uint32_t *)(const void *)struct_block;
 
   // For simplicity, we'll just search the cpus node for timebase-frequency
   // This is good enough for RISC-V which puts it there
@@ -178,6 +181,9 @@ void timer_init(void *fdt) {
     printk(" Hz\n");
   }
 
+  // Capture start time for timer_get_current_time_ms()
+  g_timer_start = sbi_get_time();
+
   printk("Timer initialized\n");
 }
 
@@ -226,3 +232,41 @@ void timer_interrupt_handler(void) {
 
 // Get timer frequency
 uint64_t timer_get_frequency(void) { return (uint64_t)g_timer_freq; }
+
+// Simple 64-bit / 32-bit division for timer calculation
+static uint64_t div64_32(uint64_t dividend, uint32_t divisor) {
+  if (divisor == 0) {
+    return 0;
+  }
+
+  uint64_t quotient = 0;
+  uint64_t remainder = 0;
+
+  // Long division algorithm
+  for (int i = 63; i >= 0; i--) {
+    remainder <<= 1;
+    remainder |= (dividend >> i) & 1;
+
+    if (remainder >= divisor) {
+      remainder -= divisor;
+      quotient |= (1ULL << i);
+    }
+  }
+
+  return quotient;
+}
+
+// Get current time in milliseconds
+uint64_t timer_get_current_time_ms(void) {
+  uint64_t counter_now = sbi_get_time();
+  uint64_t counter_elapsed = counter_now - g_timer_start;
+
+  if (g_timer_freq == 0) {
+    return 0;
+  }
+
+  // Convert counter ticks to milliseconds
+  // ms = (ticks * 1000) / freq_hz
+  uint64_t ticks_times_1000 = counter_elapsed * 1000;
+  return div64_32(ticks_times_1000, g_timer_freq);
+}
