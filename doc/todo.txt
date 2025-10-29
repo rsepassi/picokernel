@@ -1,2 +1,5 @@
+* Should PCI code be shared?
+* hostfwd=udp::5000-10.0.2.15:8080
+* Centralize static allocations into platform_t
 * compiler-rt
 * mimalloc-style memory allocator
