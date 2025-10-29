@@ -12,39 +12,26 @@
 #define PCI_CMD_INT_DISABLE (1 << 10)
 
 // MMIO helpers using platform hooks
-static inline uint32_t mmio_read32(volatile uint32_t *addr) {
-  platform_memory_barrier();
-  return *addr;
-}
+static inline uint32_t mmio_read32(volatile uint32_t *addr) { return *addr; }
 
-static inline uint16_t mmio_read16(volatile uint16_t *addr) {
-  platform_memory_barrier();
-  return *addr;
-}
+static inline uint16_t mmio_read16(volatile uint16_t *addr) { return *addr; }
 
-static inline uint8_t mmio_read8(volatile uint8_t *addr) {
-  platform_memory_barrier();
-  return *addr;
-}
+static inline uint8_t mmio_read8(volatile uint8_t *addr) { return *addr; }
 
 static inline void mmio_write32(volatile uint32_t *addr, uint32_t value) {
   *addr = value;
-  platform_memory_barrier();
 }
 
 static inline void mmio_write16(volatile uint16_t *addr, uint16_t value) {
   *addr = value;
-  platform_memory_barrier();
 }
 
 static inline void mmio_write8(volatile uint8_t *addr, uint8_t value) {
   *addr = value;
-  platform_memory_barrier();
 }
 
 static inline void mmio_write64(volatile uint64_t *addr, uint64_t value) {
   *addr = value;
-  platform_memory_barrier();
 }
 
 // Find and map VirtIO PCI capabilities
@@ -174,10 +161,6 @@ int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
 
   // Enable queue
   mmio_write16(&pci->common_cfg->queue_enable, 1);
-
-  // Clean cache so device can see initialized queue
-  size_t queue_mem_size = 64 * 1024; // Conservative size
-  platform_cache_clean(vq, queue_mem_size);
 
   return 0;
 }

@@ -29,7 +29,6 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
     volatile void *ptr = (volatile void *)(mmio->base + 0x028);
     volatile uint32_t *guest_page_size_reg = (volatile uint32_t *)ptr;
     *guest_page_size_reg = 4096;
-    platform_memory_barrier();
   }
 
   // Feature negotiation (RNG needs no features)
@@ -113,7 +112,6 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   // Direct write to avoid unaligned pointer warning
   volatile virtio_pci_common_cfg_t *common_cfg = pci->common_cfg;
   common_cfg->msix_config = 0xFFFF;
-  platform_memory_barrier();
 
   // Setup queue
   rng->vq_memory = queue_memory;
@@ -183,12 +181,6 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
 
   // Kick device once for all descriptors (bulk submission)
   if (submitted > 0) {
-    // Clean cache (ARM64 will flush, x64 is no-op)
-    size_t desc_size = rng->queue_size * sizeof(virtq_desc_t);
-    size_t avail_size = 4 + rng->queue_size * 2 + 2;
-    platform_cache_clean(rng->vq.desc, desc_size);
-    platform_cache_clean(rng->vq.avail, avail_size);
-
     // Notify device (transport-specific implementation)
     if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)rng->transport, 0);
@@ -207,10 +199,6 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
     return;
   }
 
-  // Invalidate used ring cache (ARM64 will invalidate, x64 is no-op)
-  size_t used_size = 4 + rng->queue_size * sizeof(virtq_used_elem_t) + 2;
-  platform_cache_invalidate(rng->vq.used, used_size);
-
   // Process all available completions
   while (virtqueue_has_used(&rng->vq)) {
     uint16_t desc_idx;
@@ -219,9 +207,6 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
 
     krng_req_t *req = rng->active_requests[desc_idx];
     if (req != (void *)0) {
-      // Invalidate buffer cache
-      platform_cache_invalidate(req->buffer, req->length);
-
       req->completed = len;
       kplatform_complete_work(k, &req->work, KERR_OK);
       rng->active_requests[desc_idx] = (void *)0;

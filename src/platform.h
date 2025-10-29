@@ -150,19 +150,6 @@ void platform_uart_puts(const char *str);
 void platform_uart_putc(char c);
 
 // ===========================================================================
-// SECTION 6: Memory/Cache Operations - Architecture-specific operations
-// ===========================================================================
-
-// Flush cache lines to RAM (use before device reads from memory)
-void platform_cache_clean(void *addr, size_t size);
-
-// Discard cache lines (use before CPU reads from device-written memory)
-void platform_cache_invalidate(void *addr, size_t size);
-
-// Full memory barrier (ensure all memory operations complete)
-void platform_memory_barrier(void);
-
-// ===========================================================================
 // SECTION 7: IRQ Management - Interrupt registration
 // ===========================================================================
 

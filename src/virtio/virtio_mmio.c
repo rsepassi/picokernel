@@ -9,7 +9,6 @@
 static inline uint32_t mmio_read32(volatile uint8_t *base, uint32_t offset) {
   volatile void *ptr = (volatile void *)(base + offset);
   volatile uint32_t *addr = (volatile uint32_t *)ptr;
-  platform_memory_barrier();
   return *addr;
 }
 
@@ -18,7 +17,6 @@ static inline void mmio_write32(volatile uint8_t *base, uint32_t offset,
   volatile void *ptr = (volatile void *)(base + offset);
   volatile uint32_t *addr = (volatile uint32_t *)ptr;
   *addr = value;
-  platform_memory_barrier();
 }
 
 // Initialize MMIO transport
@@ -124,11 +122,6 @@ int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
 
     mmio_write32(mmio->base, VIRTIO_MMIO_QUEUE_READY, 1);
   }
-
-  // Clean cache so device can see initialized queue
-  // Conservative size calculation for virtqueue structures
-  size_t queue_mem_size = 64 * 1024;
-  platform_cache_clean(vq, queue_mem_size);
 
   return 0;
 }
