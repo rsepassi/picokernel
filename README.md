@@ -43,12 +43,12 @@ Each QEMU machine is configured with minimal devices:
 
 Build for a specific architecture:
 ```bash
-make ARCH=x64
+make PLATFORM=x64
 ```
 
 Build and run:
 ```bash
-make run ARCH=x64
+make run PLATFORM=x64
 ```
 
 ## Project Structure

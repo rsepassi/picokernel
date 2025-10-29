@@ -2,32 +2,29 @@
 # Build system for minimal OS kernel
 
 # Options
-ARCH ?= arm64
+PLATFORM ?= arm64
 USE_PCI ?= 0  # PCI or MMIO
-DRIVE ?= /tmp/drive.img
-PORT ?= 5000
+DRIVE ?= 0
+PORT ?= 0
+
+# Generate random defaults (immediate expansion)
+DRIVE_DEFAULT := /tmp/drive-$(shell date +%s)-$(shell jot -r 1 1000 9999).img
+PORT_DEFAULT := $(shell jot -r 1 49152 65535)
+
+# Use defaults if not overridden
+ifeq ($(DRIVE),0)
+  DRIVE := $(DRIVE_DEFAULT)
+endif
+ifeq ($(PORT),0)
+  PORT := $(PORT_DEFAULT)
+endif
 
 # Build directory
-BUILD_DIR = build/$(ARCH)
+BUILD_DIR = build/$(PLATFORM)
 
 # Platform configuration
-PLATFORM_DIR = platform/$(ARCH)
+PLATFORM_DIR = platform/$(PLATFORM)
 include $(PLATFORM_DIR)/platform.mk
-
-# Device flags for QEMU (unified across all platforms)
-ifeq ($(USE_PCI),1)
-  QEMU_DEVICE_ARGS = -device virtio-rng-pci \
-                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
-                -device virtio-blk-pci,drive=hd0 \
-                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
-                -device virtio-net-pci,netdev=net0
-else
-  QEMU_DEVICE_ARGS = -device virtio-rng-device \
-                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
-                -device virtio-blk-device,drive=hd0 \
-                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
-                -device virtio-net-device,netdev=net0
-endif
 
 # Compiler
 CC = clang
@@ -85,6 +82,21 @@ VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_S
 ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(SHARED_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
+
+# Device flags for QEMU (unified across all platforms)
+ifeq ($(USE_PCI),1)
+  QEMU_DEVICE_ARGS = -device virtio-rng-pci \
+                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
+                -device virtio-blk-pci,drive=hd0 \
+                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
+                -device virtio-net-pci,netdev=net0
+else
+  QEMU_DEVICE_ARGS = -device virtio-rng-device \
+                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
+                -device virtio-blk-device,drive=hd0 \
+                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
+                -device virtio-net-device,netdev=net0
+endif
 
 .PHONY: all run clean format
 all: $(KERNEL)
