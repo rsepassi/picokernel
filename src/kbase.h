@@ -84,4 +84,50 @@ void *memset(void *s, int c, size_t n);
 
 void kabort(void) __attribute__((noreturn));
 
+/* Endianness conversion helpers (BSD-style) */
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+
+/* Little-endian conversions (no-op on little-endian hosts) */
+static inline uint16_t khtole16(uint16_t x) { return x; }
+static inline uint32_t khtole32(uint32_t x) { return x; }
+static inline uint64_t khtole64(uint64_t x) { return x; }
+
+static inline uint16_t kle16toh(uint16_t x) { return x; }
+static inline uint32_t kle32toh(uint32_t x) { return x; }
+static inline uint64_t kle64toh(uint64_t x) { return x; }
+
+/* Big-endian conversions (byte swap on little-endian hosts) */
+static inline uint16_t khtobe16(uint16_t x) { return __builtin_bswap16(x); }
+static inline uint32_t khtobe32(uint32_t x) { return __builtin_bswap32(x); }
+static inline uint64_t khtobe64(uint64_t x) { return __builtin_bswap64(x); }
+
+static inline uint16_t kbe16toh(uint16_t x) { return __builtin_bswap16(x); }
+static inline uint32_t kbe32toh(uint32_t x) { return __builtin_bswap32(x); }
+static inline uint64_t kbe64toh(uint64_t x) { return __builtin_bswap64(x); }
+
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+
+/* Little-endian conversions (byte swap on big-endian hosts) */
+static inline uint16_t khtole16(uint16_t x) { return __builtin_bswap16(x); }
+static inline uint32_t khtole32(uint32_t x) { return __builtin_bswap32(x); }
+static inline uint64_t khtole64(uint64_t x) { return __builtin_bswap64(x); }
+
+static inline uint16_t kle16toh(uint16_t x) { return __builtin_bswap16(x); }
+static inline uint32_t kle32toh(uint32_t x) { return __builtin_bswap32(x); }
+static inline uint64_t kle64toh(uint64_t x) { return __builtin_bswap64(x); }
+
+/* Big-endian conversions (no-op on big-endian hosts) */
+static inline uint16_t khtobe16(uint16_t x) { return x; }
+static inline uint32_t khtobe32(uint32_t x) { return x; }
+static inline uint64_t khtobe64(uint64_t x) { return x; }
+
+static inline uint16_t kbe16toh(uint16_t x) { return x; }
+static inline uint32_t kbe32toh(uint32_t x) { return x; }
+static inline uint64_t kbe64toh(uint64_t x) { return x; }
+
+#else
+#error "Unknown byte order"
+#endif
+
 #endif /* KBASE_H */
