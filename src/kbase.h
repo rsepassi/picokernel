@@ -47,7 +47,41 @@
 /* Static assertion */
 #define KSTATIC_ASSERT(expr, msg) _Static_assert(expr, msg)
 
+/* Logging macro with file and line info */
+#define KSTRINGIFY(x) #x
+#define KTOSTRING(x) KSTRINGIFY(x)
+#define KLOG(msg)                                                              \
+  do {                                                                         \
+    printk("[");                                                               \
+    printk(__FILE__);                                                          \
+    printk(":");                                                               \
+    printk(KTOSTRING(__LINE__));                                               \
+    printk("] ");                                                              \
+    printk(msg);                                                               \
+    printk("\n");                                                              \
+  } while (0)
+
+/* Assertion macro - aborts if condition is false */
+#define KASSERT(cond, msg)                                                     \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      printk("\n\n=== ABORT! ===\n\n");                                        \
+      printk("[");                                                             \
+      printk(__FILE__);                                                        \
+      printk(":");                                                             \
+      printk(KTOSTRING(__LINE__));                                             \
+      printk("] ASSERTION FAILED: ");                                          \
+      printk(#cond);                                                           \
+      printk("\n  ");                                                          \
+      printk(msg);                                                             \
+      printk("\n");                                                            \
+      kabort();                                                                \
+    }                                                                          \
+  } while (0)
+
 void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
+
+void kabort(void) __attribute__((noreturn));
 
 #endif /* KBASE_H */

@@ -18,7 +18,8 @@ extern void mmio_scan_devices(platform_t *platform);
 static void wfi_timer_callback(void) {}
 
 // Platform-specific initialization
-void platform_init(platform_t *platform, void *fdt) {
+void platform_init(platform_t *platform, void *fdt, void *kernel) {
+  platform->kernel = kernel;
   platform->virtio_rng = NULL;
 
   printk("Initializing ARM64 platform...\n");
@@ -77,4 +78,17 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
 
   // Return current time
   return timer_get_current_time_ms();
+}
+
+// Abort system execution (shutdown/halt)
+void platform_abort(void) {
+  // Disable interrupts
+  __asm__ volatile("msr daifset, #2" ::: "memory"); // Disable IRQs
+  // Trigger undefined instruction exception (causes QEMU to exit)
+  // Using .word directive for undefined instruction
+  __asm__ volatile(".word 0x00000000" ::: "memory");
+  // Should never reach here, but halt just in case
+  while (1) {
+    __asm__ volatile("wfi" ::: "memory");
+  }
 }

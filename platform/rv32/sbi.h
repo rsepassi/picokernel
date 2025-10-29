@@ -16,6 +16,11 @@
 // SBI function IDs for Timer extension
 #define SBI_TIMER_SET_TIMER 0x0
 
+// SBI System Reset Extension
+#define SBI_SRST_SHUTDOWN 0
+#define SBI_RESET_TYPE_SHUTDOWN 0
+#define SBI_RESET_REASON_NO_REASON 0
+
 // SBI return structure
 typedef struct {
   long error;
@@ -34,3 +39,9 @@ sbi_ret_t sbi_ecall2(long ext, long fid, long arg0, long arg1);
 // Timer functions
 void sbi_set_timer(uint64_t stime_value);
 uint64_t sbi_get_time(void);
+
+// System reset/shutdown
+static inline void sbi_shutdown(void) {
+  sbi_ecall2(SBI_EXT_SRST, SBI_SRST_SHUTDOWN, SBI_RESET_TYPE_SHUTDOWN,
+             SBI_RESET_REASON_NO_REASON);
+}

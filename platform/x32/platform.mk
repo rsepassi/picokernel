@@ -5,30 +5,18 @@ TARGET = x86_64-none-elf
 
 QEMU = qemu-system-x86_64
 
-# Machine type selection
-# X32_USE_MICROVM=0: q35 with PCI devices (default, more compatible)
-# X32_USE_MICROVM=1: microvm with MMIO devices (lightweight, fast boot)
-X32_USE_MICROVM ?= 0
-
-ifeq ($(X32_USE_MICROVM),1)
-  # microvm machine with VirtIO MMIO devices
+# Machine type selection (controlled by USE_PCI in main Makefile)
+# USE_PCI=0: microvm with MMIO devices (lightweight, fast boot)
+# USE_PCI=1: q35 with PCI devices (default, more compatible)
+ifeq ($(USE_PCI),0)
   QEMU_MACHINE = microvm
   QEMU_CPU = max
-  QEMU_EXTRA_ARGS = -device virtio-rng-device \
-                    -drive file=$(IMG_FILE),if=none,id=hd0,format=raw,cache=none \
-                    -device virtio-blk-device,drive=hd0 \
-                    -netdev user,id=net0 \
-                    -device virtio-net-device,netdev=net0
 else
-  # q35 machine with VirtIO PCI devices (default)
   QEMU_MACHINE = q35
   QEMU_CPU = max
-  QEMU_EXTRA_ARGS = -device virtio-rng-pci \
-                    -drive file=$(IMG_FILE),if=none,id=hd0,format=raw,cache=none \
-                    -device virtio-blk-pci,drive=hd0 \
-                    -netdev user,id=net0 \
-                    -device virtio-net-pci,netdev=net0
 endif
+
+QEMU_EXTRA_ARGS =
 
 PLATFORM_CFLAGS = -mx32 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mno-sse3 -mno-ssse3 -mno-sse4 -mno-sse4.1 -mno-sse4.2 -mno-avx -mno-avx2
 PLATFORM_LDFLAGS = -m elf32_x86_64

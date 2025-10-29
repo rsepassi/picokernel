@@ -19,7 +19,8 @@ extern void mmio_scan_devices(platform_t *platform);
 static void wfi_timer_callback(void) {}
 
 // Platform-specific initialization
-void platform_init(platform_t *platform, void *fdt) {
+void platform_init(platform_t *platform, void *fdt, void *kernel) {
+  platform->kernel = kernel;
   platform->virtio_rng = NULL;
   platform->timebase_freq = 0;
 
@@ -78,4 +79,16 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
 
   // Return current time
   return timer_get_current_time_ms();
+}
+
+// Abort system execution (shutdown/halt)
+void platform_abort(void) {
+  // Disable interrupts
+  platform_interrupt_disable();
+  // Request shutdown via SBI (causes QEMU to exit cleanly)
+  sbi_shutdown();
+  // Should never reach here, but halt just in case
+  while (1) {
+    __asm__ volatile("wfi" ::: "memory");
+  }
 }

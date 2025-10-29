@@ -5,6 +5,18 @@
 #include "printk.h"
 #include <stddef.h>
 
+// Run event loop until a condition is true or a maximum timeout is reached
+#define KWAIT_UNTIL(kernel, cond, step_timeout, max_timeout)                   \
+  do {                                                                         \
+    kernel_t *_k = (kernel);                                                   \
+    ktime_t _max_timeout = (max_timeout);                                      \
+    ktime_t _step_timeout = (step_timeout);                                    \
+    ktime_t start_time = _k->current_time_ms;                                  \
+    while (!(cond) && (_k->current_time_ms - start_time) < (_max_timeout)) {   \
+      kmain_step(_k, _step_timeout);                                           \
+    }                                                                          \
+  } while (0)
+
 // Queue management helpers
 
 static void enqueue_submit(kernel_t *k, kwork_t *work) {
@@ -85,27 +97,22 @@ static void expire_timers(kernel_t *k) {
 
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt) {
-  // Set platform backpointer to kernel BEFORE platform_init
-  // (platform_init may register interrupt handlers that need this)
-  k->platform.kernel = k;
-
-  printk("Initializing work queues...\n");
-  // Initialize work queues
-  k->submit_queue_head = NULL;
-  k->submit_queue_tail = NULL;
-  k->cancel_queue_head = NULL;
-  k->ready_queue_head = NULL;
-
-  printk("Initializing timer management...\n");
-  // Initialize timer management
-  k->timer_list_head = NULL;
-  k->timer_list_tail = NULL;
+  *k = (kernel_t){0};
 
   // Initialize platform
-  platform_init(&k->platform, fdt);
+  platform_init(&k->platform, fdt, k);
 
   // Initialize start time
   k->current_time_ms = platform_wfi(&k->platform, 0);
+
+  // Enable interrupts
+  platform_interrupt_enable();
+  KLOG("interrupts enabled");
+
+  // Initialize CSPRNG with strong entropy
+  kcsprng_init_state_t csprng_init_state;
+  kmain_init_csprng(k, &csprng_init_state);
+  KLOG("CSPRNG ready");
 
   printk("kmain_init complete\n");
 }
@@ -287,10 +294,7 @@ void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
 
   // Wait for entropy by running event loop until seed is ready
   printk("Waiting for entropy...\n");
-  ktime_t start_time = k->current_time_ms;
-  while (!state->seed_ready && (k->current_time_ms - start_time) < 100) {
-    kmain_step(k, 10);
-  }
+  KWAIT_UNTIL(k, state->seed_ready, 10, 100);
 
   if (!state->seed_ready) {
     printk("ERR: CSPRNG initializion failed\n");

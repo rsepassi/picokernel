@@ -110,7 +110,8 @@ uint64_t platform_pci_read_bar(uint8_t bus, uint8_t slot, uint8_t func,
 // Initialize platform-specific features (interrupts, timers, device
 // enumeration) platform: platform state structure fdt: pointer to flattened
 // device tree (may be NULL on platforms using other methods)
-void platform_init(platform_t *platform, void *fdt);
+// kernel: pointer to kernel structure (platform can store as needed)
+void platform_init(platform_t *platform, void *fdt, void *kernel);
 
 // Wait for interrupt with timeout
 // platform: platform state structure
@@ -123,6 +124,11 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms);
 // cancellations: singly-linked list of work to cancel (or NULL)
 void platform_submit(platform_t *platform, kwork_t *submissions,
                      kwork_t *cancellations);
+
+// Abort system execution (shutdown/halt)
+// Called when a fatal error occurs or assertion fails
+// This function does not return
+void platform_abort(void) __attribute__((noreturn));
 // ===========================================================================
 // SECTION 4: Interrupt Control
 // ===========================================================================

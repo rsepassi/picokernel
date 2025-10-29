@@ -1,37 +1,27 @@
 // vmos kernel entry point
 
+#include "kbase.h"
 #include "kernel.h"
 #include "printk.h"
 #include "user.h"
-
-#define MAX_TIMEOUT 2000
 
 void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
 
   // Initialize
-  kernel_t k = {0};
+  kernel_t k;
   kmain_init(&k, fdt);
-  printk("[KMAIN] kmain_init ok\n");
-
-  // Enable interrupts (required for virtio-rng)
-  platform_interrupt_enable();
-  printk("[KMAIN] interrupts enabled\n");
-
-  // Initialize CSPRNG with strong entropy
-  kcsprng_init_state_t csprng_state;
-  kmain_init_csprng(&k, &csprng_state);
-  printk("[KMAIN] CSPRNG ready\n");
+  KLOG("kmain_init ok");
 
   // User kickoff
   kuser_t user;
   user.kernel = &k;
   kmain_usermain(&user);
-  printk("[KMAIN] kmain_usermain ok\n");
+  KLOG("kmain_usermain ok");
 
   // Event loop
-  printk("[KMAIN] kloop...\n");
+  KLOG("kloop...");
   while (1) {
-    kmain_step(&k, MAX_TIMEOUT);
+    kmain_step(&k, 2000);
   }
 }

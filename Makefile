@@ -1,18 +1,33 @@
 # vmos Makefile
 # Build system for minimal OS kernel
 
-# Default architecture
+# Options
 ARCH ?= arm64
-
-IMG_FILE ?= /tmp/disk.img
+USE_PCI ?= 0  # PCI or MMIO
+DRIVE ?= /tmp/drive.img
+PORT ?= 5000
 
 # Build directory
 BUILD_DIR = build/$(ARCH)
 
-
 # Platform configuration
 PLATFORM_DIR = platform/$(ARCH)
 include $(PLATFORM_DIR)/platform.mk
+
+# Device flags for QEMU (unified across all platforms)
+ifeq ($(USE_PCI),1)
+  QEMU_DEVICE_ARGS = -device virtio-rng-pci \
+                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
+                -device virtio-blk-pci,drive=hd0 \
+                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
+                -device virtio-net-pci,netdev=net0
+else
+  QEMU_DEVICE_ARGS = -device virtio-rng-device \
+                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
+                -device virtio-blk-device,drive=hd0 \
+                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
+                -device virtio-net-device,netdev=net0
+endif
 
 # Compiler
 CC = clang
@@ -95,12 +110,13 @@ $(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(SHARED_SOURCES) $
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
 run: $(KERNEL)
-	touch $(IMG_FILE)
+	touch $(DRIVE)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults -no-user-config \
 		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
+		$(QEMU_DEVICE_ARGS) \
 		-kernel $(KERNEL) \
 		-no-reboot
 

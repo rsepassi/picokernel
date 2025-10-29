@@ -18,9 +18,10 @@ extern void mmio_scan_devices(platform_t *platform);
 static void wfi_timer_callback(void) {}
 
 // Platform-specific initialization
-void platform_init(platform_t *platform, void *fdt) {
+void platform_init(platform_t *platform, void *fdt, void *kernel) {
   (void)fdt; // x64 doesn't use FDT, but keep parameter for consistency
 
+  platform->kernel = kernel;
   platform->virtio_rng = NULL;
 
   printk("Initializing x64 platform...\n");
@@ -78,4 +79,16 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
 
   // Return current time
   return timer_get_current_time_ms();
+}
+
+// Abort system execution (shutdown/halt)
+void platform_abort(void) {
+  // Disable interrupts
+  __asm__ volatile("cli");
+  // Trigger undefined opcode exception (causes QEMU to exit)
+  __asm__ volatile("ud2");
+  // Should never reach here, but halt just in case
+  while (1) {
+    __asm__ volatile("hlt");
+  }
 }
