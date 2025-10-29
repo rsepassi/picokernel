@@ -31,7 +31,15 @@
 
 // VirtIO PCI vendor/device IDs
 #define VIRTIO_PCI_VENDOR_ID 0x1AF4
+
+// VirtIO legacy device IDs (Transitional devices: 0x1000 + device type)
+#define VIRTIO_PCI_DEVICE_NET_LEGACY 0x1000
+#define VIRTIO_PCI_DEVICE_BLOCK_LEGACY 0x1001
 #define VIRTIO_PCI_DEVICE_RNG_LEGACY 0x1005
+
+// VirtIO modern device IDs (Non-transitional devices: 0x1040 + device type)
+#define VIRTIO_PCI_DEVICE_NET_MODERN 0x1041
+#define VIRTIO_PCI_DEVICE_BLOCK_MODERN 0x1042
 #define VIRTIO_PCI_DEVICE_RNG_MODERN 0x1044
 
 // PCI BAR types

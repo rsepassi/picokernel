@@ -97,7 +97,7 @@ run: $(KERNEL)
 	touch $(IMG_FILE)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
-		-nographic -nodefaults \
+		-nographic -nodefaults -no-user-config \
 		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
 		-kernel $(KERNEL) \

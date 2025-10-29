@@ -11,8 +11,9 @@
 // Forward declare internal device enumeration function
 void platform_fdt_dump(void *fdt);
 
-// Forward declaration
+// Forward declarations
 extern void pci_scan_devices(platform_t *platform);
+extern void mmio_scan_devices(platform_t *platform);
 
 static void wfi_timer_callback(void) {}
 
@@ -36,10 +37,10 @@ void platform_init(platform_t *platform, void *fdt) {
   // Parse and display device tree (ACPI-based on x64)
   platform_fdt_dump(NULL);
 
-  printk("\n");
-
-  // Scan PCI bus for VirtIO devices
+  // Scan for VirtIO devices via both PCI and MMIO (ACPI)
+  printk("=== Starting VirtIO Device Scan ===\n\n");
   pci_scan_devices(platform);
+  mmio_scan_devices(platform);
 
   printk("\nPlatform initialization complete.\n\n");
 }
@@ -48,6 +49,10 @@ void platform_init(platform_t *platform, void *fdt) {
 // timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
 // Returns: current time in milliseconds
 uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
+  if (timeout_ms == 0) {
+    return timer_get_current_time_ms();
+  }
+
   // Disable interrupts to check condition atomically
   __asm__ volatile("cli");
 

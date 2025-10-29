@@ -56,9 +56,8 @@ _start:
 
     // Set up PD at 0x4000 for MMIO region (3-4GB range, PDPT[3])
     // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
-    // Map 0xFE000000-0xFF000000 (16 MiB) to cover PCI BARs, IOAPIC, LAPIC
+    // Map 0xFE000000-0xFF000000 (16 MiB) to cover VirtIO MMIO, PCI BARs, IOAPIC, LAPIC
     // This is PD entries 496-503 (8 entries, each covering 2 MiB)
-
     mov $0x4000, %edi
     add $3968, %edi             // PD[496] = 496 * 8 = 3968
     mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT

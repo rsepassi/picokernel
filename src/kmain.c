@@ -7,7 +7,7 @@
 #define MAX_TIMEOUT 2000
 
 void kmain(void *fdt) {
-  printk("=== VMOS KMAIN === \n\n");
+  printk("\n\n=== VMOS KMAIN ===\n\n");
 
   // Initialize
   kernel_t k;
@@ -18,7 +18,7 @@ void kmain(void *fdt) {
   platform_interrupt_enable();
   printk("[KMAIN] interrupts enabled\n");
 
-  // Initialize CSPRNG with strong entropy (state stack-allocated)
+  // Initialize CSPRNG with strong entropy
   kcsprng_init_state_t csprng_state;
   kmain_init_csprng(&k, &csprng_state);
   printk("[KMAIN] CSPRNG ready\n");

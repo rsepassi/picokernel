@@ -4,7 +4,7 @@
 #include "virtio_rng.h"
 #include "kapi.h"
 #include "kernel.h"
-#include <stddef.h>
+#include "printk.h"
 
 // Initialize RNG with MMIO transport
 int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
@@ -23,6 +23,15 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   virtio_mmio_set_status(mmio,
                          VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
 
+  // For legacy (version 1) devices, set GuestPageSize BEFORE queue setup
+  if (mmio->version == 1) {
+    // Write GuestPageSize register (offset 0x028)
+    volatile void *ptr = (volatile void *)(mmio->base + 0x028);
+    volatile uint32_t *guest_page_size_reg = (volatile uint32_t *)ptr;
+    *guest_page_size_reg = 4096;
+    platform_memory_barrier();
+  }
+
   // Feature negotiation (RNG needs no features)
   virtio_mmio_set_features(mmio, 0, 0);
 
@@ -39,6 +48,7 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   // Setup queue
   rng->vq_memory = queue_memory;
   rng->queue_size = virtio_mmio_get_queue_size(mmio, 0);
+
   if (rng->queue_size > VIRTIO_RNG_MAX_REQUESTS) {
     rng->queue_size = VIRTIO_RNG_MAX_REQUESTS;
   }
@@ -49,6 +59,11 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   // Driver OK
   status |= VIRTIO_STATUS_DRIVER_OK;
   virtio_mmio_set_status(mmio, status);
+
+  // Check if device failed
+  if (virtio_mmio_get_status(mmio) & 0x80) { // VIRTIO_STATUS_FAILED
+    return -1;
+  }
 
   // Clear request tracking and irq_pending
   rng->irq_pending = 0;
@@ -169,6 +184,40 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
     // Notify device (transport-specific implementation)
     if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)rng->transport, 0);
+
+      // Poll for completion (MMIO RNG is fast, no need to wait for interrupt)
+      size_t used_size = 4 + rng->queue_size * sizeof(virtq_used_elem_t) + 2;
+
+      for (int poll_iter = 0; poll_iter < 1000; poll_iter++) {
+        // Invalidate used ring cache before checking
+        platform_cache_invalidate(rng->vq.used, used_size);
+
+        // Check if device has completed any work
+        if (virtqueue_has_used(&rng->vq)) {
+          // Process all available completions
+          while (virtqueue_has_used(&rng->vq)) {
+            uint16_t desc_idx;
+            uint32_t len;
+            virtqueue_get_used(&rng->vq, &desc_idx, &len);
+
+            krng_req_t *req = rng->active_requests[desc_idx];
+            if (req != (void *)0) {
+              // Invalidate buffer cache
+              platform_cache_invalidate(req->buffer, req->length);
+
+              req->completed = len;
+              kplatform_complete_work(k, &req->work, KERR_OK);
+              rng->active_requests[desc_idx] = (void *)0;
+            }
+
+            virtqueue_free_desc(&rng->vq, desc_idx);
+          }
+
+          // Signal completion to wake up kernel (acts like interrupt)
+          rng->irq_pending = 1;
+          break; // All completions processed
+        }
+      }
     } else if (rng->transport_type == VIRTIO_TRANSPORT_PCI) {
       virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, 0);
     }

@@ -159,10 +159,9 @@ static void *fw_cfg_find_rsdp(void) {
         break;
       }
 
-      // Skip FACS, DSDT (referenced from FADT), and RSDT (we'll build our own)
-      if (memcmp(header->signature, "FACS", 4) != 0 &&
-          memcmp(header->signature, "DSDT", 4) != 0 &&
-          memcmp(header->signature, "RSDT", 4) != 0) {
+      // Skip FACS and RSDT (we'll build our own)
+      // We only need MADT for interrupt controller discovery
+      if (memcmp(header->signature, "APIC", 4) == 0) {
         table_addresses[table_count++] = (uint32_t)(uintptr_t)ptr;
       }
 

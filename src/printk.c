@@ -1,8 +1,6 @@
 #include "printk.h"
 
-/* Platform-specific UART functions */
-extern void platform_uart_putc(char c);
-extern void platform_uart_puts(const char *str);
+#include "platform.h"
 
 void printk(const char *str) { platform_uart_puts(str); }
 

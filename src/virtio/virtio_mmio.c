@@ -3,7 +3,7 @@
 
 #include "virtio_mmio.h"
 #include "platform.h"
-#include <stddef.h>
+#include "printk.h"
 
 // MMIO helpers using platform hooks
 static inline uint32_t mmio_read32(volatile uint8_t *base, uint32_t offset) {
@@ -85,12 +85,23 @@ uint16_t virtio_mmio_get_queue_size(virtio_mmio_transport_t *mmio,
 int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
                             virtqueue_t *vq, uint16_t queue_size) {
   mmio_write32(mmio->base, VIRTIO_MMIO_QUEUE_SEL, queue_idx);
+
+  // For modern devices, verify queue is not already in use (spec 4.2.3.2)
+  if (mmio->version >= 2) {
+    uint32_t ready = mmio_read32(mmio->base, VIRTIO_MMIO_QUEUE_READY);
+    if (ready != 0) {
+      return -1; // Queue already in use
+    }
+  }
+
   mmio_write32(mmio->base, VIRTIO_MMIO_QUEUE_NUM, queue_size);
 
   if (mmio->version == 1) {
     // Legacy (version 1): Use QUEUE_PFN with page alignment
-    uint64_t queue_addr = (uint64_t)vq;
+    // IMPORTANT: Use descriptor table address, not virtqueue struct address!
+    uint64_t queue_addr = (uint64_t)vq->desc;
     uint32_t pfn = (uint32_t)(queue_addr >> 12);
+
     mmio_write32(mmio->base, VIRTIO_MMIO_QUEUE_ALIGN, 4096);
     mmio_write32(mmio->base, VIRTIO_MMIO_QUEUE_PFN, pfn);
   } else {
