@@ -67,7 +67,7 @@ typedef struct {
 
 // CONTAINER_OF macro to recover containing structure from work pointer
 #define CONTAINER_OF(ptr, type, member)                                        \
-  ((type *)((void *)((uint8_t *)(ptr)-offsetof(type, member))))
+  ((type *)((void *)((uint8_t *)(ptr) - offsetof(type, member))))
 
 // Kernel API Functions
 

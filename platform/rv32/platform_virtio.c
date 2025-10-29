@@ -295,8 +295,8 @@ void mmio_scan_devices(platform_t *platform) {
 #define VIRTIO_MMIO_BASE 0x10001000UL
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x1000 // 4KB per device
 #define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 1           // IRQs start at 1 for VirtIO MMIO
-#define VIRTIO_MMIO_MAGIC 0x74726976     // "virt" in little-endian
+#define VIRTIO_MMIO_IRQ_BASE 1       // IRQs start at 1 for VirtIO MMIO
+#define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   int devices_found = 0;
   int rng_initialized = 0;

@@ -22,9 +22,7 @@ static platform_t *g_platform = NULL;
 static volatile int g_wfi_done = 0;
 
 // Timer callback function - wake from WFI
-static void wfi_timer_callback(void) {
-  g_wfi_done = 1;
-}
+static void wfi_timer_callback(void) { g_wfi_done = 1; }
 
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt) {
@@ -77,7 +75,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
 
   // Set timeout timer if not UINT64_MAX
   if (timeout_ms != UINT64_MAX) {
-    uint32_t timeout_ms_32 = (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
+    uint32_t timeout_ms_32 =
+        (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
     timer_set_oneshot_ms(timeout_ms_32, wfi_timer_callback);
   }
 

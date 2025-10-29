@@ -5,8 +5,9 @@
 #include <stdint.h>
 
 // ECAM base address for QEMU virt machine with highmem=off
-// When highmem=off, ECAM is placed within 32-bit addressable space at 0x3f000000
-// This allows direct access without requiring LPAE (Large Physical Address Extension)
+// When highmem=off, ECAM is placed within 32-bit addressable space at
+// 0x3f000000 This allows direct access without requiring LPAE (Large Physical
+// Address Extension)
 #define PCI_ECAM_BASE 0x3f000000UL
 
 // Calculate ECAM address for PCI configuration space access

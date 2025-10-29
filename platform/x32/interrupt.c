@@ -247,9 +247,7 @@ void irq_register(uint8_t irq_num, void (*handler)(void *), void *context) {
 }
 
 // Enable (unmask) a specific IRQ
-void irq_enable(uint8_t irq_num) {
-  ioapic_unmask_irq(irq_num);
-}
+void irq_enable(uint8_t irq_num) { ioapic_unmask_irq(irq_num); }
 
 // Dispatch IRQ (called from exception handler)
 void irq_dispatch(uint8_t irq_num) {

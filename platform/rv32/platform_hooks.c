@@ -9,7 +9,8 @@
 
 // RISC-V Cache Management
 // RISC-V uses fence instructions for memory ordering and cache coherency
-// For DMA coherency, we need to ensure ordering between CPU and device operations
+// For DMA coherency, we need to ensure ordering between CPU and device
+// operations
 
 // Clean (flush) cache for a memory range - pushes CPU writes to RAM
 // Call this AFTER CPU writes data that the device will read
