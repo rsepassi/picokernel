@@ -27,7 +27,7 @@
 // Memory-mapped register access helpers
 // In x32, we convert the 64-bit physical address to a 32-bit pointer
 static inline void lapic_write(uint64_t lapic_base, uint32_t reg,
-                                uint32_t value) {
+                               uint32_t value) {
   // Cast to uintptr_t first (32-bit in x32), then to volatile pointer
   *(volatile uint32_t *)(uintptr_t)(lapic_base + reg) = value;
 }
@@ -225,7 +225,8 @@ void timer_init(platform_t *platform) {
   // We calibrated ticks_per_ms, so TSC frequency is roughly similar
   // For now, assume TSC runs at a constant rate (invariant TSC)
   // and estimate based on calibration: TSC_freq ≈ LAPIC_ticks * divisor
-  platform->tsc_freq = (uint64_t)platform->ticks_per_ms * 16 * 1000; // Convert to Hz
+  platform->tsc_freq =
+      (uint64_t)platform->ticks_per_ms * 16 * 1000; // Convert to Hz
 }
 
 // Set a one-shot timer to fire after specified milliseconds

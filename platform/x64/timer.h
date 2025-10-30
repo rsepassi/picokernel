@@ -16,7 +16,8 @@ typedef void (*timer_callback_t)(void);
 void timer_init(platform_t *platform);
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds, timer_callback_t callback);
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
+                          timer_callback_t callback);
 
 // Get current time in milliseconds (uptime since timer_init)
 uint64_t timer_get_current_time_ms(platform_t *platform);

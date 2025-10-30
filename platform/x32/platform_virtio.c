@@ -62,7 +62,7 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
 
   // Setup interrupt
   uint8_t irq_line = platform_pci_config_read8(platform, bus, slot, func,
-                                                PCI_REG_INTERRUPT_LINE);
+                                               PCI_REG_INTERRUPT_LINE);
   uint32_t irq_vector = 32 + irq_line;
 
   platform_irq_register(platform, irq_vector, virtio_rng_irq_handler, platform);

@@ -113,8 +113,8 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   }
 
   // Setup interrupt
-  uint8_t irq_pin =
-      platform_pci_config_read8(platform, bus, slot, func, PCI_REG_INTERRUPT_PIN);
+  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
+                                              PCI_REG_INTERRUPT_PIN);
 
   // ARM32 QEMU virt: PCI interrupts use standard INTx swizzling
   // Base IRQ = 3, rotated by (device + pin - 1) % 4
@@ -202,8 +202,8 @@ void pci_scan_devices(platform_t *platform) {
   // Scanning all 256 buses takes too long
   for (uint16_t bus = 0; bus < 4; bus++) {
     for (uint8_t slot = 0; slot < 32; slot++) {
-      uint32_t vendor_device = platform_pci_config_read32(platform, bus, slot,
-                                                           0, PCI_REG_VENDOR_ID);
+      uint32_t vendor_device =
+          platform_pci_config_read32(platform, bus, slot, 0, PCI_REG_VENDOR_ID);
 
       if (vendor_device == 0xFFFFFFFF) {
         continue; // No device

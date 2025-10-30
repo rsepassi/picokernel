@@ -155,16 +155,14 @@ void timer_init(platform_t *platform, void *fdt) {
 
     if (prop && len == 4) {
       // Read as big-endian 32-bit value
-      timer_freq =
-          (prop[0] << 24) | (prop[1] << 16) | (prop[2] << 8) | prop[3];
+      timer_freq = (prop[0] << 24) | (prop[1] << 16) | (prop[2] << 8) | prop[3];
       printk("Timer frequency from DT: ");
       printk_dec(timer_freq);
       printk(" Hz\n");
     } else if (prop && len == 8) {
       // Read as big-endian 64-bit value, but only use low 32 bits
       // (timer frequencies are always < 4GHz in practice)
-      timer_freq =
-          (prop[4] << 24) | (prop[5] << 16) | (prop[6] << 8) | prop[7];
+      timer_freq = (prop[4] << 24) | (prop[5] << 16) | (prop[6] << 8) | prop[7];
       printk("Timer frequency from DT: ");
       printk_dec(timer_freq);
       printk(" Hz\n");

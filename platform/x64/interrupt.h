@@ -19,7 +19,8 @@ void platform_interrupt_enable(platform_t *platform);
 void platform_interrupt_disable(platform_t *platform);
 
 // Register IRQ handler
-void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *), void *context);
+void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *),
+                  void *context);
 
 // Enable (unmask) a specific IRQ in the PIC
 void irq_enable(platform_t *platform, uint8_t vector);

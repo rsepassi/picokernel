@@ -28,7 +28,8 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   printk("Initializing x32 platform...\n");
 
-  // Initialize ACPI (must come before interrupt init, which uses ACPI for IOAPIC)
+  // Initialize ACPI (must come before interrupt init, which uses ACPI for
+  // IOAPIC)
   acpi_init(platform);
 
   // Initialize interrupt handling (IDT)

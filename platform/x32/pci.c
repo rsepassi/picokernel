@@ -28,7 +28,8 @@ uint8_t platform_pci_config_read8(platform_t *platform, uint8_t bus,
 
 // Read 16-bit value from PCI config space
 uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
-                                    uint8_t slot, uint8_t func, uint8_t offset) {
+                                    uint8_t slot, uint8_t func,
+                                    uint8_t offset) {
   (void)platform; // Unused on x32
   uint32_t address = pci_make_address(bus, slot, func, offset);
   outl(PCI_CONFIG_ADDR, address);
@@ -37,7 +38,8 @@ uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
 
 // Read 32-bit value from PCI config space
 uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
-                                    uint8_t slot, uint8_t func, uint8_t offset) {
+                                    uint8_t slot, uint8_t func,
+                                    uint8_t offset) {
   (void)platform; // Unused on x32
   uint32_t address = pci_make_address(bus, slot, func, offset);
   outl(PCI_CONFIG_ADDR, address);
@@ -45,9 +47,8 @@ uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
 }
 
 // Write 8-bit value to PCI config space
-void platform_pci_config_write8(platform_t *platform, uint8_t bus,
-                                uint8_t slot, uint8_t func, uint8_t offset,
-                                uint8_t value) {
+void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
+                                uint8_t func, uint8_t offset, uint8_t value) {
   (void)platform; // Unused on x32
   uint32_t address = pci_make_address(bus, slot, func, offset);
   outl(PCI_CONFIG_ADDR, address);

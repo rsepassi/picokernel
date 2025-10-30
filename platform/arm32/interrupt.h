@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <stdint.h>
 #include "platform_impl.h"
+#include <stdint.h>
 
 // Initialize GIC and exception vectors
 void interrupt_init(platform_t *platform);

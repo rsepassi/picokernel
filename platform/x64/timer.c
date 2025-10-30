@@ -20,7 +20,8 @@
 #define TIMER_MODE_PERIODIC 0x00020000
 
 // Memory-mapped register access helpers
-static inline void lapic_write(platform_t *platform, uint32_t reg, uint32_t value) {
+static inline void lapic_write(platform_t *platform, uint32_t reg,
+                               uint32_t value) {
   *(volatile uint32_t *)(platform->lapic_base + reg) = value;
 }
 
@@ -138,7 +139,8 @@ static void calibrate_timer(platform_t *platform) {
   }
 
   // Read LAPIC timer counter value
-  uint32_t lapic_elapsed = 0xFFFFFFFF - lapic_read(platform, LAPIC_TIMER_CURRENT);
+  uint32_t lapic_elapsed =
+      0xFFFFFFFF - lapic_read(platform, LAPIC_TIMER_CURRENT);
 
   // Stop LAPIC timer
   lapic_write(platform, LAPIC_LVT_TIMER, 32 | 0x10000);
@@ -231,10 +233,13 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
 }
 
 // Send EOI (End Of Interrupt) to Local APIC
-void lapic_send_eoi(platform_t *platform) { lapic_write(platform, LAPIC_EOI, 0); }
+void lapic_send_eoi(platform_t *platform) {
+  lapic_write(platform, LAPIC_EOI, 0);
+}
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds, timer_callback_t callback) {
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
+                          timer_callback_t callback) {
   if (callback == NULL) {
     printk("timer_set_oneshot_ms: NULL callback\n");
     return;

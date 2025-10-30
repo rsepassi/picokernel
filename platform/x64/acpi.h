@@ -113,7 +113,8 @@ typedef struct platform_t platform_t;
 
 // Function declarations
 void *acpi_find_rsdp(void);
-struct acpi_table_header *acpi_find_table(platform_t *platform, const char *signature);
+struct acpi_table_header *acpi_find_table(platform_t *platform,
+                                          const char *signature);
 void acpi_init(platform_t *platform);
 void acpi_dump_tables(platform_t *platform);
 

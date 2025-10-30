@@ -50,10 +50,10 @@ static inline uint32_t gicc_read32(uint32_t offset) {
 }
 
 // Module-local platform pointer for interrupt_handler()
-// This is needed because interrupt_handler() is called from assembly (vectors.S)
-// and cannot receive parameters. This is an architectural limitation common to
-// all platforms with exception vectors in assembly.
-// Scope: Only used for interrupt dispatch, not a general-purpose global.
+// This is needed because interrupt_handler() is called from assembly
+// (vectors.S) and cannot receive parameters. This is an architectural
+// limitation common to all platforms with exception vectors in assembly. Scope:
+// Only used for interrupt dispatch, not a general-purpose global.
 static platform_t *g_current_platform = NULL;
 
 // Forward declare timer handler

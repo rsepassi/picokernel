@@ -32,8 +32,8 @@ typedef struct {
 // rv64 platform-specific state
 typedef struct platform_t {
   // Timer state
-  uint64_t timebase_freq;          // Timebase frequency in Hz (from device tree)
-  uint64_t timer_start;            // Start time counter value
+  uint64_t timebase_freq; // Timebase frequency in Hz (from device tree)
+  uint64_t timer_start;   // Start time counter value
   timer_callback_t timer_callback; // Timer callback function pointer
 
   // VirtIO device state

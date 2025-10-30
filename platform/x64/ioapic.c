@@ -29,18 +29,21 @@ static uint32_t ioapic_read_reg(platform_t *platform, uint8_t reg) {
   volatile uint32_t *ioregsel =
       (volatile uint32_t *)(uintptr_t)platform->ioapic.base_addr;
   volatile uint32_t *iowin =
-      (volatile uint32_t *)(uintptr_t)(platform->ioapic.base_addr + IOWIN_OFFSET);
+      (volatile uint32_t *)(uintptr_t)(platform->ioapic.base_addr +
+                                       IOWIN_OFFSET);
 
   mmio_write32(ioregsel, reg);
   return mmio_read32(iowin);
 }
 
 // IOAPIC register write (indirect addressing)
-static void ioapic_write_reg(platform_t *platform, uint8_t reg, uint32_t value) {
+static void ioapic_write_reg(platform_t *platform, uint8_t reg,
+                             uint32_t value) {
   volatile uint32_t *ioregsel =
       (volatile uint32_t *)(uintptr_t)platform->ioapic.base_addr;
   volatile uint32_t *iowin =
-      (volatile uint32_t *)(uintptr_t)(platform->ioapic.base_addr + IOWIN_OFFSET);
+      (volatile uint32_t *)(uintptr_t)(platform->ioapic.base_addr +
+                                       IOWIN_OFFSET);
 
   mmio_write32(ioregsel, reg);
   mmio_write32(iowin, value);
@@ -54,7 +57,8 @@ static uint64_t ioapic_read_redtbl(platform_t *platform, uint8_t entry) {
 }
 
 // Write 64-bit redirection entry
-static void ioapic_write_redtbl(platform_t *platform, uint8_t entry, uint64_t value) {
+static void ioapic_write_redtbl(platform_t *platform, uint8_t entry,
+                                uint64_t value) {
   uint32_t low = value & 0xFFFFFFFF;
   uint32_t high = (value >> 32) & 0xFFFFFFFF;
 
@@ -64,7 +68,8 @@ static void ioapic_write_redtbl(platform_t *platform, uint8_t entry, uint64_t va
 
 // Find IOAPIC in ACPI MADT
 static int find_ioapic_in_madt(platform_t *platform) {
-  struct acpi_table_header *madt_header = acpi_find_table(platform, ACPI_SIG_MADT);
+  struct acpi_table_header *madt_header =
+      acpi_find_table(platform, ACPI_SIG_MADT);
   if (madt_header == NULL) {
     return -1;
   }
@@ -118,7 +123,8 @@ void ioapic_init(platform_t *platform) {
 }
 
 // Route an IRQ to a vector
-void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector, uint8_t apic_id) {
+void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
+                      uint8_t apic_id) {
   if (irq >= platform->ioapic.max_entries) {
     return;
   }
@@ -155,4 +161,6 @@ void ioapic_unmask_irq(platform_t *platform, uint8_t irq) {
 }
 
 // Get IOAPIC info for debugging
-const ioapic_t *ioapic_get_info(platform_t *platform) { return &platform->ioapic; }
+const ioapic_t *ioapic_get_info(platform_t *platform) {
+  return &platform->ioapic;
+}

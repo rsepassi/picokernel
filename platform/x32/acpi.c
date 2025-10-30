@@ -52,7 +52,6 @@ static uint8_t acpi_checksum(void *addr, uint32_t length) {
   return sum;
 }
 
-
 // Byte swap helpers for big-endian fw_cfg data
 static uint32_t bswap32(uint32_t x) {
   return ((x & 0xFF000000) >> 24) | ((x & 0x00FF0000) >> 8) |

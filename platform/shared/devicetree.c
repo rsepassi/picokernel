@@ -357,8 +357,8 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
 
 // Find VirtIO MMIO devices in device tree
 int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
-                                   virtio_mmio_device_t *devices,
-                                   int max_devices) {
+                                  virtio_mmio_device_t *devices,
+                                  int max_devices) {
   (void)platform; // Platform not needed for FDT parsing
   if (!fdt || !devices || max_devices <= 0) {
     return 0;

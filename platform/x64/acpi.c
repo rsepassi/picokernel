@@ -49,7 +49,6 @@ static uint8_t acpi_checksum(void *addr, uint32_t length) {
   return sum;
 }
 
-
 // Byte swap helpers for big-endian fw_cfg data
 static uint32_t bswap32(uint32_t x) {
   return ((x & 0xFF000000) >> 24) | ((x & 0x00FF0000) >> 8) |
@@ -216,7 +215,8 @@ static void *fw_cfg_find_rsdp(void) {
 void *acpi_find_rsdp(void) { return fw_cfg_find_rsdp(); }
 
 // Find a specific ACPI table by signature
-struct acpi_table_header *acpi_find_table(platform_t *platform, const char *signature) {
+struct acpi_table_header *acpi_find_table(platform_t *platform,
+                                          const char *signature) {
   if (platform->rsdp == NULL) {
     return NULL;
   }

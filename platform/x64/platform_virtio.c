@@ -44,22 +44,25 @@ void mmio_scan_devices(platform_t *platform);
 static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
   // Initialize PCI transport
-  if (virtio_pci_init(&platform->virtio_pci_transport, platform, bus, slot, func) < 0) {
+  if (virtio_pci_init(&platform->virtio_pci_transport, platform, bus, slot,
+                      func) < 0) {
     return;
   }
 
   // Initialize RNG device
-  if (virtio_rng_init_pci(&platform->virtio_rng_dev, &platform->virtio_pci_transport,
+  if (virtio_rng_init_pci(&platform->virtio_rng_dev,
+                          &platform->virtio_pci_transport,
                           &platform->virtqueue_memory, platform->kernel) < 0) {
     return;
   }
 
   // Setup interrupt
-  uint8_t irq_line =
-      platform_pci_config_read8(platform, bus, slot, func, PCI_REG_INTERRUPT_LINE);
+  uint8_t irq_line = platform_pci_config_read8(platform, bus, slot, func,
+                                               PCI_REG_INTERRUPT_LINE);
   uint32_t irq_vector = 32 + irq_line;
 
-  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler, &platform->virtio_rng_dev);
+  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler,
+                        &platform->virtio_rng_dev);
   platform_irq_enable(platform, irq_vector);
 
   // Store in platform
@@ -72,25 +75,29 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
   (void)mmio_size; // Size not used in generic transport
 
   // Initialize MMIO transport
-  if (virtio_mmio_init(&platform->virtio_mmio_transport, (void *)mmio_base) < 0) {
+  if (virtio_mmio_init(&platform->virtio_mmio_transport, (void *)mmio_base) <
+      0) {
     return;
   }
 
   // Verify device ID
-  uint32_t device_id = virtio_mmio_get_device_id(&platform->virtio_mmio_transport);
+  uint32_t device_id =
+      virtio_mmio_get_device_id(&platform->virtio_mmio_transport);
   if (device_id != VIRTIO_ID_RNG) {
     return;
   }
 
   // Initialize RNG device with MMIO transport
-  if (virtio_rng_init_mmio(&platform->virtio_rng_dev, &platform->virtio_mmio_transport,
+  if (virtio_rng_init_mmio(&platform->virtio_rng_dev,
+                           &platform->virtio_mmio_transport,
                            &platform->virtqueue_memory, platform->kernel) < 0) {
     return;
   }
 
   // Setup interrupt - add 32 to convert to interrupt vector
   uint32_t irq_vector = 32 + irq_num;
-  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler, &platform->virtio_rng_dev);
+  platform_irq_register(platform, irq_vector, virtio_rng_irq_handler,
+                        &platform->virtio_rng_dev);
   platform_irq_enable(platform, irq_vector);
 
   // Store in platform

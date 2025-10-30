@@ -17,7 +17,8 @@
 struct kernel;
 typedef struct kernel kernel_t;
 
-// IOAPIC state structure (defined here to avoid circular dependency with ioapic.h)
+// IOAPIC state structure (defined here to avoid circular dependency with
+// ioapic.h)
 typedef struct ioapic {
   uint32_t base_addr;  // MMIO base address
   uint32_t gsi_base;   // Global System Interrupt base

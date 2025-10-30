@@ -26,7 +26,8 @@
 struct platform_t;
 typedef struct platform_t platform_t;
 
-// Forward declaration for IOAPIC (defined in platform_impl.h to avoid circular dependency)
+// Forward declaration for IOAPIC (defined in platform_impl.h to avoid circular
+// dependency)
 struct ioapic;
 typedef struct ioapic ioapic_t;
 
@@ -34,7 +35,8 @@ typedef struct ioapic ioapic_t;
 void ioapic_init(platform_t *platform);
 
 // Route an IRQ to a vector
-void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector, uint8_t apic_id);
+void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
+                      uint8_t apic_id);
 
 // Mask/unmask an IRQ
 void ioapic_mask_irq(platform_t *platform, uint8_t irq);

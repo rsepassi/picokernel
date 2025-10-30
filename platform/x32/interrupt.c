@@ -72,7 +72,6 @@ extern void isr_stub_47(void);
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
 
-
 // Set an IDT entry
 // Note: In x32, function pointers are 32-bit, but we need to convert to 64-bit
 // for IDT
@@ -180,40 +179,24 @@ void interrupt_init(platform_t *platform) {
   }
 
   // Install timer interrupt handler (vector 32)
-  idt_set_gate(platform->idt, 32, (uint64_t)(uintptr_t)isr_stub_32, 0x08,
-               0x8E);
+  idt_set_gate(platform->idt, 32, (uint64_t)(uintptr_t)isr_stub_32, 0x08, 0x8E);
 
   // Install IRQ interrupt handlers (vectors 33-47)
-  idt_set_gate(platform->idt, 33, (uint64_t)(uintptr_t)isr_stub_33, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 34, (uint64_t)(uintptr_t)isr_stub_34, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 35, (uint64_t)(uintptr_t)isr_stub_35, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 36, (uint64_t)(uintptr_t)isr_stub_36, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 37, (uint64_t)(uintptr_t)isr_stub_37, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 38, (uint64_t)(uintptr_t)isr_stub_38, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 39, (uint64_t)(uintptr_t)isr_stub_39, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 40, (uint64_t)(uintptr_t)isr_stub_40, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 41, (uint64_t)(uintptr_t)isr_stub_41, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 42, (uint64_t)(uintptr_t)isr_stub_42, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 43, (uint64_t)(uintptr_t)isr_stub_43, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 44, (uint64_t)(uintptr_t)isr_stub_44, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 45, (uint64_t)(uintptr_t)isr_stub_45, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 46, (uint64_t)(uintptr_t)isr_stub_46, 0x08,
-               0x8E);
-  idt_set_gate(platform->idt, 47, (uint64_t)(uintptr_t)isr_stub_47, 0x08,
-               0x8E);
+  idt_set_gate(platform->idt, 33, (uint64_t)(uintptr_t)isr_stub_33, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 34, (uint64_t)(uintptr_t)isr_stub_34, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 35, (uint64_t)(uintptr_t)isr_stub_35, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 36, (uint64_t)(uintptr_t)isr_stub_36, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 37, (uint64_t)(uintptr_t)isr_stub_37, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 38, (uint64_t)(uintptr_t)isr_stub_38, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 39, (uint64_t)(uintptr_t)isr_stub_39, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 40, (uint64_t)(uintptr_t)isr_stub_40, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 41, (uint64_t)(uintptr_t)isr_stub_41, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 42, (uint64_t)(uintptr_t)isr_stub_42, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 43, (uint64_t)(uintptr_t)isr_stub_43, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 44, (uint64_t)(uintptr_t)isr_stub_44, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 45, (uint64_t)(uintptr_t)isr_stub_45, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 46, (uint64_t)(uintptr_t)isr_stub_46, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 47, (uint64_t)(uintptr_t)isr_stub_47, 0x08, 0x8E);
 
   // Install spurious interrupt handler (vector 255)
   idt_set_gate(platform->idt, 255, (uint64_t)(uintptr_t)isr_stub_255, 0x08,

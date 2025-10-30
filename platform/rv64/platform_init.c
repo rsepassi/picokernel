@@ -81,7 +81,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
 // Abort system execution (shutdown/halt)
 void platform_abort(void) {
   // Disable interrupts (no platform context available in abort)
-  // This is a platform global operation - use NULL to indicate no specific platform
+  // This is a platform global operation - use NULL to indicate no specific
+  // platform
   platform_interrupt_disable(NULL);
   // Request shutdown via SBI (causes QEMU to exit cleanly)
   sbi_shutdown();

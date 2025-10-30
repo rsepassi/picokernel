@@ -11,9 +11,9 @@
 #include <stdint.h>
 
 // Module-local platform pointer
-// This is necessary because interrupt handlers (interrupt_handler, irq_dispatch)
-// are called from assembly and cannot receive platform_t* as a parameter.
-// This is an architectural limitation, not a design choice.
+// This is necessary because interrupt handlers (interrupt_handler,
+// irq_dispatch) are called from assembly and cannot receive platform_t* as a
+// parameter. This is an architectural limitation, not a design choice.
 static platform_t *g_current_platform = NULL;
 
 // External interrupt handler stubs (defined in assembly)
@@ -224,7 +224,8 @@ void platform_interrupt_disable(platform_t *platform) {
 }
 
 // Register IRQ handler
-void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *), void *context) {
+void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *),
+                  void *context) {
   platform->irq_table[vector].handler = handler;
   platform->irq_table[vector].context = context;
 
@@ -254,7 +255,8 @@ void irq_dispatch(uint8_t vector) {
   g_current_platform->irq_dispatch_count++;
 
   if (g_current_platform->irq_table[vector].handler != NULL) {
-    g_current_platform->irq_table[vector].handler(g_current_platform->irq_table[vector].context);
+    g_current_platform->irq_table[vector].handler(
+        g_current_platform->irq_table[vector].context);
   }
 
   // Send EOI to LAPIC for all IRQs

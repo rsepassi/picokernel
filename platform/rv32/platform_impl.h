@@ -35,7 +35,7 @@ typedef struct platform_t {
   uint64_t ticks_per_ms;           // Precomputed ticks per millisecond
   uint64_t timer_start;            // Start time for timer_get_current_time_ms()
   timer_callback_t timer_callback; // Timer callback function pointer
-  volatile int timer_fired;        // Flag indicating timer has fired (rv32-specific)
+  volatile int timer_fired; // Flag indicating timer has fired (rv32-specific)
 
   // VirtIO device state
   virtio_pci_transport_t virtio_pci_transport;
