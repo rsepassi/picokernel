@@ -105,12 +105,13 @@ static void virtio_irq_handler(void *context) {
 void pci_scan_devices(platform_t *platform);
 void mmio_scan_devices(platform_t *platform);
 
-// Setup VirtIO-RNG device via PCI
-static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
-                             uint8_t func) {
-  // Assign BAR addresses (bare-metal ARM64 needs to do this manually)
-  // Use platform allocator to avoid conflicts between devices
-  printk("[RNG] Allocating BARs starting at 0x");
+// Helper function to allocate PCI BARs for a device
+// This handles both 32-bit and 64-bit BARs, skipping I/O BARs
+static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
+                              uint8_t func, const char *device_name) {
+  printk("[");
+  printk(device_name);
+  printk("] Allocating BARs starting at 0x");
   printk_hex64(platform->pci_next_bar_addr);
   printk("\n");
 
@@ -161,9 +162,18 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     }
   }
 
-  printk("[RNG] BARs allocated, next address: 0x");
+  printk("[");
+  printk(device_name);
+  printk("] BARs allocated, next address: 0x");
   printk_hex64(platform->pci_next_bar_addr);
   printk("\n");
+}
+
+// Setup VirtIO-RNG device via PCI
+static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
+                             uint8_t func) {
+  // Assign BAR addresses (bare-metal ARM64 needs to do this manually)
+  allocate_pci_bars(platform, bus, slot, func, "RNG");
 
   // Re-enable device
   uint16_t command =
@@ -253,57 +263,7 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
   // Assign BAR addresses (bare-metal ARM64 needs to do this manually)
-  // Use platform allocator to avoid conflicts between devices
-  printk("[BLK] Allocating BARs starting at 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
-
-  for (int i = 0; i < 6; i++) {
-    uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
-    uint32_t bar_val =
-        platform_pci_config_read32(platform, bus, slot, func, bar_offset);
-
-    if (bar_val == 0 || bar_val == 0xFFFFFFFF) {
-      continue;
-    }
-
-    if (bar_val & 0x1) {
-      continue; // Skip I/O BARs
-    }
-
-    // Write all 1s to get BAR size
-    platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND, 0);
-    platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                0xFFFFFFFF);
-    uint32_t size_mask =
-        platform_pci_config_read32(platform, bus, slot, func, bar_offset);
-    size_mask &= ~0xF;
-    uint32_t size = ~size_mask + 1;
-
-    if (size == 0) {
-      continue;
-    }
-
-    // Check if 64-bit BAR
-    uint32_t bar_type = (bar_val >> 1) & 0x3;
-    if (bar_type == 0x2) {
-      platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
-      platform_pci_config_write32(
-          platform, bus, slot, func, bar_offset + 4,
-          (uint32_t)(platform->pci_next_bar_addr >> 32));
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
-      i++;
-    } else {
-      platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
-    }
-  }
-
-  printk("[BLK] BARs allocated, next address: 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  allocate_pci_bars(platform, bus, slot, func, "BLK");
 
   // Re-enable device
   uint16_t command =
@@ -557,6 +517,23 @@ void pci_scan_devices(platform_t *platform) {
 
 // Process deferred interrupt work (called from ktick before callbacks)
 void platform_tick(platform_t *platform, kernel_t *k) {
+  // Check for IRQ ring overflows (dropped interrupts)
+  uint32_t current_overflow = kirq_ring_overflow_count(&platform->irq_ring);
+  if (current_overflow > platform->last_overflow_count) {
+    uint32_t dropped = current_overflow - platform->last_overflow_count;
+
+    // Log every 100 overflows to avoid spam
+    if (current_overflow % 100 == 0 || platform->last_overflow_count == 0) {
+      printk("WARNING: IRQ ring overflows: ");
+      printk_dec(current_overflow);
+      printk(" (");
+      printk_dec(dropped);
+      printk(" dropped interrupts)\n");
+    }
+
+    platform->last_overflow_count = current_overflow;
+  }
+
   // Snapshot the current write position to avoid infinite loop if devices
   // re-enqueue Only process interrupts that were pending at the start of this
   // tick

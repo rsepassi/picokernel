@@ -2,6 +2,9 @@
 * Timer cancellation in wfi
 * ksubmit timeout support
 * recv configure drop vs overwrite
+* scatter-gather io (net/blk)
+* NET_IP_ALIGN
+* mmio addresses from device tree (vs hardcoded)
 * smp 2; setup thread-local (kernel, platform, ...)
 * mimalloc-style memory allocator
 * Should PCI code be shared?

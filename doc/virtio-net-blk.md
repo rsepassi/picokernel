@@ -1,5 +1,8 @@
 # VirtIO Block and Network Device Support
 
+*Status (Oct 30): blk and net devices have been added, new interrupt flow is
+implemented. Next steps are documented at the end.*
+
 ## Overview
 
 This document outlines the design for adding virtio-blk (block device) and
@@ -776,14 +779,31 @@ Reuse existing `kerr_t` codes and add new ones:
 
 ## Buffer Alignment Requirements
 
-**All block I/O buffers MUST be 4K-aligned.** This is enforced at submission
-time. Misaligned buffers will return `KERR_INVALID`.
+### Block Device Buffers
+
+**All block I/O buffers MUST be 512-byte aligned.** This is enforced at submission
+time using `KALIGNED(buffer, 512)`. Misaligned buffers will return `KERR_INVALID`.
 
 Rationale:
-- Matches page size on most architectures
+- Matches traditional sector size (512 bytes)
+- Ensures cache-line alignment (512 > 64 bytes)
+- Compatible with both 512-byte and 4K sector devices
 - Efficient DMA operations
-- Compatible with memory-mapped I/O
-- Simplifies implementation
+
+### Network Device Buffers
+
+**All network buffers MUST be 64-byte aligned.** This is enforced at submission
+time using `KALIGNED(buffer, 64)`. Misaligned buffers will return `KERR_INVALID`.
+
+Rationale:
+- Matches typical ARM64 cache-line size
+- Prevents cache-line splits and false sharing
+- Efficient DMA operations
+- Good balance of performance and usability
+
+**Note:** The 14-byte Ethernet header naturally creates misalignment for the IP
+header. Users who need optimal IP header access can use the NET_IP_ALIGN pattern
+(start Ethernet frame at buffer+2), but this is not enforced by the API.
 
 ## Implementation Checklist
 
@@ -989,3 +1009,381 @@ Extend to support multiple block and network devices:
 - Device enumeration API
 - Per-device handles or IDs
 - Device selection in work requests
+
+## Next steps
+
+**Remaining Items:**
+- Device tree parsing for MMIO discovery (Medium Priority)
+- Multi-segment block I/O (Medium Priority)
+- Batch network TX (Low Priority)
+
+---
+
+## 1. Device Tree Parsing for MMIO Discovery
+
+**Priority:** Medium
+**Complexity:** Moderate
+**Estimated Effort:** 2-3 hours
+
+### Current State
+
+MMIO device discovery currently uses hardcoded addresses and probing:
+
+```c
+// platform/arm64/platform_virtio.c:724-810
+#define VIRTIO_MMIO_BASE 0x0a000000ULL
+#define VIRTIO_MMIO_DEVICE_STRIDE 0x200
+#define VIRTIO_MMIO_MAX_DEVICES 32
+#define VIRTIO_MMIO_IRQ_BASE 16
+```
+
+The system probes sequential addresses, reads magic numbers, and initializes devices based on device ID. This works but is not portable across different ARM platforms.
+
+### Proposed Solution
+
+Leverage the existing FDT parser to discover VirtIO MMIO devices dynamically:
+
+**Existing FDT Infrastructure:**
+- `platform_fdt_find_virtio_mmio()` in platform/shared/devicetree.c:358-376
+- Returns array of `virtio_mmio_device_t` with base_addr, size, irq
+- Already integrated into platform initialization (platform_fdt_dump called)
+
+**Implementation Steps:**
+
+1. **Modify `mmio_scan_devices()` in platform/arm64/platform_virtio.c:724-810**
+   - Call `platform_fdt_find_virtio_mmio()` first to get FDT-discovered devices
+   - For each FDT device:
+     - Map device registers at discovered base_addr
+     - Read magic number (offset +0x00) and device ID (offset +0x08)
+     - Initialize RNG/BLK/NET based on device_id
+     - Use IRQ from FDT instead of calculated IRQ
+   - Fall back to hardcoded probing if FDT returns no devices
+
+2. **Preserve Backward Compatibility**
+   - Keep existing hardcoded probing as fallback
+   - Log which method was used (FDT vs. probing)
+   - Ensures system works on platforms without FDT
+
+**Benefits:**
+- Portable across ARM64 platforms with different memory maps
+- Proper IRQ discovery from device tree
+- No behavior change on systems without FDT (fallback still works)
+
+**Files to Modify:**
+- `platform/arm64/platform_virtio.c` - mmio_scan_devices() function
+
+**Testing:**
+- Verify MMIO devices still discovered on ARM64 QEMU
+- Test both FDT and fallback paths
+- Check IRQ routing is correct
+
+---
+
+## 2. Multi-Segment Block I/O
+
+**Priority:** Medium
+**Complexity:** Complex (changes critical path)
+**Estimated Effort:** 3-4 hours
+
+### Current State
+
+Block I/O currently only supports single-segment requests:
+
+```c
+// src/virtio/virtio_blk.c:199-204
+// Only support single segment for now
+if (req->num_segments > 1) {
+  kplatform_complete_work(k, work, KERR_INVALID);
+  return;
+}
+```
+
+Descriptor chain structure for single segment:
+- Header descriptor (virtio_blk_req_header_t)
+- Data descriptor (single buffer at req->segments[0].buffer)
+- Status descriptor (uint8_t)
+
+### Proposed Solution
+
+Implement scatter-gather I/O with multiple data descriptors per request.
+
+**Key Constraints:**
+- Device capability `blk->seg_max` (read from config) limits maximum segments
+- Device config field: `config->seg_max` (virtio_blk.h:47)
+- Currently defaults to 1 if not specified (virtio_blk.c:59-60)
+
+**Implementation Steps:**
+
+1. **Update Validation (virtio_blk.c:199-204)**
+   ```c
+   // Replace single-segment check with:
+   if (req->num_segments == 0 || req->num_segments > blk->seg_max) {
+     kplatform_complete_work(k, work, KERR_INVALID);
+     return;
+   }
+   ```
+
+2. **Modify Descriptor Allocation (virtio_blk.c:214-266)**
+   - Allocate `1 + num_segments + 1` descriptors
+   - Current: header, data, status (3 descriptors)
+   - New: header, data[0], data[1], ..., data[n-1], status (2+n descriptors)
+   - Check for allocation failure (VIRTQUEUE_NO_DESC)
+
+3. **Build Descriptor Chain**
+   ```c
+   // Header descriptor (same as before)
+   uint16_t hdr_desc = virtqueue_alloc_desc(&blk->vq);
+
+   // Allocate and chain data descriptors
+   uint16_t prev_desc = hdr_desc;
+   for (size_t i = 0; i < req->num_segments; i++) {
+     kblk_segment_t *seg = &req->segments[i];
+
+     // Validate 4K alignment for each segment buffer
+     if (((uint64_t)seg->buffer & 0xFFF) != 0) {
+       // Free all allocated descriptors
+       // Return KERR_INVALID
+     }
+
+     uint16_t data_desc = virtqueue_alloc_desc(&blk->vq);
+     uint64_t buffer_addr = (uint64_t)seg->buffer;
+     size_t buffer_len = seg->num_sectors * blk->sector_size;
+
+     // Setup data descriptor
+     virtqueue_add_desc(&blk->vq, data_desc, buffer_addr, buffer_len,
+                        VIRTQ_DESC_F_NEXT | (is_read ? VIRTQ_DESC_F_WRITE : 0));
+
+     // Link previous descriptor to this one
+     blk->vq.desc[prev_desc].next = data_desc;
+     prev_desc = data_desc;
+   }
+
+   // Status descriptor (link from last data descriptor)
+   uint16_t status_desc = virtqueue_alloc_desc(&blk->vq);
+   blk->vq.desc[prev_desc].next = status_desc;
+   // ... setup status descriptor
+   ```
+
+4. **Update Completion Handler (virtio_blk.c:372-381)**
+   - Current cleanup walks chain and frees all descriptors (already correct!)
+   - No changes needed - existing code handles variable-length chains
+
+5. **Handle Partial Completions**
+   - VirtIO spec allows partial transfers (device writes actual bytes to `len`)
+   - Update `completed_sectors` per segment based on total `len`
+   - Complexity: need to distribute `len` across multiple segments
+
+**Data Structures (Already Defined):**
+```c
+// kapi.h:80-85
+typedef struct {
+  uint64_t sector;
+  uint8_t *buffer;             // Must be 4K-aligned
+  size_t num_sectors;
+  size_t completed_sectors;    // Updated on completion
+} kblk_segment_t;
+```
+
+**Error Handling:**
+- Validate all segment buffers are 4K-aligned
+- Check `num_segments <= blk->seg_max`
+- Handle descriptor allocation failures (free all on error)
+- Properly distribute completion length across segments
+
+**Files to Modify:**
+- `src/virtio/virtio_blk.c` - virtio_blk_submit_work(), completion handler
+
+**Testing:**
+- Start with 2-segment requests (simpler than N-segment)
+- Test alignment validation (misaligned buffer should fail)
+- Verify descriptor chain walking in completion
+- Test with different segment counts (1, 2, seg_max)
+
+---
+
+## 3. Batch Network TX
+
+**Priority:** Low
+**Complexity:** Complex (changes critical path)
+**Estimated Effort:** 4-5 hours
+
+### Current State
+
+Network TX currently only supports single-packet requests:
+
+```c
+// src/virtio/virtio_net.c:343-348
+// For now, only support sending one packet at a time
+if (req->num_packets > 1) {
+  kplatform_complete_work(k, work, KERR_INVALID);
+  return;
+}
+```
+
+Current descriptor allocation per packet:
+- 2 descriptors: header + data
+- Single packet processed per work request
+
+### Proposed Solution
+
+Support multiple packets per send request for improved throughput via bulk submission.
+
+**Key Constraints:**
+- `tx_hdr_buffers[VIRTIO_NET_MAX_REQUESTS]` - one header per descriptor slot
+- Need to track multiple descriptor chains per request
+- Platform-specific state needs to store descriptor heads array
+
+**Implementation Steps:**
+
+1. **Extend Platform-Specific Structure (platform/arm64/platform_impl.h:103-106)**
+   ```c
+   // Current:
+   typedef struct {
+     uint16_t desc_idx;  // Single descriptor chain head
+   } knet_send_req_platform_t;
+
+   // New:
+   #define KNET_MAX_TX_PACKETS 16  // Match or be less than VIRTIO_NET_MAX_REQUESTS
+
+   typedef struct {
+     uint16_t desc_heads[KNET_MAX_TX_PACKETS];  // One per packet
+     size_t num_descriptors_allocated;
+   } knet_send_req_platform_t;
+   ```
+
+2. **Update Validation (virtio_net.c:343-348)**
+   ```c
+   // Replace single-packet check with:
+   if (req->num_packets == 0 || req->num_packets > KNET_MAX_TX_PACKETS) {
+     kplatform_complete_work(k, work, KERR_INVALID);
+     return;
+   }
+   ```
+
+3. **Modify Descriptor Allocation (virtio_net.c:352-366)**
+   ```c
+   // Initialize tracking
+   req->platform.num_descriptors_allocated = 0;
+
+   // Allocate descriptors for all packets
+   for (size_t i = 0; i < req->num_packets; i++) {
+     knet_buffer_t *pkt = &req->packets[i];
+
+     // Allocate header and data descriptors
+     uint16_t hdr_desc = virtqueue_alloc_desc(&net->tx_vq);
+     uint16_t data_desc = virtqueue_alloc_desc(&net->tx_vq);
+
+     if (hdr_desc == VIRTQUEUE_NO_DESC || data_desc == VIRTQUEUE_NO_DESC) {
+       // Free all allocated descriptors for this request
+       // Return KERR_NO_SPACE
+     }
+
+     // Store descriptor head for this packet
+     req->platform.desc_heads[i] = hdr_desc;
+     req->platform.num_descriptors_allocated++;
+
+     // Setup header and data descriptors
+     virtio_net_hdr_t *hdr = &tx_hdr_buffers[hdr_desc];
+     // ... setup header fields
+
+     virtqueue_add_desc(&net->tx_vq, hdr_desc, (uint64_t)hdr,
+                        sizeof(virtio_net_hdr_t), VIRTQ_DESC_F_NEXT);
+     net->tx_vq.desc[hdr_desc].next = data_desc;
+
+     virtqueue_add_desc(&net->tx_vq, data_desc, (uint64_t)pkt->buffer,
+                        pkt->buffer_size, 0);
+
+     // Add to available ring (do NOT notify yet)
+     virtqueue_add_avail(&net->tx_vq, hdr_desc);
+   }
+   ```
+
+4. **Bulk Submission with Single Notify**
+   ```c
+   // After all packets added to available ring
+   __sync_synchronize();  // Memory barrier
+
+   // Single device notification for all packets (bulk submit)
+   if (net->transport_type == VIRTIO_TRANSPORT_MMIO) {
+     virtio_mmio_notify_queue((virtio_mmio_transport_t *)net->transport,
+                              VIRTIO_NET_VQ_TX);
+   } else {
+     virtio_pci_notify_queue((virtio_pci_transport_t *)net->transport,
+                             &net->tx_vq);
+   }
+   ```
+
+5. **Update Completion Handler (virtio_net.c:488-518)**
+   ```c
+   // Process all completed packets for this request
+   size_t packets_completed = 0;
+
+   // Need to check if each packet's descriptor has been used
+   // This requires tracking which descriptors belong to which request
+   // Complexity: Current code uses desc_idx to find request, but with
+   // multiple descriptors per request, we need reverse mapping
+
+   // Option 1: Store request pointer in active_tx_requests for each descriptor
+   // Option 2: Process all used descriptors and count per request
+
+   // Update packets_sent count
+   req->packets_sent = packets_completed;
+
+   // Free all descriptor chains for this request
+   for (size_t i = 0; i < req->platform.num_descriptors_allocated; i++) {
+     uint16_t hdr_desc = req->platform.desc_heads[i];
+     uint16_t data_desc = net->tx_vq.desc[hdr_desc].next;
+
+     virtqueue_free_desc(&net->tx_vq, data_desc);
+     virtqueue_free_desc(&net->tx_vq, hdr_desc);
+   }
+   ```
+
+**Completion Complexity Challenge:**
+
+The current TX completion model assumes one descriptor chain per request. With batch TX:
+- Multiple descriptor chains belong to one request
+- Need to identify when ALL packets for a request have completed
+- Options:
+  1. Wait for all packets to complete before firing callback (all-or-nothing)
+  2. Fire callback multiple times with updated `packets_sent` count (progressive)
+  3. Add request tracking structure to map descriptors → requests
+
+**Recommended Approach:**
+Start with **all-or-nothing** completion:
+- Track how many descriptor chains are still outstanding for each request
+- Only call `kplatform_complete_work()` when all chains for a request are used
+- Simpler logic, matches current completion model
+
+**Data Structures (Already Defined):**
+```c
+// kapi.h:114-120
+typedef struct {
+  kwork_t work;
+  knet_buffer_t *packets;
+  size_t num_packets;
+  size_t packets_sent;           // Updated on completion
+  knet_send_req_platform_t platform;
+} knet_send_req_t;
+```
+
+**Error Handling:**
+- Validate `num_packets > 0` and `<= KNET_MAX_TX_PACKETS`
+- Handle descriptor allocation failure (free all on error)
+- Properly track and free all descriptor chains on completion/error
+
+**Files to Modify:**
+- `platform/arm64/platform_impl.h` - Extend knet_send_req_platform_t
+- `src/virtio/virtio_net.c` - virtio_net_submit_work(), TX completion handler
+
+**Testing:**
+- Start with 2-packet requests (simpler than N-packet)
+- Verify bulk submission (single notify for multiple packets)
+- Test descriptor allocation failure (edge case)
+- Measure throughput improvement (should reduce overhead)
+- Test with different packet counts (1, 2, KNET_MAX_TX_PACKETS)
+
+**Performance Benefits:**
+- Amortizes device notification overhead across multiple packets
+- Better DMA batching on device side
+- Reduces context switches for high-throughput workloads

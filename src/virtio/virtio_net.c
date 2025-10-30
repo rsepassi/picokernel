@@ -4,6 +4,7 @@
 #include "virtio_net.h"
 #include "irq_ring.h"
 #include "kapi.h"
+#include "kbase.h"
 #include "kernel.h"
 #include "printk.h"
 #include <stddef.h>
@@ -254,6 +255,20 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
         continue;
       }
 
+      // Validate buffer alignment (all buffers must be 64-byte aligned)
+      bool aligned = true;
+      for (size_t i = 0; i < req->num_buffers; i++) {
+        if (!KALIGNED(req->buffers[i].buffer, 64)) {
+          aligned = false;
+          break;
+        }
+      }
+      if (!aligned) {
+        kplatform_complete_work(k, work, KERR_INVALID);
+        work = next;
+        continue;
+      }
+
       // Check if this is standing work
       if (work->flags & KWORK_FLAG_STANDING) {
         // Check buffer count limit
@@ -306,6 +321,20 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
 
       // Validate request
       if (req->packets == NULL || req->num_packets == 0) {
+        kplatform_complete_work(k, work, KERR_INVALID);
+        work = next;
+        continue;
+      }
+
+      // Validate buffer alignment (all packets must be 64-byte aligned)
+      bool aligned_tx = true;
+      for (size_t i = 0; i < req->num_packets; i++) {
+        if (!KALIGNED(req->packets[i].buffer, 64)) {
+          aligned_tx = false;
+          break;
+        }
+      }
+      if (!aligned_tx) {
         kplatform_complete_work(k, work, KERR_INVALID);
         work = next;
         continue;

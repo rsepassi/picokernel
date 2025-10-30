@@ -26,6 +26,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
+  platform->last_overflow_count = 0;
 
   printk("Initializing ARM64 platform...\n");
 

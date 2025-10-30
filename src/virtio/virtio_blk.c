@@ -4,6 +4,7 @@
 #include "virtio_blk.h"
 #include "irq_ring.h"
 #include "kapi.h"
+#include "kbase.h"
 #include "kernel.h"
 #include "printk.h"
 #include <stddef.h>
@@ -202,8 +203,8 @@ void virtio_blk_submit_work(virtio_blk_dev_t *blk, kwork_t *submissions,
           continue;
         }
 
-        // Validate buffer alignment (must be 4K-aligned)
-        if (((uint64_t)req->segments[0].buffer & 0xFFF) != 0) {
+        // Validate buffer alignment (must be 512-byte aligned for sector I/O)
+        if (!KALIGNED(req->segments[0].buffer, 512)) {
           kplatform_complete_work(k, work, KERR_INVALID);
           work = next;
           continue;
