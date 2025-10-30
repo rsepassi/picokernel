@@ -18,7 +18,8 @@ static virtio_net_hdr_t tx_hdr_buffers[VIRTIO_NET_MAX_REQUESTS]
 // Initialize network device with MMIO transport
 int virtio_net_init_mmio(virtio_net_dev_t *net, virtio_mmio_transport_t *mmio,
                          virtqueue_memory_t *rx_queue_memory,
-                         virtqueue_memory_t *tx_queue_memory, kernel_t *kernel) {
+                         virtqueue_memory_t *tx_queue_memory,
+                         kernel_t *kernel) {
   net->transport = mmio;
   net->transport_type = VIRTIO_TRANSPORT_MMIO;
   net->kernel = kernel;
@@ -183,7 +184,7 @@ int virtio_net_init_pci(virtio_net_dev_t *net, virtio_pci_transport_t *pci,
 
 // Helper function to submit a single RX buffer to the device
 static kerr_t submit_rx_buffer(virtio_net_dev_t *net, knet_recv_req_t *req,
-                                size_t buffer_index) {
+                               size_t buffer_index) {
   knet_buffer_t *buf = &req->buffers[buffer_index];
   uint16_t hdr_desc, data_desc;
 
@@ -409,7 +410,8 @@ void virtio_net_process_irq(virtio_net_dev_t *net, kernel_t *k) {
 
       // Update packet length (subtract header size)
       if (len > sizeof(virtio_net_hdr_t)) {
-        req->buffers[buffer_index].packet_length = len - sizeof(virtio_net_hdr_t);
+        req->buffers[buffer_index].packet_length =
+            len - sizeof(virtio_net_hdr_t);
       } else {
         req->buffers[buffer_index].packet_length = 0;
       }
@@ -490,7 +492,7 @@ void virtio_net_process_irq(virtio_net_dev_t *net, kernel_t *k) {
 // Release a receive buffer back to the ring after user processes it
 // This is called by the platform layer after user calls knet_buffer_release()
 void virtio_net_buffer_release(virtio_net_dev_t *net, void *req_ptr,
-                                size_t buffer_index) {
+                               size_t buffer_index) {
   // Cast to proper type
   knet_recv_req_t *req = (knet_recv_req_t *)req_ptr;
 
@@ -535,8 +537,7 @@ void virtio_net_buffer_release(virtio_net_dev_t *net, void *req_ptr,
 }
 
 // Cancel network work (for standing recv work cleanup)
-void virtio_net_cancel_work(virtio_net_dev_t *net, kwork_t *work,
-                             kernel_t *k) {
+void virtio_net_cancel_work(virtio_net_dev_t *net, kwork_t *work, kernel_t *k) {
   // Only NET_RECV supports cancellation (standing work)
   if (work->op == KWORK_OP_NET_RECV) {
     knet_recv_req_t *req = CONTAINER_OF(work, knet_recv_req_t, work);
@@ -582,7 +583,8 @@ void virtio_net_cancel_work(virtio_net_dev_t *net, kwork_t *work,
       req->platform.descriptors_allocated = false;
     }
 
-    // Cancellation successful - notify user (callback fires with KERR_CANCELLED)
+    // Cancellation successful - notify user (callback fires with
+    // KERR_CANCELLED)
     kplatform_cancel_work(k, work);
   }
   // Note: KWORK_OP_NET_SEND doesn't support cancellation (one-shot work)

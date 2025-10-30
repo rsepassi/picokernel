@@ -96,17 +96,17 @@ typedef struct {
 
 // Network buffer for send/receive operations
 typedef struct {
-  uint8_t *buffer;        // Packet buffer
-  size_t buffer_size;     // Buffer capacity (recv) or packet size (send)
-  size_t packet_length;   // Actual packet length (filled on completion)
+  uint8_t *buffer;      // Packet buffer
+  size_t buffer_size;   // Buffer capacity (recv) or packet size (send)
+  size_t packet_length; // Actual packet length (filled on completion)
 } knet_buffer_t;
 
 // Network receive request structure (ring buffer semantics)
 typedef struct {
-  kwork_t work;                      // Embedded work item
-  knet_buffer_t *buffers;            // Array of receive buffers (ring)
-  size_t num_buffers;                // Number of buffers in ring
-  size_t buffer_index;               // Which buffer was filled (set on completion)
+  kwork_t work;           // Embedded work item
+  knet_buffer_t *buffers; // Array of receive buffers (ring)
+  size_t num_buffers;     // Number of buffers in ring
+  size_t buffer_index;    // Which buffer was filled (set on completion)
   knet_recv_req_platform_t platform; // Platform-specific fields
 } knet_recv_req_t;
 
@@ -132,4 +132,5 @@ kerr_t ksubmit(kernel_t *k, kwork_t *work);
 kerr_t kcancel(kernel_t *k, kwork_t *work);
 
 // Release a network receive buffer back to the ring
-void knet_buffer_release(kernel_t *k, knet_recv_req_t *req, size_t buffer_index);
+void knet_buffer_release(kernel_t *k, knet_recv_req_t *req,
+                         size_t buffer_index);

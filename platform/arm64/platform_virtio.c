@@ -148,10 +148,11 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
       // 64-bit BAR - assign address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                   (uint32_t)platform->pci_next_bar_addr);
-      platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
-                                  (uint32_t)(platform->pci_next_bar_addr >> 32));
+      platform_pci_config_write32(
+          platform, bus, slot, func, bar_offset + 4,
+          (uint32_t)(platform->pci_next_bar_addr >> 32));
       platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL; // Align to 4KB
-      i++;                                    // Skip next BAR (high 32 bits)
+      i++; // Skip next BAR (high 32 bits)
     } else {
       // 32-bit BAR
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
@@ -214,8 +215,8 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
   (void)mmio_size; // Size not used in generic transport
 
   // Initialize MMIO transport
-  if (virtio_mmio_init(&platform->virtio_mmio_transport_rng, (void *)mmio_base) <
-      0) {
+  if (virtio_mmio_init(&platform->virtio_mmio_transport_rng,
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -288,8 +289,9 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     if (bar_type == 0x2) {
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                   (uint32_t)platform->pci_next_bar_addr);
-      platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
-                                  (uint32_t)(platform->pci_next_bar_addr >> 32));
+      platform_pci_config_write32(
+          platform, bus, slot, func, bar_offset + 4,
+          (uint32_t)(platform->pci_next_bar_addr >> 32));
       platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
       i++;
     } else {
@@ -365,8 +367,8 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
   (void)mmio_size;
 
   // Initialize MMIO transport
-  if (virtio_mmio_init(&platform->virtio_mmio_transport_blk, (void *)mmio_base) <
-      0) {
+  if (virtio_mmio_init(&platform->virtio_mmio_transport_blk,
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -419,8 +421,8 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
   (void)mmio_size;
 
   // Initialize MMIO transport
-  if (virtio_mmio_init(&platform->virtio_mmio_transport_net, (void *)mmio_base) <
-      0) {
+  if (virtio_mmio_init(&platform->virtio_mmio_transport_net,
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -434,8 +436,8 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
   // Initialize NET device with MMIO transport
   if (virtio_net_init_mmio(
           &platform->virtio_net, &platform->virtio_mmio_transport_net,
-          &platform->virtqueue_net_rx_memory, &platform->virtqueue_net_tx_memory,
-          platform->kernel) < 0) {
+          &platform->virtqueue_net_rx_memory,
+          &platform->virtqueue_net_tx_memory, platform->kernel) < 0) {
     return;
   }
 
@@ -585,14 +587,16 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
       kwork_t *next = work->next;
 
       // Route network cancellations to network device
-      // virtio_net_cancel_work will call kplatform_cancel_work for NET_RECV only
+      // virtio_net_cancel_work will call kplatform_cancel_work for NET_RECV
+      // only
       if ((work->op == KWORK_OP_NET_RECV || work->op == KWORK_OP_NET_SEND) &&
           platform->virtio_net_ptr != NULL) {
         virtio_net_cancel_work(platform->virtio_net_ptr, work,
                                platform->kernel);
       }
-      // For all other operations (RNG, BLK, TIMER), cancellation is not supported
-      // Silently ignore the request - do not call kplatform_cancel_work
+      // For all other operations (RNG, BLK, TIMER), cancellation is not
+      // supported Silently ignore the request - do not call
+      // kplatform_cancel_work
 
       work = next;
     }
@@ -693,7 +697,7 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
 
 // Release a network receive buffer back to the ring (for standing work)
 void platform_net_buffer_release(platform_t *platform, void *req,
-                                  size_t buffer_index) {
+                                 size_t buffer_index) {
   // Validate platform has network device
   if (platform == NULL || platform->virtio_net_ptr == NULL) {
     return;

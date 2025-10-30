@@ -39,9 +39,9 @@ struct platform_t {
   timer_callback_t timer_callback; // Timer callback function pointer
 
   // VirtIO device state
-  virtio_pci_transport_t virtio_pci_transport_rng; // PCI transport for RNG
-  virtio_pci_transport_t virtio_pci_transport_blk; // PCI transport for BLK
-  virtio_pci_transport_t virtio_pci_transport_net; // PCI transport for NET
+  virtio_pci_transport_t virtio_pci_transport_rng;   // PCI transport for RNG
+  virtio_pci_transport_t virtio_pci_transport_blk;   // PCI transport for BLK
+  virtio_pci_transport_t virtio_pci_transport_net;   // PCI transport for NET
   virtio_mmio_transport_t virtio_mmio_transport_rng; // MMIO transport for RNG
   virtio_mmio_transport_t virtio_mmio_transport_blk; // MMIO transport for BLK
   virtio_mmio_transport_t virtio_mmio_transport_net; // MMIO transport for NET
@@ -95,8 +95,9 @@ typedef struct {
 
 // ARM64 Network receive request platform-specific fields (VirtIO)
 typedef struct {
-  uint16_t desc_heads[KNET_MAX_BUFFERS]; // Persistent descriptor for each buffer
-  bool descriptors_allocated;             // Track if descriptors are set up
+  uint16_t
+      desc_heads[KNET_MAX_BUFFERS]; // Persistent descriptor for each buffer
+  bool descriptors_allocated;       // Track if descriptors are set up
 } knet_recv_req_platform_t;
 
 // ARM64 Network send request platform-specific fields (VirtIO)

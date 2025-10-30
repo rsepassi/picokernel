@@ -194,4 +194,4 @@ void platform_tick(platform_t *platform, kernel_t *k);
 // req: the standing receive request (knet_recv_req_t*, passed as void*)
 // buffer_index: which buffer to release (0 to num_buffers-1)
 void platform_net_buffer_release(platform_t *platform, void *req,
-                                  size_t buffer_index);
+                                 size_t buffer_index);

@@ -162,7 +162,8 @@ kerr_t kcancel(kernel_t *k, kwork_t *work) {
 }
 
 // Release a receive buffer back to the ring (for standing work)
-void knet_buffer_release(kernel_t *k, knet_recv_req_t *req, size_t buffer_index) {
+void knet_buffer_release(kernel_t *k, knet_recv_req_t *req,
+                         size_t buffer_index) {
   if (k == NULL || req == NULL) {
     return;
   }

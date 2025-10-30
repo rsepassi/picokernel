@@ -21,7 +21,7 @@ void kmain(void *fdt) {
   KLOG("kmain_init ok");
 
   // User kickoff
-  kuser_t* user = &g_user;
+  kuser_t *user = &g_user;
   user->kernel = k;
   kmain_usermain(user);
   KLOG("kmain_usermain ok");

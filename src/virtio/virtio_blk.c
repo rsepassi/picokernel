@@ -328,7 +328,8 @@ void virtio_blk_submit_work(virtio_blk_dev_t *blk, kwork_t *submissions,
     if (blk->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)blk->transport, 0);
     } else if (blk->transport_type == VIRTIO_TRANSPORT_PCI) {
-      virtio_pci_notify_queue((virtio_pci_transport_t *)blk->transport, &blk->vq);
+      virtio_pci_notify_queue((virtio_pci_transport_t *)blk->transport,
+                              &blk->vq);
     }
     // Block device uses interrupts only (no polling)
   }

@@ -202,7 +202,7 @@ static void on_packet_received(kwork_t *work) {
 
   // Calculate payload length (UDP data)
   size_t udp_data_len = udp_length - 8; // UDP header is 8 bytes
-  const uint8_t *udp_data = &pkt[42]; // 14 + 20 + 8
+  const uint8_t *udp_data = &pkt[42];   // 14 + 20 + 8
 
   // Log received packet with parsed information
   printk("Received UDP packet from ");
@@ -240,8 +240,8 @@ static void on_packet_received(kwork_t *work) {
   size_t tx_len = 0;
 
   // Ethernet header (14 bytes) - swap src/dst MACs
-  memcpy(&tx_pkt[0], eth_src_mac, 6);  // dst_mac = incoming src_mac
-  memcpy(&tx_pkt[6], eth_dst_mac, 6);  // src_mac = incoming dst_mac
+  memcpy(&tx_pkt[0], eth_src_mac, 6); // dst_mac = incoming src_mac
+  memcpy(&tx_pkt[6], eth_dst_mac, 6); // src_mac = incoming dst_mac
   write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
   tx_len += 14;
 
