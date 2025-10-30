@@ -70,7 +70,7 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
   // Clear request tracking and outstanding counter
   rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
-    rng->active_requests[i] = (void *)0;
+    rng->active_requests[i] = NULL;
   }
 
   return 0;
@@ -127,7 +127,7 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   // Clear request tracking and outstanding counter
   rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
-    rng->active_requests[i] = (void *)0;
+    rng->active_requests[i] = NULL;
   }
 
   return 0;
@@ -139,7 +139,7 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
   int submitted = 0;
 
   kwork_t *work = submissions;
-  while (work != (void *)0) {
+  while (work != NULL) {
     kwork_t *next = work->next;
 
     if (work->op == KWORK_OP_RNG_READ) {
@@ -201,10 +201,10 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
     virtqueue_get_used(&rng->vq, &desc_idx, &len);
 
     krng_req_t *req = rng->active_requests[desc_idx];
-    if (req != (void *)0) {
+    if (req != NULL) {
       req->completed = len;
       kplatform_complete_work(k, &req->work, KERR_OK);
-      rng->active_requests[desc_idx] = (void *)0;
+      rng->active_requests[desc_idx] = NULL;
       rng->outstanding_requests--;
     }
 

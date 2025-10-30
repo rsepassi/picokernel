@@ -9,6 +9,7 @@
 // Include VirtIO headers for complete type definitions
 // This is needed to embed VirtIO structures in platform_t
 #include "irq_ring.h"
+#include "virtio/virtio_blk.h"
 #include "virtio/virtio_mmio.h"
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
@@ -40,9 +41,18 @@ struct platform_t {
   virtio_pci_transport_t virtio_pci_transport;
   virtio_mmio_transport_t virtio_mmio_transport;
   virtio_rng_dev_t virtio_rng;
-  virtqueue_memory_t virtqueue_memory; // VirtIO queue memory
+  virtio_blk_dev_t virtio_blk;
+  virtqueue_memory_t virtqueue_rng_memory; // VirtIO RNG queue memory
+  virtqueue_memory_t virtqueue_blk_memory; // VirtIO BLK queue memory
   virtio_rng_dev_t
       *virtio_rng_ptr; // Pointer to active RNG device (NULL if not present)
+  virtio_blk_dev_t
+      *virtio_blk_ptr; // Pointer to active BLK device (NULL if not present)
+
+  // Block device info (valid if has_block_device = true)
+  bool has_block_device;
+  uint32_t block_sector_size; // Detected sector size (512, 4096, etc.)
+  uint64_t block_capacity;    // Total sectors
 
   // Interrupt state
   irq_entry_t irq_table[MAX_IRQS];
@@ -57,3 +67,8 @@ typedef struct platform_t platform_t;
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor index
 } krng_req_platform_t;
+
+// ARM64 Block request platform-specific fields (VirtIO)
+typedef struct {
+  uint16_t desc_idx; // VirtIO descriptor chain head index
+} kblk_req_platform_t;

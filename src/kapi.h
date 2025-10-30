@@ -18,6 +18,8 @@ typedef uint32_t kerr_t;
 #define KERR_CANCELLED 3 // Operation cancelled
 #define KERR_TIMEOUT 4   // Timeout
 #define KERR_NO_DEVICE 5 // Device not available
+#define KERR_IO_ERROR 6  // I/O error (bad sector, transmission failure)
+#define KERR_NO_SPACE 7  // Device full (block) or queue full (network)
 
 // Work item states
 typedef enum {
@@ -30,9 +32,11 @@ typedef enum {
 
 // Operation types
 typedef enum {
-  KWORK_OP_TIMER = 1,    // Timer expiration
-  KWORK_OP_RNG_READ = 2, // Random number generation
-                         // Future: KWORK_OP_BLOCK_READ, KWORK_OP_NET_SEND, etc.
+  KWORK_OP_TIMER = 1,       // Timer expiration
+  KWORK_OP_RNG_READ = 2,    // Random number generation
+  KWORK_OP_BLOCK_READ = 3,  // Block device read
+  KWORK_OP_BLOCK_WRITE = 4, // Block device write
+  KWORK_OP_BLOCK_FLUSH = 5, // Block device flush/fsync
 } kwork_op_t;
 
 // Work item callback
@@ -64,6 +68,24 @@ typedef struct {
   size_t completed;             // Bytes actually read
   krng_req_platform_t platform; // Platform-specific fields
 } krng_req_t;
+
+// Block device structures
+
+// I/O segment for scatter-gather operations
+typedef struct {
+  uint64_t sector;          // Starting sector number
+  uint8_t *buffer;          // Data buffer (must be 4K-aligned)
+  size_t num_sectors;       // Number of sectors to transfer
+  size_t completed_sectors; // Sectors actually transferred (for partial I/O)
+} kblk_segment_t;
+
+// Block request structure
+typedef struct {
+  kwork_t work;                 // Embedded work item
+  kblk_segment_t *segments;     // Array of I/O segments
+  size_t num_segments;          // Number of segments
+  kblk_req_platform_t platform; // Platform-specific fields
+} kblk_req_t;
 
 // CONTAINER_OF macro to recover containing structure from work pointer
 #define CONTAINER_OF(ptr, type, member)                                        \

@@ -7,6 +7,7 @@
 #include "platform_impl.h"
 #include "printk.h"
 #include "virtio/virtio.h"
+#include "virtio/virtio_blk.h"
 #include "virtio/virtio_mmio.h"
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
@@ -17,10 +18,15 @@ static void virtio_rng_process_irq_dispatch(void *dev, kernel_t *k) {
   virtio_rng_process_irq(rng, k);
 }
 
-// VirtIO-RNG interrupt handler (minimal - deferred processing pattern)
-static void virtio_rng_irq_handler(void *context) {
-  virtio_rng_dev_t *rng = (virtio_rng_dev_t *)context;
-  platform_t *platform = (platform_t *)rng->base.platform;
+// Dispatch wrapper for virtio_blk_process_irq (type-safe function pointer)
+static void virtio_blk_process_irq_dispatch(void *dev, kernel_t *k) {
+  virtio_blk_dev_t *blk = (virtio_blk_dev_t *)dev;
+  virtio_blk_process_irq(blk, k);
+}
+
+// VirtIO-RNG ISR acknowledgment
+static bool virtio_rng_ack_isr(void *dev) {
+  virtio_rng_dev_t *rng = (virtio_rng_dev_t *)dev;
 
   // Read ISR status to acknowledge device interrupt
   // Per VirtIO spec, this MUST be read to clear the interrupt line
@@ -33,9 +39,37 @@ static void virtio_rng_irq_handler(void *context) {
     virtio_mmio_ack_isr(mmio, isr_status);
   }
 
-  // Enqueue device pointer for deferred processing
-  // Returns false if ring is full - interrupt is dropped, counter incremented
-  kirq_ring_enqueue(&platform->irq_ring, rng);
+  return true; // Always process RNG interrupts
+}
+
+// VirtIO-BLK ISR acknowledgment
+static bool virtio_blk_ack_isr(void *dev) {
+  virtio_blk_dev_t *blk = (virtio_blk_dev_t *)dev;
+
+  // Read ISR status to acknowledge device interrupt
+  if (blk->transport_type == VIRTIO_TRANSPORT_PCI) {
+    virtio_pci_transport_t *pci = (virtio_pci_transport_t *)blk->transport;
+    (void)virtio_pci_read_isr(pci);
+  } else if (blk->transport_type == VIRTIO_TRANSPORT_MMIO) {
+    virtio_mmio_transport_t *mmio = (virtio_mmio_transport_t *)blk->transport;
+    uint32_t isr_status = virtio_mmio_read_isr(mmio);
+    virtio_mmio_ack_isr(mmio, isr_status);
+  }
+
+  return true; // Always process BLK interrupts
+}
+
+// Shared VirtIO interrupt handler (used for all VirtIO devices)
+static void virtio_irq_handler(void *context) {
+  kdevice_base_t *dev = (kdevice_base_t *)context;
+  platform_t *platform = (platform_t *)dev->platform;
+
+  // Device-specific ISR acknowledgment
+  // Returns true if interrupt should be processed
+  if (dev->ack_isr(context)) {
+    // Enqueue device pointer for deferred processing
+    kirq_ring_enqueue(&platform->irq_ring, context);
+  }
 
   // GIC EOI sent by irq_dispatch()
 }
@@ -111,9 +145,9 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   }
 
   // Initialize RNG device
-  if (virtio_rng_init_pci(&platform->virtio_rng,
-                          &platform->virtio_pci_transport,
-                          &platform->virtqueue_memory, platform->kernel) < 0) {
+  if (virtio_rng_init_pci(
+          &platform->virtio_rng, &platform->virtio_pci_transport,
+          &platform->virtqueue_rng_memory, platform->kernel) < 0) {
     return;
   }
 
@@ -121,6 +155,7 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.device_type = KDEVICE_TYPE_VIRTIO_RNG;
   platform->virtio_rng.base.platform = platform;
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
+  platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
   // Setup interrupt
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
@@ -132,7 +167,7 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   uint32_t spi_num = base_spi + ((slot + irq_pin - 1) % 4);
   uint32_t irq_num = 32 + spi_num; // GIC IRQ = 32 + SPI
 
-  platform_irq_register(platform, irq_num, virtio_rng_irq_handler,
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_rng);
   platform_irq_enable(platform, irq_num);
 
@@ -159,9 +194,9 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
   }
 
   // Initialize RNG device with MMIO transport
-  if (virtio_rng_init_mmio(&platform->virtio_rng,
-                           &platform->virtio_mmio_transport,
-                           &platform->virtqueue_memory, platform->kernel) < 0) {
+  if (virtio_rng_init_mmio(
+          &platform->virtio_rng, &platform->virtio_mmio_transport,
+          &platform->virtqueue_rng_memory, platform->kernel) < 0) {
     return;
   }
 
@@ -169,14 +204,173 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
   platform->virtio_rng.base.device_type = KDEVICE_TYPE_VIRTIO_RNG;
   platform->virtio_rng.base.platform = platform;
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
+  platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
   // Setup interrupt
-  platform_irq_register(platform, irq_num, virtio_rng_irq_handler,
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_rng);
   platform_irq_enable(platform, irq_num);
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
+}
+
+// Setup VirtIO-BLK device via PCI
+static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
+                             uint8_t func) {
+  // Assign BAR addresses (bare-metal ARM64 needs to do this manually)
+  uint64_t bar_addr = 0x10000000;
+
+  for (int i = 0; i < 6; i++) {
+    uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
+    uint32_t bar_val =
+        platform_pci_config_read32(platform, bus, slot, func, bar_offset);
+
+    if (bar_val == 0 || bar_val == 0xFFFFFFFF) {
+      continue;
+    }
+
+    if (bar_val & 0x1) {
+      continue; // Skip I/O BARs
+    }
+
+    // Write all 1s to get BAR size
+    platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND, 0);
+    platform_pci_config_write32(platform, bus, slot, func, bar_offset,
+                                0xFFFFFFFF);
+    uint32_t size_mask =
+        platform_pci_config_read32(platform, bus, slot, func, bar_offset);
+    size_mask &= ~0xF;
+    uint32_t size = ~size_mask + 1;
+
+    if (size == 0) {
+      continue;
+    }
+
+    // Check if 64-bit BAR
+    uint32_t bar_type = (bar_val >> 1) & 0x3;
+    if (bar_type == 0x2) {
+      platform_pci_config_write32(platform, bus, slot, func, bar_offset,
+                                  (uint32_t)bar_addr);
+      platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
+                                  (uint32_t)(bar_addr >> 32));
+      bar_addr += (size + 0xFFF) & ~0xFFFULL;
+      i++;
+    } else {
+      platform_pci_config_write32(platform, bus, slot, func, bar_offset,
+                                  (uint32_t)bar_addr);
+      bar_addr += (size + 0xFFF) & ~0xFFFULL;
+    }
+  }
+
+  // Re-enable device
+  uint16_t command =
+      platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
+  command |= 0x0006;
+  platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                              command);
+
+  // Initialize PCI transport
+  if (virtio_pci_init(&platform->virtio_pci_transport, platform, bus, slot,
+                      func) < 0) {
+    return;
+  }
+
+  // Initialize BLK device
+  if (virtio_blk_init_pci(
+          &platform->virtio_blk, &platform->virtio_pci_transport,
+          &platform->virtqueue_blk_memory, platform->kernel) < 0) {
+    return;
+  }
+
+  // Initialize device base fields
+  platform->virtio_blk.base.device_type = KDEVICE_TYPE_VIRTIO_BLK;
+  platform->virtio_blk.base.platform = platform;
+  platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
+  platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
+
+  // Setup interrupt
+  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
+                                              PCI_REG_INTERRUPT_PIN);
+
+  uint32_t base_spi = 3;
+  uint32_t spi_num = base_spi + ((slot + irq_pin - 1) % 4);
+  uint32_t irq_num = 32 + spi_num;
+
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
+                        &platform->virtio_blk);
+  platform_irq_enable(platform, irq_num);
+
+  // Store device info
+  platform->virtio_blk_ptr = &platform->virtio_blk;
+  platform->has_block_device = true;
+  platform->block_sector_size = platform->virtio_blk.sector_size;
+  platform->block_capacity = platform->virtio_blk.capacity;
+
+  // Log device info
+  printk("  sector_size=");
+  printk_dec(platform->block_sector_size);
+  printk(" capacity=");
+  printk_dec(platform->block_capacity);
+  printk(" sectors (");
+  uint64_t mb =
+      (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
+  printk_dec(mb);
+  printk(" MB)\n");
+}
+
+// Setup VirtIO-BLK device via MMIO
+static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
+                                  uint64_t mmio_size, uint32_t irq_num) {
+  (void)mmio_size;
+
+  // Initialize MMIO transport
+  if (virtio_mmio_init(&platform->virtio_mmio_transport, (void *)mmio_base) <
+      0) {
+    return;
+  }
+
+  // Verify device ID
+  uint32_t device_id =
+      virtio_mmio_get_device_id(&platform->virtio_mmio_transport);
+  if (device_id != VIRTIO_ID_BLOCK) {
+    return;
+  }
+
+  // Initialize BLK device with MMIO transport
+  if (virtio_blk_init_mmio(
+          &platform->virtio_blk, &platform->virtio_mmio_transport,
+          &platform->virtqueue_blk_memory, platform->kernel) < 0) {
+    return;
+  }
+
+  // Initialize device base fields
+  platform->virtio_blk.base.device_type = KDEVICE_TYPE_VIRTIO_BLK;
+  platform->virtio_blk.base.platform = platform;
+  platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
+  platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
+
+  // Setup interrupt
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
+                        &platform->virtio_blk);
+  platform_irq_enable(platform, irq_num);
+
+  // Store device info
+  platform->virtio_blk_ptr = &platform->virtio_blk;
+  platform->has_block_device = true;
+  platform->block_sector_size = platform->virtio_blk.sector_size;
+  platform->block_capacity = platform->virtio_blk.capacity;
+
+  // Log device info
+  printk("  sector_size=");
+  printk_dec(platform->block_sector_size);
+  printk(" capacity=");
+  printk_dec(platform->block_capacity);
+  printk(" sectors (");
+  uint64_t mb =
+      (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
+  printk_dec(mb);
+  printk(" MB)\n");
 }
 
 // Helper to get device type name
@@ -202,6 +396,7 @@ void pci_scan_devices(platform_t *platform) {
 
   int devices_found = 0;
   int rng_initialized = 0;
+  int blk_initialized = 0;
 
   // Scan first 4 buses only (most systems have devices on bus 0)
   // Scanning all 256 buses takes too long
@@ -239,6 +434,13 @@ void pci_scan_devices(platform_t *platform) {
             virtio_rng_setup(platform, bus, slot, 0);
             rng_initialized = 1;
           }
+
+          // Initialize BLK device if found and not already initialized
+          if (!blk_initialized && (device == VIRTIO_PCI_DEVICE_BLOCK_LEGACY ||
+                                   device == VIRTIO_PCI_DEVICE_BLOCK_MODERN)) {
+            virtio_blk_setup(platform, bus, slot, 0);
+            blk_initialized = 1;
+          }
         }
       }
     }
@@ -257,7 +459,7 @@ void pci_scan_devices(platform_t *platform) {
 void platform_tick(platform_t *platform, kernel_t *k) {
   // POLLING FALLBACK: If no interrupts, check device manually
   // This works around interrupt delivery issues on MMIO devices
-  if (platform->virtio_rng_ptr != (void *)0) {
+  if (platform->virtio_rng_ptr != NULL) {
     if (kirq_ring_is_empty(&platform->irq_ring)) {
       // Check if device has completed work (poll used ring)
       if (virtqueue_has_used(&platform->virtio_rng_ptr->vq)) {
@@ -275,7 +477,7 @@ void platform_tick(platform_t *platform, kernel_t *k) {
   // Process pending device IRQs up to the captured end position
   void *dev_ptr;
   while ((dev_ptr = kirq_ring_dequeue_bounded(&platform->irq_ring, end_pos)) !=
-         (void *)0) {
+         NULL) {
     // Cast to device base pointer
     kdevice_base_t *dev = (kdevice_base_t *)dev_ptr;
 
@@ -289,23 +491,77 @@ void platform_tick(platform_t *platform, kernel_t *k) {
 void platform_submit(platform_t *platform, kwork_t *submissions,
                      kwork_t *cancellations) {
   (void)cancellations; // Unused parameter
-  if (platform->virtio_rng_ptr == (void *)0) {
-    // No RNG device, complete all submissions with error
-    kwork_t *work = submissions;
-    while (work != (void *)0) {
-      kwork_t *next = work->next;
-      kplatform_complete_work(platform->kernel, work, 5); // KERR_NO_DEVICE
-      work = next;
+
+  // Separate submissions by device type
+  kwork_t *rng_work = NULL;
+  kwork_t *blk_work = NULL;
+  kwork_t *unknown_work = NULL;
+
+  kwork_t *work = submissions;
+  while (work != NULL) {
+    kwork_t *next = work->next;
+    work->next = NULL; // Clear next pointer for re-linking
+
+    if (work->op == KWORK_OP_RNG_READ) {
+      // Link to RNG list
+      work->next = rng_work;
+      rng_work = work;
+    } else if (work->op == KWORK_OP_BLOCK_READ ||
+               work->op == KWORK_OP_BLOCK_WRITE ||
+               work->op == KWORK_OP_BLOCK_FLUSH) {
+      // Link to BLK list
+      work->next = blk_work;
+      blk_work = work;
+    } else {
+      // Unknown operation
+      work->next = unknown_work;
+      unknown_work = work;
     }
-    return;
+
+    work = next;
   }
 
-  // Process cancellations (best-effort, usually too late for RNG)
-  // Currently no-op for RNG
+  // Submit RNG work
+  if (rng_work != NULL) {
+    if (platform->virtio_rng_ptr == NULL) {
+      // No RNG device, complete all with error
+      work = rng_work;
+      while (work != NULL) {
+        kwork_t *next = work->next;
+        kplatform_complete_work(platform->kernel, work, KERR_NO_DEVICE);
+        work = next;
+      }
+    } else {
+      virtio_rng_submit_work(platform->virtio_rng_ptr, rng_work,
+                             platform->kernel);
+    }
+  }
 
-  // Process submissions
-  virtio_rng_submit_work(platform->virtio_rng_ptr, submissions,
-                         platform->kernel);
+  // Submit BLK work
+  if (blk_work != NULL) {
+    if (platform->virtio_blk_ptr == NULL) {
+      // No BLK device, complete all with error
+      work = blk_work;
+      while (work != NULL) {
+        kwork_t *next = work->next;
+        kplatform_complete_work(platform->kernel, work, KERR_NO_DEVICE);
+        work = next;
+      }
+    } else {
+      virtio_blk_submit_work(platform->virtio_blk_ptr, blk_work,
+                             platform->kernel);
+    }
+  }
+
+  // Complete unknown work with error
+  if (unknown_work != NULL) {
+    work = unknown_work;
+    while (work != NULL) {
+      kwork_t *next = work->next;
+      kplatform_complete_work(platform->kernel, work, KERR_INVALID);
+      work = next;
+    }
+  }
 }
 
 // Helper to get VirtIO device type name from device ID
@@ -338,6 +594,7 @@ void mmio_scan_devices(platform_t *platform) {
 
   int devices_found = 0;
   int rng_initialized = 0;
+  int blk_initialized = 0;
 
   // Scan for devices
   for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
@@ -371,16 +628,20 @@ void mmio_scan_devices(platform_t *platform) {
 
     devices_found++;
 
-    // Check if device is already initialized (from PCI)
-    if (platform->virtio_rng_ptr != (void *)0) {
-      continue;
-    }
-
-    // Initialize RNG device if found
-    if (device_id == VIRTIO_ID_RNG && !rng_initialized) {
+    // Initialize RNG device if found and not already initialized
+    if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
+        platform->virtio_rng_ptr == NULL) {
       uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
       virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       rng_initialized = 1;
+    }
+
+    // Initialize BLK device if found and not already initialized
+    if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
+        platform->virtio_blk_ptr == NULL) {
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
+      blk_initialized = 1;
     }
   }
 

@@ -43,7 +43,7 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
     return -1; // No capabilities
   }
 
-  int found_common = 0, found_notify = 0, found_isr = 0;
+  int found_common = 0, found_notify = 0, found_isr = 0, found_device = 0;
 
   while (cap_offset != 0) {
     uint8_t cap_id = platform_pci_config_read8(
@@ -72,6 +72,9 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
       } else if (cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
         pci->isr_status = (volatile uint8_t *)(bar_base + offset);
         found_isr = 1;
+      } else if (cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG) {
+        pci->device_cfg = (volatile void *)(bar_base + offset);
+        found_device = 1;
       }
     }
 
@@ -80,6 +83,8 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
                                            pci->func, cap_offset + 1);
   }
 
+  // Device config is optional (RNG doesn't have it)
+  (void)found_device;
   return (found_common && found_notify && found_isr) ? 0 : -1;
 }
 

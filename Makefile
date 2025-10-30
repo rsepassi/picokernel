@@ -64,7 +64,8 @@ C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
             $(SRC_DIR)/virtio/virtio.c \
             $(SRC_DIR)/virtio/virtio_mmio.c \
             $(SRC_DIR)/virtio/virtio_pci.c \
-            $(SRC_DIR)/virtio/virtio_rng.c
+            $(SRC_DIR)/virtio/virtio_rng.c \
+            $(SRC_DIR)/virtio/virtio_blk.c
 
 # Vendor sources
 VENDOR_DIR = vendor
@@ -136,7 +137,7 @@ $(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(PLATFORM_SHARED_S
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
 run: $(KERNEL)
-	touch $(DRIVE)
+	test -f $(DRIVE) || dd if=/dev/zero of=$(DRIVE) bs=1M count=1
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults -no-user-config \

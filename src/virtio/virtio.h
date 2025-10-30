@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -164,6 +165,8 @@ typedef struct {
   kdevice_type_t device_type;  // Device type tag
   struct platform_t *platform; // Back-pointer for ISR access
   void (*process_irq)(void *dev, struct kernel *k); // Virtual dispatch function
+  bool (*ack_isr)(void *dev); // Acknowledge ISR, returns true if interrupt
+                              // should be processed
 } kdevice_base_t;
 
 // Event index helpers (only valid when VIRTIO_F_EVENT_IDX negotiated)

@@ -53,6 +53,7 @@ typedef struct {
   // Capability structures (mapped into BAR space)
   volatile virtio_pci_common_cfg_t *common_cfg;
   volatile uint8_t *isr_status;
+  volatile void *device_cfg; // Device-specific configuration
   uint64_t notify_base;
   uint32_t notify_off_multiplier;
 } virtio_pci_transport_t;

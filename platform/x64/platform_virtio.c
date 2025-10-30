@@ -196,7 +196,7 @@ void pci_scan_devices(platform_t *platform) {
 void platform_tick(platform_t *platform, kernel_t *k) {
   // POLLING FALLBACK: If no interrupts, check device manually
   // This works around interrupt delivery issues on x64 microvm
-  if (platform->virtio_rng != (void *)0) {
+  if (platform->virtio_rng != NULL) {
     if (kirq_ring_is_empty(&platform->irq_ring)) {
       // Check if device has completed work (poll used ring)
       if (virtqueue_has_used(&platform->virtio_rng->vq)) {
@@ -214,7 +214,7 @@ void platform_tick(platform_t *platform, kernel_t *k) {
   // Process pending device IRQs up to the captured end position
   void *dev_ptr;
   while ((dev_ptr = kirq_ring_dequeue_bounded(&platform->irq_ring, end_pos)) !=
-         (void *)0) {
+         NULL) {
     // Cast to device base pointer
     kdevice_base_t *dev = (kdevice_base_t *)dev_ptr;
 
@@ -228,10 +228,10 @@ void platform_tick(platform_t *platform, kernel_t *k) {
 void platform_submit(platform_t *platform, kwork_t *submissions,
                      kwork_t *cancellations) {
   (void)cancellations; // Unused parameter
-  if (platform->virtio_rng == (void *)0) {
+  if (platform->virtio_rng == NULL) {
     // No RNG device, complete all submissions with error
     kwork_t *work = submissions;
-    while (work != (void *)0) {
+    while (work != NULL) {
       kwork_t *next = work->next;
       kplatform_complete_work(platform->kernel, work, 5); // KERR_NO_DEVICE
       work = next;
@@ -311,7 +311,7 @@ void mmio_scan_devices(platform_t *platform) {
     devices_found++;
 
     // Check if device is already initialized (from PCI)
-    if (platform->virtio_rng != (void *)0) {
+    if (platform->virtio_rng != NULL) {
       continue;
     }
 
