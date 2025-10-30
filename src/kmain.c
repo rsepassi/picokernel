@@ -7,6 +7,10 @@
 
 static kernel_t g_kernel;
 
+// Internal getter for logging/debug purposes only
+// DO NOT use this for general kernel access - pass kernel_t* explicitly
+kernel_t *kget_kernel__logonly__(void) { return &g_kernel; }
+
 void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
 

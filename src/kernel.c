@@ -1,9 +1,7 @@
 // vmos Async Work Queue Kernel Implementation
 
 #include "kernel.h"
-#include "monocypher/monocypher.h"
 #include "printk.h"
-#include <stddef.h>
 
 // Run event loop until a condition is true or a maximum timeout is reached
 #define KWAIT_UNTIL(kernel, cond, step_timeout, max_timeout)                   \
@@ -193,16 +191,16 @@ uint64_t kmain_next_delay(kernel_t *k) {
 
 // Process kernel tick
 void kmain_tick(kernel_t *k, uint64_t current_time) {
-  // 1. Update kernel time
+  // Update kernel time
   k->current_time_ms = current_time;
 
-  // 2. Expire timers
+  // Expire timers
   expire_timers(k);
 
-  // 3. Process deferred interrupt work (moves LIVE work to READY)
+  // Process deferred interrupt work (moves LIVE work to READY)
   platform_tick(&k->platform, k);
 
-  // 4. Run all ready callbacks
+  // Run all ready callbacks
   kwork_t *work = k->ready_queue_head;
   while (work != NULL) {
     kwork_t *next = work->next;
@@ -219,7 +217,7 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
     work = next;
   }
 
-  // 5. Submit work and cancellations to platform (bulk)
+  // Submit work and cancellations to platform (bulk)
   if (k->submit_queue_head != NULL || k->cancel_queue_head != NULL) {
     platform_submit(&k->platform, k->submit_queue_head, k->cancel_queue_head);
     k->submit_queue_head = k->submit_queue_tail = NULL;
@@ -285,37 +283,26 @@ void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
 
   // Submit request
   kerr_t err = ksubmit(k, &state->seed_req.work);
-  if (err != KERR_OK) {
-    printk("ERROR: Failed to submit entropy request: error ");
-    printk_dec(err);
-    printk("\n");
-    return;
-  }
+  KASSERT(err == KERR_OK, "CSPRNG submit failed");
 
   // Wait for entropy by running event loop until seed is ready
   printk("Waiting for entropy...\n");
   KWAIT_UNTIL(k, state->seed_ready, 10, 100);
 
-  if (!state->seed_ready) {
-    printk("ERR: CSPRNG initializion failed\n");
-    return;
-  }
+  KASSERT(state->seed_ready, "CSPRNG init failed");
 
   // Initialize CSPRNG with entropy
   kcsprng_init(&k->rng, state->seed_buffer, sizeof(state->seed_buffer));
-
-  // Wipe seed buffer for security
-  crypto_wipe(state->seed_buffer, sizeof(state->seed_buffer));
 
   printk("CSPRNG initialized\n");
 }
 
 void kmain_step(kernel_t *k, uint64_t max_timeout) {
-  printk("[KLOOP] tick\n");
+  KLOG("[KLOOP] tick");
   kmain_tick(k, k->current_time_ms);
   uint64_t timeout = kmain_next_delay(k);
   if (timeout > max_timeout)
     timeout = max_timeout;
-  printk("[KLOOP] wfi\n");
+  KLOG("[KLOOP] wfi");
   k->current_time_ms = platform_wfi(&k->platform, timeout);
 }

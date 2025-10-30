@@ -177,11 +177,14 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
 
   // Kick device once for all descriptors (bulk submission)
   if (submitted > 0) {
+    // Memory barrier before notify
+    __sync_synchronize();
+
     // Notify device (transport-specific implementation)
     if (rng->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)rng->transport, 0);
     } else if (rng->transport_type == VIRTIO_TRANSPORT_PCI) {
-      virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, 0);
+      virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, &rng->vq);
     }
 
     // Enqueue device for polling on next tick

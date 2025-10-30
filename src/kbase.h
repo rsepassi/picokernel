@@ -51,11 +51,30 @@
 /* Static assertion */
 #define KSTATIC_ASSERT(expr, msg) _Static_assert(expr, msg)
 
+/* Forward declarations for logging */
+typedef struct kernel kernel_t;
+kernel_t *kget_kernel__logonly__(void);
+void printk(const char *str);
+void printk_putc(char c);
+uint32_t printk_dec_len(uint32_t val);
+void printk_dec(uint32_t val);
+
 /* Logging macro with file and line info */
 #define KSTRINGIFY(x) #x
 #define KTOSTRING(x) KSTRINGIFY(x)
 #define KLOG(msg)                                                              \
   do {                                                                         \
+    kernel_t *_k = kget_kernel__logonly__();                                   \
+    if (_k && _k->current_time_ms > 0) {                                       \
+      uint32_t _time = (uint32_t)_k->current_time_ms;                          \
+      uint32_t _len = printk_dec_len(_time);                                   \
+      printk("[");                                                             \
+      for (uint32_t _i = _len; _i < 10; _i++) {                                \
+        printk_putc(' ');                                                      \
+      }                                                                        \
+      printk_dec(_time);                                                       \
+      printk("]");                                                             \
+    }                                                                          \
     printk("[");                                                               \
     printk(__FILE__);                                                          \
     printk(":");                                                               \

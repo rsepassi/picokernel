@@ -76,7 +76,7 @@ void virtio_pci_set_features(virtio_pci_transport_t *pci, uint32_t select,
 // Queue operations
 int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
                            virtqueue_t *vq, uint16_t queue_size);
-void virtio_pci_notify_queue(virtio_pci_transport_t *pci, uint16_t queue_idx);
+void virtio_pci_notify_queue(virtio_pci_transport_t *pci, virtqueue_t *vq);
 
 // ISR status
 uint8_t virtio_pci_read_isr(virtio_pci_transport_t *pci);

@@ -89,19 +89,10 @@ void virtqueue_add_avail(virtqueue_t *vq, uint16_t desc_idx) {
   vq->avail->idx++;
 }
 
-// Kick device (notify new descriptors available)
-void virtqueue_kick(virtqueue_t *vq) {
-  (void)vq; // Unused - actual notification happens in platform layer
-
-  // Memory barrier before notify
-  __sync_synchronize();
-
-  // Platform-specific notification (implemented by platform code)
-  // This is just a placeholder - actual notification happens in platform layer
-}
-
 // Check if used ring has entries
 int virtqueue_has_used(virtqueue_t *vq) {
+  // Memory barrier before reading used ring
+  __sync_synchronize();
   return vq->last_used_idx != vq->used->idx;
 }
 

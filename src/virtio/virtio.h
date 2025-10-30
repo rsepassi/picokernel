@@ -75,8 +75,9 @@ typedef struct {
   virtq_avail_t *avail; // Available ring
   virtq_used_t *used;   // Used ring
 
-  // PCI notify offset (platform-specific)
-  uint16_t notify_offset;
+  // PCI-specific fields
+  uint16_t notify_offset; // Notify offset from PCI common config
+  uint16_t queue_index;   // Queue index (0 for single-queue devices)
 } virtqueue_t;
 
 // Initialize virtqueue
@@ -91,9 +92,6 @@ void virtqueue_add_desc(virtqueue_t *vq, uint16_t idx, uint64_t addr,
 
 // Add descriptor chain to available ring
 void virtqueue_add_avail(virtqueue_t *vq, uint16_t desc_idx);
-
-// Kick device (notify new descriptors available)
-void virtqueue_kick(virtqueue_t *vq);
 
 // Check if used ring has entries
 int virtqueue_has_used(virtqueue_t *vq);

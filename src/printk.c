@@ -37,6 +37,19 @@ void printk_hex64(uint64_t val) {
   }
 }
 
+uint32_t printk_dec_len(uint32_t val) {
+  if (val == 0) {
+    return 1;
+  }
+
+  uint32_t len = 0;
+  while (val > 0) {
+    len++;
+    val /= 10;
+  }
+  return len;
+}
+
 void printk_dec(uint32_t val) {
   if (val == 0) {
     platform_uart_putc('0');

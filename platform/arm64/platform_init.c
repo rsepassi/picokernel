@@ -18,6 +18,11 @@ static void wfi_timer_callback(void) {}
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->has_block_device = false;
+
+  // Initialize PCI BAR allocator (QEMU ARM64 virt: PCI MMIO at 0x10000000)
+  platform->pci_next_bar_addr = 0x10000000;
 
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
@@ -67,7 +72,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   }
 
   // Atomically enable interrupts and wait
-  __asm__ volatile("msr daifclr, #2; wfi" ::: "memory");
+  __asm__ volatile("wfi" ::: "memory");
+  __asm__ volatile("msr daifclr, #2" ::: "memory");
 
   // Return current time
   return timer_get_current_time_ms(platform);

@@ -15,7 +15,7 @@ typedef struct {
 
 // Initialize the CSPRNG with a seed
 // The seed is hashed with BLAKE2b to derive the initial key and nonce
-void kcsprng_init(kcsprng_ctx *ctx, const uint8_t *seed, size_t seed_size);
+void kcsprng_init(kcsprng_ctx *ctx, uint8_t *seed, size_t seed_size);
 
 // Generate random bytes
 // Uses ChaCha20 to generate a keystream

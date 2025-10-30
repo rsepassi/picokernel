@@ -3,7 +3,7 @@
 #include "monocypher/monocypher.h"
 
 // Initialize the CSPRNG with a seed
-void kcsprng_init(kcsprng_ctx *ctx, const uint8_t *seed, size_t seed_size) {
+void kcsprng_init(kcsprng_ctx *ctx, uint8_t *seed, size_t seed_size) {
   uint8_t hash[40]; // 32 bytes for key + 8 bytes for nonce
 
   // Hash the seed to derive key and nonce
@@ -16,6 +16,8 @@ void kcsprng_init(kcsprng_ctx *ctx, const uint8_t *seed, size_t seed_size) {
 
   // Wipe the temporary hash
   crypto_wipe(hash, sizeof(hash));
+  // Wipe seed buffer
+  crypto_wipe(seed, seed_size);
 }
 
 // Generate random bytes using ChaCha20

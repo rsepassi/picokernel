@@ -13,6 +13,7 @@
 typedef struct {
   virtio_blk_req_header_t header;
   uint8_t status;
+  uint8_t _padding[7]; // Pad to 8-byte alignment for array indexing
 } __attribute__((packed)) virtio_blk_req_buf_t;
 
 // Statically allocated request buffers (one per descriptor)
@@ -320,11 +321,14 @@ void virtio_blk_submit_work(virtio_blk_dev_t *blk, kwork_t *submissions,
 
   // Kick device once for all descriptors (bulk submission)
   if (submitted > 0) {
+    // Memory barrier before notify
+    __sync_synchronize();
+
     // Notify device (transport-specific implementation)
     if (blk->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)blk->transport, 0);
     } else if (blk->transport_type == VIRTIO_TRANSPORT_PCI) {
-      virtio_pci_notify_queue((virtio_pci_transport_t *)blk->transport, 0);
+      virtio_pci_notify_queue((virtio_pci_transport_t *)blk->transport, &blk->vq);
     }
     // Block device uses interrupts only (no polling)
   }

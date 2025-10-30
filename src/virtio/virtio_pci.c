@@ -159,6 +159,9 @@ int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
   mmio_write64(&pci->common_cfg->queue_driver, (uint64_t)vq->avail);
   mmio_write64(&pci->common_cfg->queue_device, (uint64_t)vq->used);
 
+  // Store queue index for notifications
+  vq->queue_index = queue_idx;
+
   // Get notify offset for this queue
   uint16_t notify_off = mmio_read16(&pci->common_cfg->queue_notify_off);
   vq->notify_offset = notify_off;
@@ -173,14 +176,15 @@ int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
 }
 
 // Notify queue (kick device)
-void virtio_pci_notify_queue(virtio_pci_transport_t *pci, uint16_t queue_idx) {
-  // Calculate notify address
+void virtio_pci_notify_queue(virtio_pci_transport_t *pci, virtqueue_t *vq) {
+  // Calculate notify address using the queue's notify_offset
+  // This was stored during virtio_pci_setup_queue()
   uint64_t notify_addr =
-      pci->notify_base + (pci->notify_off_multiplier * queue_idx);
+      pci->notify_base + (pci->notify_off_multiplier * vq->notify_offset);
   volatile uint16_t *notify_ptr = (volatile uint16_t *)notify_addr;
 
   // Write queue index to notify register
-  mmio_write16(notify_ptr, queue_idx);
+  mmio_write16(notify_ptr, vq->queue_index);
 }
 
 // Read ISR status

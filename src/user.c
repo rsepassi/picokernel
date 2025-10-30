@@ -11,14 +11,16 @@ static uint64_t get_timestamp_ms(kuser_t *user) {
 
 // Helper to write uint64_t to buffer (little-endian)
 static void write_u64(uint8_t *buf, uint64_t val) {
-  buf[0] = (uint8_t)(val);
-  buf[1] = (uint8_t)(val >> 8);
-  buf[2] = (uint8_t)(val >> 16);
-  buf[3] = (uint8_t)(val >> 24);
-  buf[4] = (uint8_t)(val >> 32);
-  buf[5] = (uint8_t)(val >> 40);
-  buf[6] = (uint8_t)(val >> 48);
-  buf[7] = (uint8_t)(val >> 56);
+  // Use volatile to prevent compiler from optimizing to unaligned store
+  volatile uint8_t *vbuf = buf;
+  vbuf[0] = (uint8_t)(val);
+  vbuf[1] = (uint8_t)(val >> 8);
+  vbuf[2] = (uint8_t)(val >> 16);
+  vbuf[3] = (uint8_t)(val >> 24);
+  vbuf[4] = (uint8_t)(val >> 32);
+  vbuf[5] = (uint8_t)(val >> 40);
+  vbuf[6] = (uint8_t)(val >> 48);
+  vbuf[7] = (uint8_t)(val >> 56);
 }
 
 // Helper to read uint64_t from buffer (little-endian)

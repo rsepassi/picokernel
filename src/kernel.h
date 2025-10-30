@@ -38,6 +38,9 @@ struct kernel {
 // Kernel main
 void kmain(void *fdt);
 
+// Get global kernel pointer (FOR LOGGING/DEBUG ONLY - do not use elsewhere)
+kernel_t *kget_kernel__logonly__(void);
+
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt);
 
