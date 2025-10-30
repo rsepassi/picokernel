@@ -48,9 +48,8 @@ uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
 }
 
 // Write 8-bit value to PCI config space
-void platform_pci_config_write8(platform_t *platform, uint8_t bus,
-                                uint8_t slot, uint8_t func, uint8_t offset,
-                                uint8_t value) {
+void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
+                                uint8_t func, uint8_t offset, uint8_t value) {
   (void)platform; // Platform not needed for ECAM access
   volatile uint8_t *addr =
       (volatile uint8_t *)pci_ecam_address(bus, slot, func, offset);
