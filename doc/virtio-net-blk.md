@@ -154,6 +154,10 @@ typedef struct {
   until `kcancel()` is called. User must explicitly release buffers back to the
   ring via `knet_buffer_release()`. When all buffers are in use, packets are
   dropped.
+  - **Implementation note**: Recv uses `KWORK_FLAG_STANDING` to keep work LIVE.
+    The async runtime automatically transitions `READY → LIVE` after each
+    callback, avoiding manual resubmission. On cancellation, callback fires
+    with `KERR_CANCELLED` before work transitions to `DEAD`.
 - **Send**: Batch multiple outgoing packets in one submission for efficiency.
   `packets_sent` tracks how many were successfully transmitted. Work becomes
   DEAD after completion (one-shot).
@@ -184,6 +188,7 @@ for (int i = 0; i < 4; i++) {
 // Start receiving (submit once, stays LIVE)
 static knet_recv_req_t recv_req = {0};
 recv_req.work.op = KWORK_OP_NET_RECV;
+recv_req.work.flags = KWORK_FLAG_STANDING;  // Keep work LIVE
 recv_req.work.callback = packet_received;
 recv_req.work.ctx = userdata;
 recv_req.buffers = rx_bufs;
@@ -931,6 +936,7 @@ void test_network_device(kernel_t *k) {
 
   knet_recv_req_t req = {0};
   req.work.op = KWORK_OP_NET_RECV;
+  req.work.flags = KWORK_FLAG_STANDING;  // Keep work LIVE
   req.work.callback = on_packet_received;
   req.buffers = rx_bufs;
   req.num_buffers = 4;
@@ -946,9 +952,8 @@ void on_packet_received(kwork_t *work) {
   // Construct response
   // Send response
 
-  // Re-register buffers
-  req->work.state = KWORK_STATE_DEAD;
-  ksubmit(get_kernel(), &req->work);
+  // Release buffer back to ring (work automatically re-arms due to STANDING flag)
+  knet_buffer_release(get_kernel(), req, req->buffer_index);
 }
 ```
 

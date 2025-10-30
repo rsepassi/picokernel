@@ -30,6 +30,9 @@ typedef enum {
   KWORK_STATE_CANCEL_REQUESTED = 4, // Cancel requested
 } kwork_state_t;
 
+// Work item flags (for kwork_t.flags field)
+#define KWORK_FLAG_STANDING 0x01 // Work remains LIVE after completion
+
 // Operation types
 typedef enum {
   KWORK_OP_TIMER = 1,       // Timer expiration
@@ -37,6 +40,8 @@ typedef enum {
   KWORK_OP_BLOCK_READ = 3,  // Block device read
   KWORK_OP_BLOCK_WRITE = 4, // Block device write
   KWORK_OP_BLOCK_FLUSH = 5, // Block device flush/fsync
+  KWORK_OP_NET_RECV = 6,    // Network packet receive
+  KWORK_OP_NET_SEND = 7,    // Network packet send
 } kwork_op_t;
 
 // Work item callback
@@ -49,7 +54,7 @@ struct kwork {
   void *ctx;                 // Caller context
   kerr_t result;             // Result code
   uint8_t state;             // kwork_state_t
-  uint8_t flags;             // Reserved for future use
+  uint8_t flags;             // KWORK_FLAG_* bits
   kwork_t *next;             // Intrusive list
   kwork_t *prev;             // Intrusive list (submit/cancel queues only)
 };
@@ -87,6 +92,33 @@ typedef struct {
   kblk_req_platform_t platform; // Platform-specific fields
 } kblk_req_t;
 
+// Network device structures
+
+// Network buffer for send/receive operations
+typedef struct {
+  uint8_t *buffer;        // Packet buffer
+  size_t buffer_size;     // Buffer capacity (recv) or packet size (send)
+  size_t packet_length;   // Actual packet length (filled on completion)
+} knet_buffer_t;
+
+// Network receive request structure (ring buffer semantics)
+typedef struct {
+  kwork_t work;                      // Embedded work item
+  knet_buffer_t *buffers;            // Array of receive buffers (ring)
+  size_t num_buffers;                // Number of buffers in ring
+  size_t buffer_index;               // Which buffer was filled (set on completion)
+  knet_recv_req_platform_t platform; // Platform-specific fields
+} knet_recv_req_t;
+
+// Network send request structure
+typedef struct {
+  kwork_t work;                      // Embedded work item
+  knet_buffer_t *packets;            // Array of packets to send
+  size_t num_packets;                // Number of packets
+  size_t packets_sent;               // Number of packets actually sent
+  knet_send_req_platform_t platform; // Platform-specific fields
+} knet_send_req_t;
+
 // CONTAINER_OF macro to recover containing structure from work pointer
 #define CONTAINER_OF(ptr, type, member)                                        \
   ((type *)((void *)((uint8_t *)(ptr) - offsetof(type, member))))
@@ -98,3 +130,6 @@ kerr_t ksubmit(kernel_t *k, kwork_t *work);
 
 // Request cancellation (best-effort)
 kerr_t kcancel(kernel_t *k, kwork_t *work);
+
+// Release a network receive buffer back to the ring
+void knet_buffer_release(kernel_t *k, knet_recv_req_t *req, size_t buffer_index);

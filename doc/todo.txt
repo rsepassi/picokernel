@@ -1,10 +1,11 @@
 * doc/virtio-net-blk.md
 * Timer cancellation in wfi
-* -accel hvf/kvm
-* Make sure work is DEAD when callback is called (if it's not a "standing" work item)
-* smp 2
+* ksubmit timeout support
+* recv configure drop vs overwrite
+* smp 2; setup thread-local (kernel, platform, ...)
 * mimalloc-style memory allocator
 * Should PCI code be shared?
 * Share 32-bit / 64-bit code?
+* -accel hvf/kvm
 * Use MSI-X interrupts instead of legacy INTx (PCI_REG_INTERRUPT_LINE)
 * compiler-rt, arm32 runtime.c

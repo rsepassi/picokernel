@@ -161,6 +161,21 @@ kerr_t kcancel(kernel_t *k, kwork_t *work) {
   return KERR_OK;
 }
 
+// Release a receive buffer back to the ring (for standing work)
+void knet_buffer_release(kernel_t *k, knet_recv_req_t *req, size_t buffer_index) {
+  if (k == NULL || req == NULL) {
+    return;
+  }
+
+  // Validate buffer index
+  if (buffer_index >= req->num_buffers) {
+    return;
+  }
+
+  // Call platform layer to handle buffer release
+  platform_net_buffer_release(&k->platform, req, buffer_index);
+}
+
 // Get next timeout for platform_wfi
 uint64_t kmain_next_delay(kernel_t *k) {
   if (k->timer_list_head == NULL) {
@@ -208,8 +223,12 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
     // Remove from ready queue
     k->ready_queue_head = next;
 
-    // Mark as dead (manual resubmit if needed)
-    work->state = KWORK_STATE_DEAD;
+    // Standing work stays LIVE if successful, otherwise goes DEAD
+    if ((work->flags & KWORK_FLAG_STANDING) && work->result == KERR_OK) {
+      work->state = KWORK_STATE_LIVE;
+    } else {
+      work->state = KWORK_STATE_DEAD;
+    }
 
     // Invoke callback
     work->callback(work);

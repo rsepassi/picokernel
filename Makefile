@@ -65,7 +65,8 @@ C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
             $(SRC_DIR)/virtio/virtio_mmio.c \
             $(SRC_DIR)/virtio/virtio_pci.c \
             $(SRC_DIR)/virtio/virtio_rng.c \
-            $(SRC_DIR)/virtio/virtio_blk.c
+            $(SRC_DIR)/virtio/virtio_blk.c \
+            $(SRC_DIR)/virtio/virtio_net.c
 
 # Vendor sources
 VENDOR_DIR = vendor

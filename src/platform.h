@@ -187,3 +187,11 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
 // platform: platform state structure
 // k: kernel state structure
 void platform_tick(platform_t *platform, kernel_t *k);
+
+// Release a network receive buffer back to the ring (for standing work)
+// Called when user processes packet and wants to return buffer to device
+// platform: platform state structure
+// req: the standing receive request (knet_recv_req_t*, passed as void*)
+// buffer_index: which buffer to release (0 to num_buffers-1)
+void platform_net_buffer_release(platform_t *platform, void *req,
+                                  size_t buffer_index);

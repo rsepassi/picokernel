@@ -16,6 +16,19 @@ typedef struct {
   kblk_segment_t blk_segment;
   uint8_t __attribute__((aligned(4096))) sector_buffer[4096];
   int test_stage; // 0=read, 1=write, 2=verify
+
+  // Network device test state
+  knet_recv_req_t net_recv_req;
+  knet_buffer_t net_rx_bufs[4];
+  uint8_t net_rx_buf0[1514];
+  uint8_t net_rx_buf1[1514];
+  uint8_t net_rx_buf2[1514];
+  uint8_t net_rx_buf3[1514];
+  knet_send_req_t net_send_req;
+  knet_buffer_t net_tx_packet;
+  uint8_t net_tx_buf[1514];
+  uint32_t packets_received;
+  uint32_t packets_sent;
 } kuser_t;
 
 // User entry point

@@ -9,6 +9,7 @@
 #include "virtio/virtio.h"
 #include "virtio/virtio_blk.h"
 #include "virtio/virtio_mmio.h"
+#include "virtio/virtio_net.h"
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
 
@@ -22,6 +23,12 @@ static void virtio_rng_process_irq_dispatch(void *dev, kernel_t *k) {
 static void virtio_blk_process_irq_dispatch(void *dev, kernel_t *k) {
   virtio_blk_dev_t *blk = (virtio_blk_dev_t *)dev;
   virtio_blk_process_irq(blk, k);
+}
+
+// Dispatch wrapper for virtio_net_process_irq (type-safe function pointer)
+static void virtio_net_process_irq_dispatch(void *dev, kernel_t *k) {
+  virtio_net_dev_t *net = (virtio_net_dev_t *)dev;
+  virtio_net_process_irq(net, k);
 }
 
 // VirtIO-RNG ISR acknowledgment
@@ -57,6 +64,23 @@ static bool virtio_blk_ack_isr(void *dev) {
   }
 
   return true; // Always process BLK interrupts
+}
+
+// VirtIO-NET ISR acknowledgment
+static bool virtio_net_ack_isr(void *dev) {
+  virtio_net_dev_t *net = (virtio_net_dev_t *)dev;
+
+  // Read ISR status to acknowledge device interrupt
+  if (net->transport_type == VIRTIO_TRANSPORT_PCI) {
+    virtio_pci_transport_t *pci = (virtio_pci_transport_t *)net->transport;
+    (void)virtio_pci_read_isr(pci);
+  } else if (net->transport_type == VIRTIO_TRANSPORT_MMIO) {
+    virtio_mmio_transport_t *mmio = (virtio_mmio_transport_t *)net->transport;
+    uint32_t isr_status = virtio_mmio_read_isr(mmio);
+    virtio_mmio_ack_isr(mmio, isr_status);
+  }
+
+  return true; // Always process NET interrupts
 }
 
 // Shared VirtIO interrupt handler (used for all VirtIO devices)
@@ -389,6 +413,64 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
   printk(" MB)\n");
 }
 
+// Setup VirtIO-NET device via MMIO
+static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
+                                  uint64_t mmio_size, uint32_t irq_num) {
+  (void)mmio_size;
+
+  // Initialize MMIO transport
+  if (virtio_mmio_init(&platform->virtio_mmio_transport_net, (void *)mmio_base) <
+      0) {
+    return;
+  }
+
+  // Verify device ID
+  uint32_t device_id =
+      virtio_mmio_get_device_id(&platform->virtio_mmio_transport_net);
+  if (device_id != VIRTIO_ID_NET) {
+    return;
+  }
+
+  // Initialize NET device with MMIO transport
+  if (virtio_net_init_mmio(
+          &platform->virtio_net, &platform->virtio_mmio_transport_net,
+          &platform->virtqueue_net_rx_memory, &platform->virtqueue_net_tx_memory,
+          platform->kernel) < 0) {
+    return;
+  }
+
+  // Initialize device base fields
+  platform->virtio_net.base.device_type = KDEVICE_TYPE_VIRTIO_NET;
+  platform->virtio_net.base.platform = platform;
+  platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
+  platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
+
+  // Setup interrupt
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
+                        &platform->virtio_net);
+  platform_irq_enable(platform, irq_num);
+
+  // Store device info
+  platform->virtio_net_ptr = &platform->virtio_net;
+  platform->has_net_device = true;
+  for (int i = 0; i < 6; i++) {
+    platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
+  }
+
+  // Log device info
+  printk("  mac=");
+  for (int i = 0; i < 6; i++) {
+    if (i > 0)
+      printk(":");
+    uint8_t b = platform->net_mac_address[i];
+    uint8_t hi = (b >> 4) & 0xF;
+    uint8_t lo = b & 0xF;
+    printk_putc(hi < 10 ? '0' + hi : 'a' + (hi - 10));
+    printk_putc(lo < 10 ? '0' + lo : 'a' + (lo - 10));
+  }
+  printk("\n");
+}
+
 // Helper to get device type name
 static const char *virtio_device_name(uint16_t device_id) {
   switch (device_id) {
@@ -494,11 +576,32 @@ void platform_tick(platform_t *platform, kernel_t *k) {
 // Submit work and cancellations to platform (called from ktick)
 void platform_submit(platform_t *platform, kwork_t *submissions,
                      kwork_t *cancellations) {
-  (void)cancellations; // Unused parameter
+  // Handle cancellations first
+  // Only NET_RECV (standing work) supports cancellation
+  // RNG, BLK, NET_SEND (one-shot operations) do not support cancellation
+  if (cancellations != NULL) {
+    kwork_t *work = cancellations;
+    while (work != NULL) {
+      kwork_t *next = work->next;
+
+      // Route network cancellations to network device
+      // virtio_net_cancel_work will call kplatform_cancel_work for NET_RECV only
+      if ((work->op == KWORK_OP_NET_RECV || work->op == KWORK_OP_NET_SEND) &&
+          platform->virtio_net_ptr != NULL) {
+        virtio_net_cancel_work(platform->virtio_net_ptr, work,
+                               platform->kernel);
+      }
+      // For all other operations (RNG, BLK, TIMER), cancellation is not supported
+      // Silently ignore the request - do not call kplatform_cancel_work
+
+      work = next;
+    }
+  }
 
   // Separate submissions by device type
   kwork_t *rng_work = NULL;
   kwork_t *blk_work = NULL;
+  kwork_t *net_work = NULL;
   kwork_t *unknown_work = NULL;
 
   kwork_t *work = submissions;
@@ -516,6 +619,10 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
       // Link to BLK list
       work->next = blk_work;
       blk_work = work;
+    } else if (work->op == KWORK_OP_NET_RECV || work->op == KWORK_OP_NET_SEND) {
+      // Link to NET list
+      work->next = net_work;
+      net_work = work;
     } else {
       // Unknown operation
       work->next = unknown_work;
@@ -557,6 +664,22 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
     }
   }
 
+  // Submit NET work
+  if (net_work != NULL) {
+    if (platform->virtio_net_ptr == NULL) {
+      // No NET device, complete all with error
+      work = net_work;
+      while (work != NULL) {
+        kwork_t *next = work->next;
+        kplatform_complete_work(platform->kernel, work, KERR_NO_DEVICE);
+        work = next;
+      }
+    } else {
+      virtio_net_submit_work(platform->virtio_net_ptr, net_work,
+                             platform->kernel);
+    }
+  }
+
   // Complete unknown work with error
   if (unknown_work != NULL) {
     work = unknown_work;
@@ -566,6 +689,18 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
       work = next;
     }
   }
+}
+
+// Release a network receive buffer back to the ring (for standing work)
+void platform_net_buffer_release(platform_t *platform, void *req,
+                                  size_t buffer_index) {
+  // Validate platform has network device
+  if (platform == NULL || platform->virtio_net_ptr == NULL) {
+    return;
+  }
+
+  // Call network device buffer release
+  virtio_net_buffer_release(platform->virtio_net_ptr, req, buffer_index);
 }
 
 // Helper to get VirtIO device type name from device ID
@@ -599,6 +734,7 @@ void mmio_scan_devices(platform_t *platform) {
   int devices_found = 0;
   int rng_initialized = 0;
   int blk_initialized = 0;
+  int net_initialized = 0;
 
   // Scan for devices
   for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
@@ -648,6 +784,15 @@ void mmio_scan_devices(platform_t *platform) {
       uint32_t irq_num = 32 + spi_num; // GIC IRQ = 32 + SPI
       virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
       blk_initialized = 1;
+    }
+
+    // Initialize NET device if found and not already initialized
+    if (device_id == VIRTIO_ID_NET && !net_initialized &&
+        platform->virtio_net_ptr == NULL) {
+      uint32_t spi_num = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq_num = 32 + spi_num; // GIC IRQ = 32 + SPI
+      virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
+      net_initialized = 1;
     }
   }
 
