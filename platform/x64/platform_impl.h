@@ -8,6 +8,7 @@
 
 // Include VirtIO headers for complete type definitions
 // This is needed to embed VirtIO structures in platform_t
+#include "irq_ring.h"
 #include "virtio/virtio.h"
 #include "virtio/virtio_mmio.h"
 #include "virtio/virtio_pci.h"
@@ -102,6 +103,9 @@ typedef struct platform_t {
 
   // I/O APIC state
   ioapic_t ioapic;
+
+  // IRQ ring buffer for device interrupts
+  kirq_ring_t irq_ring;
 } platform_t;
 
 // x64 RNG request platform-specific fields (VirtIO)

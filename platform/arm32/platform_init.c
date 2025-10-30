@@ -18,6 +18,7 @@ static void wfi_timer_callback(void) {}
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  kirq_ring_init(&platform->irq_ring);
 
   printk("Initializing ARM32 platform...\n");
 
@@ -52,9 +53,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   // Disable interrupts to check condition atomically
   __asm__ volatile("cpsid i" ::: "memory"); // Disable IRQs
 
-  // Check if an interrupt has already fired
-  virtio_rng_dev_t *rng = platform->virtio_rng_ptr;
-  if (rng != NULL && rng->irq_pending) {
+  // Check if an interrupt has already fired (ring buffer has pending work)
+  if (!kirq_ring_is_empty(&platform->irq_ring)) {
     __asm__ volatile("cpsie i" ::: "memory"); // Re-enable IRQs
     return timer_get_current_time_ms(platform);
   }

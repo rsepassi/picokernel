@@ -8,6 +8,7 @@
 
 // Include VirtIO headers for complete type definitions
 // This is needed to embed VirtIO structures in platform_t
+#include "irq_ring.h"
 #include "virtio/virtio.h"
 #include "virtio/virtio_mmio.h"
 #include "virtio/virtio_pci.h"
@@ -46,6 +47,7 @@ typedef struct platform_t {
 
   // Interrupt state
   irq_entry_t irq_table[MAX_IRQS];
+  kirq_ring_t irq_ring; // IRQ ring buffer for device interrupts
 
   // Back-pointer to kernel
   kernel_t *kernel;

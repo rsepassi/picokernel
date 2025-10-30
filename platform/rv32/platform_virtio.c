@@ -11,11 +11,16 @@
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
 
-// No global VirtIO device state - all moved to platform_t
+// Dispatch wrapper for virtio_rng_process_irq (type-safe function pointer)
+static void virtio_rng_process_irq_dispatch(void *dev, kernel_t *k) {
+  virtio_rng_dev_t *rng = (virtio_rng_dev_t *)dev;
+  virtio_rng_process_irq(rng, k);
+}
 
 // VirtIO-RNG interrupt handler (minimal - deferred processing pattern)
 static void virtio_rng_irq_handler(void *context) {
   virtio_rng_dev_t *rng = (virtio_rng_dev_t *)context;
+  platform_t *platform = (platform_t *)rng->base.platform;
 
   // Read ISR status to acknowledge device interrupt
   // Per VirtIO spec, this MUST be read to clear the interrupt line
@@ -28,8 +33,9 @@ static void virtio_rng_irq_handler(void *context) {
     virtio_mmio_ack_isr(mmio, isr_status);
   }
 
-  // Set pending flag for deferred processing in ktick
-  rng->irq_pending = 1;
+  // Enqueue device pointer for deferred processing
+  // Returns false if ring is full - interrupt is dropped, counter incremented
+  kirq_ring_enqueue(&platform->irq_ring, rng);
 
   // PLIC EOI handled by irq_dispatch()
 }
@@ -110,6 +116,11 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
+  // Initialize device base fields
+  platform->virtio_rng.base.device_type = KDEVICE_TYPE_VIRTIO_RNG;
+  platform->virtio_rng.base.platform = platform;
+  platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
+
   // Setup interrupt
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
@@ -151,6 +162,11 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint32_t mmio_base,
                            &platform->virtqueue_memory, platform->kernel) < 0) {
     return;
   }
+
+  // Initialize device base fields
+  platform->virtio_rng.base.device_type = KDEVICE_TYPE_VIRTIO_RNG;
+  platform->virtio_rng.base.platform = platform;
+  platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
 
   // Setup interrupt
   platform_irq_register(platform, irq_num, virtio_rng_irq_handler,
@@ -237,20 +253,34 @@ void pci_scan_devices(platform_t *platform) {
 
 // Process deferred interrupt work (called from ktick before callbacks)
 void platform_tick(platform_t *platform, kernel_t *k) {
-  if (platform->virtio_rng_ptr == NULL) {
-    return;
-  }
-
   // POLLING FALLBACK: If no interrupts, check device manually
   // This works around interrupt delivery issues on MMIO devices
-  if (!platform->virtio_rng_ptr->irq_pending) {
-    // Check if device has completed work (poll used ring)
-    if (virtqueue_has_used(&platform->virtio_rng_ptr->vq)) {
-      platform->virtio_rng_ptr->irq_pending = 1;
+  if (platform->virtio_rng_ptr != (void *)0) {
+    if (kirq_ring_is_empty(&platform->irq_ring)) {
+      // Check if device has completed work (poll used ring)
+      if (virtqueue_has_used(&platform->virtio_rng_ptr->vq)) {
+        // Manually enqueue device for processing
+        kirq_ring_enqueue(&platform->irq_ring, platform->virtio_rng_ptr);
+      }
     }
   }
 
-  virtio_rng_process_irq(platform->virtio_rng_ptr, k);
+  // Snapshot the current write position to avoid infinite loop if devices
+  // re-enqueue Only process interrupts that were pending at the start of this
+  // tick
+  uint32_t end_pos = kirq_ring_snapshot(&platform->irq_ring);
+
+  // Process pending device IRQs up to the captured end position
+  void *dev_ptr;
+  while ((dev_ptr = kirq_ring_dequeue_bounded(&platform->irq_ring, end_pos)) !=
+         (void *)0) {
+    // Cast to device base pointer
+    kdevice_base_t *dev = (kdevice_base_t *)dev_ptr;
+
+    // Call device-specific interrupt handler via function pointer
+    // Device may re-enqueue itself for next tick
+    dev->process_irq(dev, k);
+  }
 }
 
 // Submit work and cancellations to platform (called from ktick)

@@ -20,6 +20,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng = NULL;
 
+  // Initialize IRQ ring buffer
+  kirq_ring_init(&platform->irq_ring);
+
   printk("Initializing RISC-V 64-bit platform...\n");
 
   // Initialize interrupt handling (trap vector)
@@ -53,9 +56,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   // Disable interrupts to check condition atomically
   platform_interrupt_disable(platform);
 
-  // Check if an interrupt has already fired
-  virtio_rng_dev_t *rng = platform->virtio_rng;
-  if (rng != NULL && rng->irq_pending) {
+  // Check if an interrupt has already fired (ring buffer not empty)
+  if (!kirq_ring_is_empty(&platform->irq_ring)) {
     platform_interrupt_enable(platform);
     return timer_get_current_time_ms(platform);
   }
