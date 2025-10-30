@@ -2,6 +2,7 @@
 // Transport-agnostic RNG driver
 
 #include "virtio_rng.h"
+#include "irq_ring.h"
 #include "kapi.h"
 #include "kernel.h"
 #include "printk.h"
@@ -66,8 +67,7 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
     return -1;
   }
 
-  // Clear request tracking, outstanding counter, and irq_pending
-  rng->irq_pending = 0;
+  // Clear request tracking and outstanding counter
   rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
     rng->active_requests[i] = (void *)0;
@@ -124,8 +124,7 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   status |= VIRTIO_STATUS_DRIVER_OK;
   virtio_pci_set_status(pci, status);
 
-  // Clear request tracking, outstanding counter, and irq_pending
-  rng->irq_pending = 0;
+  // Clear request tracking and outstanding counter
   rng->outstanding_requests = 0;
   for (int i = 0; i < VIRTIO_RNG_MAX_REQUESTS; i++) {
     rng->active_requests[i] = (void *)0;
@@ -185,17 +184,16 @@ void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
       virtio_pci_notify_queue((virtio_pci_transport_t *)rng->transport, 0);
     }
 
-    // Signal that there's work to check (keep polling in event loop)
-    rng->irq_pending = 1;
+    // Enqueue device for polling on next tick
+    // This is critical for MMIO devices which may not generate interrupts
+    // reliably The device will be checked in platform_tick and re-enqueued if
+    // work remains
+    kirq_ring_enqueue(&((platform_t *)rng->base.platform)->irq_ring, rng);
   }
 }
 
 // Process interrupt (transport-agnostic)
 void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
-  if (!rng->irq_pending) {
-    return;
-  }
-
   // Process all available completions
   while (virtqueue_has_used(&rng->vq)) {
     uint16_t desc_idx;
@@ -213,9 +211,10 @@ void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
     virtqueue_free_desc(&rng->vq, desc_idx);
   }
 
-  // Only clear irq_pending when all work is done
-  if (rng->outstanding_requests == 0) {
-    rng->irq_pending = 0;
+  // Re-enqueue if there are still outstanding requests (work not yet completed)
+  // This keeps the device in the polling loop until all work is done
+  // Critical for MMIO devices that don't reliably generate interrupts
+  if (rng->outstanding_requests > 0) {
+    kirq_ring_enqueue(&((platform_t *)rng->base.platform)->irq_ring, rng);
   }
-  // Otherwise keep it high so we get called again next iteration
 }

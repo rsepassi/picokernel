@@ -16,7 +16,8 @@
 /* Align value down to alignment (alignment must be power of 2) */
 #define KALIGN_BACK(x, align) ((x) & ~((align) - 1))
 
-/* Check if pointer/value is aligned to alignment (alignment must be power of 2) */
+/* Check if pointer/value is aligned to alignment (alignment must be power of 2)
+ */
 #define KALIGNED(ptr, align) (((uintptr_t)(ptr) & ((align) - 1)) == 0)
 
 /* Cast pointer asserting alignment */

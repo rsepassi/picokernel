@@ -148,6 +148,24 @@ typedef struct {
   } __attribute__((packed)) used;
 } __attribute__((aligned(4096))) virtqueue_memory_t;
 
+// Device type enumeration
+typedef enum {
+  KDEVICE_TYPE_VIRTIO_RNG = 1,
+  KDEVICE_TYPE_VIRTIO_BLK = 2,
+  KDEVICE_TYPE_VIRTIO_NET = 3,
+} kdevice_type_t;
+
+// Forward declarations
+struct platform_t;
+struct kernel;
+
+// Common device header (MUST be first field in all device structures)
+typedef struct {
+  kdevice_type_t device_type;  // Device type tag
+  struct platform_t *platform; // Back-pointer for ISR access
+  void (*process_irq)(void *dev, struct kernel *k); // Virtual dispatch function
+} kdevice_base_t;
+
 // Event index helpers (only valid when VIRTIO_F_EVENT_IDX negotiated)
 // Determine if event notification is needed
 static inline int virtq_need_event(uint16_t event_idx, uint16_t new_idx,

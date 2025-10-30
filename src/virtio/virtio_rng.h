@@ -24,6 +24,9 @@ typedef struct kwork kwork_t;
 #define VIRTIO_RNG_MAX_REQUESTS 256
 
 typedef struct virtio_rng_dev {
+  // Device base (MUST be first field for pointer casting!)
+  kdevice_base_t base;
+
   // Transport (either MMIO or PCI)
   void *transport;    // Points to transport-specific structure
   int transport_type; // VIRTIO_TRANSPORT_MMIO or VIRTIO_TRANSPORT_PCI
@@ -39,9 +42,6 @@ typedef struct virtio_rng_dev {
 
   // Track number of outstanding requests
   volatile uint16_t outstanding_requests;
-
-  // Interrupt pending flag (set by ISR, cleared by processing)
-  volatile uint8_t irq_pending;
 
   // Kernel reference
   kernel_t *kernel;

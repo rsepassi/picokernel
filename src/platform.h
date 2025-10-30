@@ -68,8 +68,8 @@ void platform_fdt_dump(platform_t *platform, void *fdt);
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)
 int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
-                                   virtio_mmio_device_t *devices,
-                                   int max_devices);
+                                  virtio_mmio_device_t *devices,
+                                  int max_devices);
 
 // ===========================================================================
 // SECTION 2: PCI - PCI configuration space access
@@ -88,9 +88,8 @@ uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
                                     uint8_t slot, uint8_t func, uint8_t offset);
 
 // Write to PCI configuration space
-void platform_pci_config_write8(platform_t *platform, uint8_t bus,
-                                uint8_t slot, uint8_t func, uint8_t offset,
-                                uint8_t value);
+void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
+                                uint8_t func, uint8_t offset, uint8_t value);
 void platform_pci_config_write16(platform_t *platform, uint8_t bus,
                                  uint8_t slot, uint8_t func, uint8_t offset,
                                  uint16_t value);

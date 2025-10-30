@@ -46,21 +46,19 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
   int found_common = 0, found_notify = 0, found_isr = 0;
 
   while (cap_offset != 0) {
-    uint8_t cap_id = platform_pci_config_read8(pci->platform, pci->bus,
-                                               pci->slot, pci->func, cap_offset);
+    uint8_t cap_id = platform_pci_config_read8(
+        pci->platform, pci->bus, pci->slot, pci->func, cap_offset);
 
     if (cap_id == 0x09) { // Vendor-specific capability
-      uint8_t cfg_type =
-          platform_pci_config_read8(pci->platform, pci->bus, pci->slot,
-                                    pci->func, cap_offset + 3);
-      uint8_t bar = platform_pci_config_read8(pci->platform, pci->bus,
-                                              pci->slot, pci->func, cap_offset + 4);
-      uint32_t offset =
-          platform_pci_config_read32(pci->platform, pci->bus, pci->slot,
-                                     pci->func, cap_offset + 8);
+      uint8_t cfg_type = platform_pci_config_read8(
+          pci->platform, pci->bus, pci->slot, pci->func, cap_offset + 3);
+      uint8_t bar = platform_pci_config_read8(
+          pci->platform, pci->bus, pci->slot, pci->func, cap_offset + 4);
+      uint32_t offset = platform_pci_config_read32(
+          pci->platform, pci->bus, pci->slot, pci->func, cap_offset + 8);
 
-      uint64_t bar_base =
-          platform_pci_read_bar(pci->platform, pci->bus, pci->slot, pci->func, bar);
+      uint64_t bar_base = platform_pci_read_bar(pci->platform, pci->bus,
+                                                pci->slot, pci->func, bar);
 
       if (cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
         pci->common_cfg =
