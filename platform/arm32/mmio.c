@@ -59,6 +59,12 @@ void platform_mmio_write32(volatile uint32_t *addr, uint32_t val) {
 }
 
 void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
-  *addr = val;
+  // Write as two 32-bit stores (low first, then high) for compatibility
+  // This ensures proper ordering on 32-bit architectures
+  volatile uint32_t *addr32 = (volatile uint32_t *)addr;
+  addr32[0] = (uint32_t)(val & 0xFFFFFFFF);
+  mmio_barrier();
+  addr32[1] = (uint32_t)(val >> 32);
   mmio_barrier();
 }
+

@@ -206,7 +206,7 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
 
   // RV32 QEMU virt: PCI interrupts use standard INTx swizzling
   // Base IRQ = 1, rotated by (device + pin - 1) % 4
-  uint32_t base_irq = 1; // First PCI interrupt
+  uint32_t base_irq = 32; // First PCI interrupt
   uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,
@@ -293,7 +293,7 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
 
-  uint32_t base_irq = 1;
+  uint32_t base_irq = 32;
   uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,
@@ -409,7 +409,7 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
 
-  uint32_t base_irq = 1;
+  uint32_t base_irq = 32;
   uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,

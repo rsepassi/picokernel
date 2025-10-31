@@ -18,6 +18,10 @@ static void wfi_timer_callback(void) {}
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->virtio_net_ptr = NULL;
+  platform->has_block_device = false;
+  platform->has_net_device = false;
   platform->pci_next_bar_addr = 0x10000000; // PCI BAR allocation base
   kirq_ring_init(&platform->irq_ring);
 

@@ -19,8 +19,19 @@ static void wfi_timer_callback(void) {}
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->virtio_net_ptr = NULL;
+  platform->has_block_device = false;
+  platform->has_net_device = false;
   platform->timer_freq = 0;
   platform->ticks_per_ms = 0;
+  platform->last_overflow_count = 0;
+
+  // Initialize PCI BAR allocator
+  // RISC-V QEMU virt PCI MMIO region starts at 0x40000000
+  platform->pci_next_bar_addr = 0x40000000;
+
+  // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
 
   printk("Initializing rv32 platform...\n");
