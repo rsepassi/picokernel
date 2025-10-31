@@ -375,13 +375,10 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
       }
 
       // Setup header descriptor (device reads, no flags needed)
+      // Zero the header using memset to avoid unaligned access issues
+      // with the packed structure
       virtio_net_hdr_t *hdr = &tx_hdr_buffers[hdr_desc];
-      hdr->flags = 0;
-      hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
-      hdr->hdr_len = 0;
-      hdr->gso_size = 0;
-      hdr->csum_start = 0;
-      hdr->csum_offset = 0;
+      memset(hdr, 0, sizeof(virtio_net_hdr_t));
 
       virtqueue_add_desc(&net->tx_vq, hdr_desc, (uint64_t)hdr,
                          sizeof(virtio_net_hdr_t), VIRTQ_DESC_F_NEXT);

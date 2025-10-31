@@ -498,9 +498,7 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
   platform->has_net_device = true;
-  for (int i = 0; i < 6; i++) {
-    platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
-  }
+  memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
   // Log device info
   printk("  mac=");
