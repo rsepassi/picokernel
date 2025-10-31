@@ -66,6 +66,14 @@ static uint16_t ip_checksum(const uint8_t *header, size_t len) {
 
 // Forward declarations
 static void on_packet_sent(kwork_t *work);
+static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
+                           const uint8_t *target_ip);
+static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
+                               size_t pkt_len);
+static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
+                                size_t pkt_len, const uint8_t *ip_hdr);
+static void handle_udp_packet(kuser_t *user, const uint8_t *pkt,
+                               size_t pkt_len, const uint8_t *ip_hdr);
 
 // Network configuration (QEMU user networking)
 static const uint8_t DEVICE_IP[4] = {10, 0, 2, 15};
@@ -74,8 +82,21 @@ static const uint8_t GATEWAY_MAC[6] = {0x52, 0x55, 0x0a, 0x00, 0x02, 0x02};
 static const uint16_t UDP_ECHO_PORT = 8080;
 
 // Protocol constants
+#define ETHERTYPE_ARP 0x0806
 #define ETHERTYPE_IPV4 0x0800
+#define IP_PROTOCOL_ICMP 0x01
 #define IP_PROTOCOL_UDP 0x11
+
+// ARP constants
+#define ARP_HTYPE_ETHERNET 0x0001
+#define ARP_PTYPE_IPV4 0x0800
+#define ARP_OPER_REQUEST 0x0001
+#define ARP_OPER_REPLY 0x0002
+
+// ICMP constants
+#define ICMP_TYPE_ECHO_REPLY 0
+#define ICMP_TYPE_ECHO_REQUEST 8
+#define ICMP_CODE_ECHO 0
 
 // RNG callback
 static void on_random_ready(kwork_t *work) {
@@ -102,7 +123,344 @@ static void on_random_ready(kwork_t *work) {
   printk("\n");
 }
 
-// Network packet received callback - UDP echo server
+// Send ARP reply packet
+static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
+                           const uint8_t *target_ip) {
+  if (user->arp_send_req.work.state != KWORK_STATE_DEAD) {
+    printk("ARP reply already in flight, ignoring\n");
+    return;
+  }
+
+  uint8_t *tx_pkt = user->arp_tx_buf;
+  size_t tx_len = 0;
+  const uint8_t *device_mac = user->kernel->platform.net_mac_address;
+
+  // Ethernet header (14 bytes)
+  memcpy(&tx_pkt[0], target_mac, 6);     // dst_mac
+  memcpy(&tx_pkt[6], device_mac, 6);     // src_mac
+  write_be16(&tx_pkt[12], ETHERTYPE_ARP);
+  tx_len += 14;
+
+  // ARP packet (28 bytes)
+  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET);  // Hardware type
+  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);      // Protocol type
+  tx_pkt[18] = 6;                               // Hardware address length
+  tx_pkt[19] = 4;                               // Protocol address length
+  write_be16(&tx_pkt[20], ARP_OPER_REPLY);      // Operation (reply)
+  memcpy(&tx_pkt[22], device_mac, 6);           // Sender MAC
+  memcpy(&tx_pkt[28], DEVICE_IP, 4);            // Sender IP
+  memcpy(&tx_pkt[32], target_mac, 6);           // Target MAC
+  memcpy(&tx_pkt[36], target_ip, 4);            // Target IP
+  tx_len += 28;
+
+  // Setup send request
+  user->arp_tx_packet.buffer = tx_pkt;
+  user->arp_tx_packet.buffer_size = tx_len;
+
+  user->arp_send_req.work.op = KWORK_OP_NET_SEND;
+  user->arp_send_req.work.callback = on_packet_sent;
+  user->arp_send_req.work.ctx = user;
+  user->arp_send_req.work.state = KWORK_STATE_DEAD;
+  user->arp_send_req.work.flags = 0;
+  user->arp_send_req.packets = &user->arp_tx_packet;
+  user->arp_send_req.num_packets = 1;
+  user->arp_send_req.packets_sent = 0;
+
+  kerr_t err = ksubmit(user->kernel, &user->arp_send_req.work);
+  if (err != KERR_OK) {
+    printk("ARP reply send failed: error ");
+    printk_dec(err);
+    printk("\n");
+  } else {
+    printk("Sent ARP reply to ");
+    printk_ip(target_ip);
+    printk(" (");
+    printk_mac(target_mac);
+    printk(")\n");
+  }
+}
+
+// Handle ARP packet
+static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
+                               size_t pkt_len) {
+  // Minimum ARP packet: 14 (Ethernet) + 28 (ARP) = 42 bytes
+  if (pkt_len < 42) {
+    printk("ARP packet too small (");
+    printk_dec(pkt_len);
+    printk(" bytes)\n");
+    return;
+  }
+
+  const uint8_t *arp = &pkt[14];
+  uint16_t htype = read_be16(&arp[0]);
+  uint16_t ptype = read_be16(&arp[2]);
+  uint8_t hlen = arp[4];
+  uint8_t plen = arp[5];
+  uint16_t oper = read_be16(&arp[6]);
+
+  // Validate ARP packet
+  if (htype != ARP_HTYPE_ETHERNET || ptype != ARP_PTYPE_IPV4 || hlen != 6 ||
+      plen != 4) {
+    printk("Invalid ARP packet format\n");
+    return;
+  }
+
+  const uint8_t *sender_mac = &arp[8];
+  const uint8_t *sender_ip = &arp[14];
+  const uint8_t *target_ip = &arp[24];
+
+  printk("ARP ");
+  if (oper == ARP_OPER_REQUEST) {
+    printk("request: Who has ");
+    printk_ip(target_ip);
+    printk("? Tell ");
+    printk_ip(sender_ip);
+    printk("\n");
+
+    // Check if the request is for our IP
+    if (target_ip[0] == DEVICE_IP[0] && target_ip[1] == DEVICE_IP[1] &&
+        target_ip[2] == DEVICE_IP[2] && target_ip[3] == DEVICE_IP[3]) {
+      printk("ARP request is for us, sending reply\n");
+      send_arp_reply(user, sender_mac, sender_ip);
+    }
+  } else if (oper == ARP_OPER_REPLY) {
+    printk("reply: ");
+    printk_ip(sender_ip);
+    printk(" is at ");
+    printk_mac(sender_mac);
+    printk("\n");
+  } else {
+    printk("unknown opcode ");
+    printk_hex16(oper);
+    printk("\n");
+  }
+}
+
+// Handle ICMP packet (ping)
+static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
+                                size_t pkt_len, const uint8_t *ip_hdr) {
+  // Minimum ICMP packet: 14 (Ethernet) + 20 (IP) + 8 (ICMP header) = 42 bytes
+  if (pkt_len < 42) {
+    printk("ICMP packet too small\n");
+    return;
+  }
+
+  const uint8_t *icmp_hdr = &pkt[34]; // 14 + 20
+  uint8_t icmp_type = icmp_hdr[0];
+  uint8_t icmp_code = icmp_hdr[1];
+  uint16_t icmp_checksum = read_be16(&icmp_hdr[2]);
+  KUNUSED(icmp_checksum);
+
+  uint16_t ip_total_len = read_be16(&ip_hdr[2]);
+  size_t icmp_len = ip_total_len - 20; // Subtract IP header
+
+  const uint8_t *ip_src = &ip_hdr[12];
+  const uint8_t *ip_dst = &ip_hdr[16];
+  const uint8_t *eth_src_mac = &pkt[6];
+  const uint8_t *eth_dst_mac = &pkt[0];
+
+  if (icmp_type == ICMP_TYPE_ECHO_REQUEST && icmp_code == ICMP_CODE_ECHO) {
+    printk("ICMP echo request from ");
+    printk_ip(ip_src);
+    printk(", sending reply\n");
+
+    // Check if send request is available
+    if (user->icmp_send_req.work.state != KWORK_STATE_DEAD) {
+      printk("ICMP reply already in flight, ignoring\n");
+      return;
+    }
+
+    uint8_t *tx_pkt = user->icmp_tx_buf;
+    size_t tx_len = 0;
+
+    // Ethernet header (14 bytes) - swap src/dst
+    memcpy(&tx_pkt[0], eth_src_mac, 6);
+    memcpy(&tx_pkt[6], eth_dst_mac, 6);
+    write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
+    tx_len += 14;
+
+    // IPv4 header (20 bytes) - swap src/dst IPs
+    memcpy(&tx_pkt[14], ip_hdr, 20);
+    memcpy(&tx_pkt[14 + 12], ip_dst, 4); // src = original dst
+    memcpy(&tx_pkt[14 + 16], ip_src, 4); // dst = original src
+    // Zero checksum for recalculation
+    tx_pkt[14 + 10] = 0;
+    tx_pkt[14 + 11] = 0;
+    uint16_t ip_csum = ip_checksum(&tx_pkt[14], 20);
+    write_be16(&tx_pkt[14 + 10], ip_csum);
+    tx_len += 20;
+
+    // ICMP header + data - change type to reply, recalculate checksum
+    memcpy(&tx_pkt[34], icmp_hdr, icmp_len);
+    tx_pkt[34] = ICMP_TYPE_ECHO_REPLY; // Change type to reply
+    tx_pkt[34 + 1] = ICMP_CODE_ECHO;
+    // Zero checksum field for recalculation
+    tx_pkt[34 + 2] = 0;
+    tx_pkt[34 + 3] = 0;
+    uint16_t icmp_csum = ip_checksum(&tx_pkt[34], icmp_len);
+    write_be16(&tx_pkt[34 + 2], icmp_csum);
+    tx_len += icmp_len;
+
+    // Setup send request
+    user->icmp_tx_packet.buffer = tx_pkt;
+    user->icmp_tx_packet.buffer_size = tx_len;
+
+    user->icmp_send_req.work.op = KWORK_OP_NET_SEND;
+    user->icmp_send_req.work.callback = on_packet_sent;
+    user->icmp_send_req.work.ctx = user;
+    user->icmp_send_req.work.state = KWORK_STATE_DEAD;
+    user->icmp_send_req.work.flags = 0;
+    user->icmp_send_req.packets = &user->icmp_tx_packet;
+    user->icmp_send_req.num_packets = 1;
+    user->icmp_send_req.packets_sent = 0;
+
+    kerr_t err = ksubmit(user->kernel, &user->icmp_send_req.work);
+    if (err != KERR_OK) {
+      printk("ICMP reply send failed: error ");
+      printk_dec(err);
+      printk("\n");
+    } else {
+      printk("Sent ICMP echo reply to ");
+      printk_ip(ip_src);
+      printk("\n");
+    }
+  } else {
+    printk("ICMP type=");
+    printk_dec(icmp_type);
+    printk(" code=");
+    printk_dec(icmp_code);
+    printk(" (not echo request)\n");
+  }
+}
+
+// Handle UDP packet (echo server)
+static void handle_udp_packet(kuser_t *user, const uint8_t *pkt,
+                               size_t pkt_len, const uint8_t *ip_hdr) {
+  // Minimum UDP packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
+  if (pkt_len < 42) {
+    printk("UDP packet too small\n");
+    return;
+  }
+
+  const uint8_t *eth_dst_mac = &pkt[0];
+  const uint8_t *eth_src_mac = &pkt[6];
+  const uint8_t *ip_src = &ip_hdr[12];
+  const uint8_t *ip_dst = &ip_hdr[16];
+
+  // Parse UDP header (starts at offset 34 = 14 + 20)
+  const uint8_t *udp_hdr = &pkt[34];
+  uint16_t udp_src_port = read_be16(&udp_hdr[0]);
+  uint16_t udp_dst_port = read_be16(&udp_hdr[2]);
+  uint16_t udp_length = read_be16(&udp_hdr[4]);
+
+  // Check if it's for our echo port
+  if (udp_dst_port != UDP_ECHO_PORT) {
+    printk("UDP packet not for echo port (dst port ");
+    printk_dec(udp_dst_port);
+    printk("), dropping\n");
+    return;
+  }
+
+  // Calculate payload length (UDP data)
+  size_t udp_data_len = udp_length - 8; // UDP header is 8 bytes
+  const uint8_t *udp_data = &pkt[42];   // 14 + 20 + 8
+
+  // Log received packet with parsed information
+  printk("Received UDP packet from ");
+  printk_ip(ip_src);
+  printk(":");
+  printk_dec(udp_src_port);
+  printk(" len=");
+  printk_dec(udp_data_len);
+  printk("\n");
+
+  // Show data (first 32 bytes)
+  if (udp_data_len > 0) {
+    size_t show_len = udp_data_len;
+    if (show_len > 32)
+      show_len = 32;
+    printk("Data: ");
+    for (size_t i = 0; i < show_len; i++) {
+      printk_hex8(udp_data[i]);
+      if (i < show_len - 1)
+        printk(" ");
+    }
+    if (udp_data_len > 32)
+      printk(" ...");
+    printk("\n");
+  }
+
+  // Construct UDP echo response
+  // Check if send request is available (not already in use)
+  if (user->udp_send_req.work.state != KWORK_STATE_DEAD) {
+    printk("UDP send already in flight, dropping\n");
+    return;
+  }
+
+  uint8_t *tx_pkt = user->udp_tx_buf;
+  size_t tx_len = 0;
+
+  // Ethernet header (14 bytes) - swap src/dst MACs
+  memcpy(&tx_pkt[0], eth_src_mac, 6); // dst_mac = incoming src_mac
+  memcpy(&tx_pkt[6], eth_dst_mac, 6); // src_mac = incoming dst_mac
+  write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
+  tx_len += 14;
+
+  // IPv4 header (20 bytes) - swap src/dst IPs
+  memcpy(&tx_pkt[14], ip_hdr, 20); // Copy entire IP header
+  // Swap source and destination IPs
+  memcpy(&tx_pkt[14 + 12], ip_dst, 4); // src_ip = incoming dst_ip
+  memcpy(&tx_pkt[14 + 16], ip_src, 4); // dst_ip = incoming src_ip
+  // Zero out checksum field before recalculating
+  tx_pkt[14 + 10] = 0;
+  tx_pkt[14 + 11] = 0;
+  // Calculate IP header checksum
+  uint16_t ip_csum = ip_checksum(&tx_pkt[14], 20);
+  write_be16(&tx_pkt[14 + 10], ip_csum);
+  tx_len += 20;
+
+  // UDP header (8 bytes) - swap src/dst ports
+  write_be16(&tx_pkt[34], udp_dst_port); // src_port = incoming dst_port
+  write_be16(&tx_pkt[36], udp_src_port); // dst_port = incoming src_port
+  write_be16(&tx_pkt[38], udp_length);   // length stays the same
+  write_be16(&tx_pkt[40], 0);            // checksum = 0 (optional for IPv4)
+  tx_len += 8;
+
+  // Copy UDP payload (echo the data back)
+  memcpy(&tx_pkt[42], udp_data, udp_data_len);
+  tx_len += udp_data_len;
+
+  // Setup send request
+  user->udp_tx_packet.buffer = tx_pkt;
+  user->udp_tx_packet.buffer_size = tx_len;
+
+  user->udp_send_req.work.op = KWORK_OP_NET_SEND;
+  user->udp_send_req.work.callback = on_packet_sent;
+  user->udp_send_req.work.ctx = user;
+  user->udp_send_req.work.state = KWORK_STATE_DEAD;
+  user->udp_send_req.work.flags = 0;
+  user->udp_send_req.packets = &user->udp_tx_packet;
+  user->udp_send_req.num_packets = 1;
+  user->udp_send_req.packets_sent = 0;
+
+  // Submit send request
+  kerr_t err = ksubmit(user->kernel, &user->udp_send_req.work);
+  if (err != KERR_OK) {
+    printk("Network send submit failed: error ");
+    printk_dec(err);
+    printk("\n");
+  } else {
+    printk("Sent UDP response to ");
+    printk_ip(ip_src);
+    printk(":");
+    printk_dec(udp_src_port);
+    printk(" len=");
+    printk_dec(udp_data_len);
+    printk("\n");
+  }
+}
+
+// Network packet received callback - dispatches to protocol handlers
 static void on_packet_received(kwork_t *work) {
   KUNUSED(GATEWAY_IP);
   KUNUSED(GATEWAY_MAC);
@@ -138,8 +496,8 @@ static void on_packet_received(kwork_t *work) {
   }
   printk("\n");
 
-  // Minimum packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
-  if (pkt_len < 42) {
+  // Minimum Ethernet frame: 14 bytes
+  if (pkt_len < 14) {
     printk("Packet too small (");
     printk_dec(pkt_len);
     printk(" bytes), dropping\n");
@@ -147,168 +505,63 @@ static void on_packet_received(kwork_t *work) {
   }
 
   // Parse Ethernet header (14 bytes)
-  const uint8_t *eth_dst_mac = &pkt[0];
-  const uint8_t *eth_src_mac = &pkt[6];
   uint16_t ethertype = read_be16(&pkt[12]);
 
-  // Only handle IPv4
-  if (ethertype != ETHERTYPE_IPV4) {
-    printk("Non-IPv4 packet (ethertype ");
-    printk_hex16(ethertype);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  // Parse IPv4 header (starts at offset 14)
-  const uint8_t *ip_hdr = &pkt[14];
-  uint8_t ip_version = (ip_hdr[0] >> 4) & 0x0F;
-  uint8_t ip_ihl = ip_hdr[0] & 0x0F;
-  uint8_t ip_protocol = ip_hdr[9];
-  const uint8_t *ip_src = &ip_hdr[12];
-  const uint8_t *ip_dst = &ip_hdr[16];
-
-  // Validate IP version and header length
-  if (ip_version != 4) {
-    printk("Invalid IP version (");
-    printk_dec(ip_version);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  if (ip_ihl != 5) {
-    printk("IP options not supported (IHL=");
-    printk_dec(ip_ihl);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  // Check if it's UDP
-  if (ip_protocol != IP_PROTOCOL_UDP) {
-    printk("Non-UDP packet (protocol ");
-    printk_dec(ip_protocol);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  // Validate destination IP matches our address
-  if (ip_dst[0] != DEVICE_IP[0] || ip_dst[1] != DEVICE_IP[1] ||
-      ip_dst[2] != DEVICE_IP[2] || ip_dst[3] != DEVICE_IP[3]) {
-    printk("Packet not for us (dst IP ");
-    printk_ip(ip_dst);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  // Parse UDP header (starts at offset 34 = 14 + 20)
-  const uint8_t *udp_hdr = &pkt[34];
-  uint16_t udp_src_port = read_be16(&udp_hdr[0]);
-  uint16_t udp_dst_port = read_be16(&udp_hdr[2]);
-  uint16_t udp_length = read_be16(&udp_hdr[4]);
-
-  // Check if it's for our echo port
-  if (udp_dst_port != UDP_ECHO_PORT) {
-    printk("UDP packet not for echo port (dst port ");
-    printk_dec(udp_dst_port);
-    printk("), dropping\n");
-    goto release;
-  }
-
-  // Calculate payload length (UDP data)
-  size_t udp_data_len = udp_length - 8; // UDP header is 8 bytes
-  const uint8_t *udp_data = &pkt[42];   // 14 + 20 + 8
-
-  // Log received packet with parsed information
-  printk("Received UDP packet from ");
-  printk_ip(ip_src);
-  printk(":");
-  printk_dec(udp_src_port);
-  printk(" len=");
-  printk_dec(udp_data_len);
-  printk("\n");
-
-  // Show data (first 32 bytes)
-  if (udp_data_len > 0) {
-    size_t show_len = udp_data_len;
-    if (show_len > 32)
-      show_len = 32;
-    printk("Data: ");
-    for (size_t i = 0; i < show_len; i++) {
-      printk_hex8(udp_data[i]);
-      if (i < show_len - 1)
-        printk(" ");
+  // Dispatch based on ethertype
+  if (ethertype == ETHERTYPE_ARP) {
+    handle_arp_packet(user, pkt, pkt_len);
+  } else if (ethertype == ETHERTYPE_IPV4) {
+    // Minimum IPv4 packet: 14 (Ethernet) + 20 (IP) = 34 bytes
+    if (pkt_len < 34) {
+      printk("IPv4 packet too small\n");
+      goto release;
     }
-    if (udp_data_len > 32)
-      printk(" ...");
-    printk("\n");
-  }
 
-  // Construct UDP echo response
-  // Check if send request is available (not already in use)
-  if (user->net_send_req.work.state != KWORK_STATE_DEAD) {
-    printk("Send request busy, dropping packet\n");
-    goto release;
-  }
+    // Parse IPv4 header (starts at offset 14)
+    const uint8_t *ip_hdr = &pkt[14];
+    uint8_t ip_version = (ip_hdr[0] >> 4) & 0x0F;
+    uint8_t ip_ihl = ip_hdr[0] & 0x0F;
+    uint8_t ip_protocol = ip_hdr[9];
+    const uint8_t *ip_dst = &ip_hdr[16];
 
-  uint8_t *tx_pkt = user->net_tx_buf;
-  size_t tx_len = 0;
+    // Validate IP version and header length
+    if (ip_version != 4) {
+      printk("Invalid IP version (");
+      printk_dec(ip_version);
+      printk("), dropping\n");
+      goto release;
+    }
 
-  // Ethernet header (14 bytes) - swap src/dst MACs
-  memcpy(&tx_pkt[0], eth_src_mac, 6); // dst_mac = incoming src_mac
-  memcpy(&tx_pkt[6], eth_dst_mac, 6); // src_mac = incoming dst_mac
-  write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
-  tx_len += 14;
+    if (ip_ihl != 5) {
+      printk("IP options not supported (IHL=");
+      printk_dec(ip_ihl);
+      printk("), dropping\n");
+      goto release;
+    }
 
-  // IPv4 header (20 bytes) - swap src/dst IPs
-  memcpy(&tx_pkt[14], ip_hdr, 20); // Copy entire IP header
-  // Swap source and destination IPs
-  memcpy(&tx_pkt[14 + 12], ip_dst, 4); // src_ip = incoming dst_ip
-  memcpy(&tx_pkt[14 + 16], ip_src, 4); // dst_ip = incoming src_ip
-  // Zero out checksum field before recalculating
-  tx_pkt[14 + 10] = 0;
-  tx_pkt[14 + 11] = 0;
-  // Calculate IP header checksum
-  uint16_t ip_csum = ip_checksum(&tx_pkt[14], 20);
-  write_be16(&tx_pkt[14 + 10], ip_csum);
-  tx_len += 20;
+    // Validate destination IP matches our address
+    if (ip_dst[0] != DEVICE_IP[0] || ip_dst[1] != DEVICE_IP[1] ||
+        ip_dst[2] != DEVICE_IP[2] || ip_dst[3] != DEVICE_IP[3]) {
+      printk("Packet not for us (dst IP ");
+      printk_ip(ip_dst);
+      printk("), dropping\n");
+      goto release;
+    }
 
-  // UDP header (8 bytes) - swap src/dst ports
-  write_be16(&tx_pkt[34], udp_dst_port); // src_port = incoming dst_port
-  write_be16(&tx_pkt[36], udp_src_port); // dst_port = incoming src_port
-  write_be16(&tx_pkt[38], udp_length);   // length stays the same
-  write_be16(&tx_pkt[40], 0);            // checksum = 0 (optional for IPv4)
-  tx_len += 8;
-
-  // Copy UDP payload (echo the data back)
-  memcpy(&tx_pkt[42], udp_data, udp_data_len);
-  tx_len += udp_data_len;
-
-  // Setup send request
-  user->net_tx_packet.buffer = tx_pkt;
-  user->net_tx_packet.buffer_size = tx_len;
-
-  user->net_send_req.work.op = KWORK_OP_NET_SEND;
-  user->net_send_req.work.callback = on_packet_sent;
-  user->net_send_req.work.ctx = user;
-  user->net_send_req.work.state = KWORK_STATE_DEAD;
-  user->net_send_req.work.flags = 0;
-  user->net_send_req.packets = &user->net_tx_packet;
-  user->net_send_req.num_packets = 1;
-  user->net_send_req.packets_sent = 0;
-
-  // Submit send request
-  kerr_t err = ksubmit(user->kernel, &user->net_send_req.work);
-  if (err != KERR_OK) {
-    printk("Network send submit failed: error ");
-    printk_dec(err);
-    printk("\n");
+    // Dispatch based on IP protocol
+    if (ip_protocol == IP_PROTOCOL_ICMP) {
+      handle_icmp_packet(user, pkt, pkt_len, ip_hdr);
+    } else if (ip_protocol == IP_PROTOCOL_UDP) {
+      handle_udp_packet(user, pkt, pkt_len, ip_hdr);
+    } else {
+      printk("Unsupported IP protocol (");
+      printk_dec(ip_protocol);
+      printk("), dropping\n");
+    }
   } else {
-    printk("Sent UDP response to ");
-    printk_ip(ip_src);
-    printk(":");
-    printk_dec(udp_src_port);
-    printk(" len=");
-    printk_dec(udp_data_len);
-    printk("\n");
+    printk("Unknown ethertype ");
+    printk_hex16(ethertype);
+    printk(", dropping\n");
   }
 
 release:
@@ -560,90 +813,56 @@ void kmain_usermain(kuser_t *user) {
     printk("Network recv request submitted (4 buffers)\n");
   }
 
-  // // Send a proactive outbound UDP packet to "prime" the QEMU network stack
-  // // This allows QEMU's user networking to establish the connection mapping
-  // // so it can route inbound packets to us
-  // printk("Sending outbound UDP packet to prime network connection...\n");
+  // Send gratuitous ARP to announce our presence
+  // This pre-populates QEMU's ARP cache, eliminating delay on first packet
+  printk("Sending gratuitous ARP...\n");
 
-  // uint8_t *tx_pkt = user->net_tx_buf;
-  // size_t tx_len = 0;
+  uint8_t *tx_pkt = user->arp_tx_buf;
+  size_t tx_len = 0;
+  const uint8_t *device_mac = user->kernel->platform.net_mac_address;
+  const uint8_t broadcast_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-  // // Ethernet header (14 bytes)
-  // // dst_mac = gateway (avoid memcpy to prevent alignment issues)
-  // tx_pkt[0] = GATEWAY_MAC[0];
-  // tx_pkt[1] = GATEWAY_MAC[1];
-  // tx_pkt[2] = GATEWAY_MAC[2];
-  // tx_pkt[3] = GATEWAY_MAC[3];
-  // tx_pkt[4] = GATEWAY_MAC[4];
-  // tx_pkt[5] = GATEWAY_MAC[5];
-  // // src_mac = our MAC
-  // tx_pkt[6] = 0x52;
-  // tx_pkt[7] = 0x54;
-  // tx_pkt[8] = 0x00;
-  // tx_pkt[9] = 0x12;
-  // tx_pkt[10] = 0x34;
-  // tx_pkt[11] = 0x56;
-  // write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
-  // tx_len += 14;
+  // Ethernet header (14 bytes) - broadcast
+  memcpy(&tx_pkt[0], broadcast_mac, 6);  // dst_mac = broadcast
+  memcpy(&tx_pkt[6], device_mac, 6);     // src_mac = our MAC
+  write_be16(&tx_pkt[12], ETHERTYPE_ARP);
+  tx_len += 14;
 
-  // // IPv4 header (20 bytes)
-  // tx_pkt[14] = 0x45;  // Version 4, IHL 5
-  // tx_pkt[15] = 0x00;  // DSCP/ECN
-  // write_be16(&tx_pkt[16], 20 + 8 + 5);  // Total length (IP + UDP + data)
-  // write_be16(&tx_pkt[18], 0x1234);      // ID
-  // write_be16(&tx_pkt[20], 0x0000);      // Flags/Fragment
-  // tx_pkt[22] = 64;    // TTL
-  // tx_pkt[23] = IP_PROTOCOL_UDP;
-  // write_be16(&tx_pkt[24], 0x0000);      // Checksum (will calculate)
-  // // src_ip (avoid memcpy)
-  // tx_pkt[26] = DEVICE_IP[0];
-  // tx_pkt[27] = DEVICE_IP[1];
-  // tx_pkt[28] = DEVICE_IP[2];
-  // tx_pkt[29] = DEVICE_IP[3];
-  // // dst_ip (avoid memcpy)
-  // tx_pkt[30] = GATEWAY_IP[0];
-  // tx_pkt[31] = GATEWAY_IP[1];
-  // tx_pkt[32] = GATEWAY_IP[2];
-  // tx_pkt[33] = GATEWAY_IP[3];
-  // // Calculate IP checksum
-  // uint16_t ip_csum = ip_checksum(&tx_pkt[14], 20);
-  // write_be16(&tx_pkt[24], ip_csum);
-  // tx_len += 20;
+  // ARP packet (28 bytes) - gratuitous ARP
+  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET);  // Hardware type
+  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);      // Protocol type
+  tx_pkt[18] = 6;                               // Hardware address length
+  tx_pkt[19] = 4;                               // Protocol address length
+  write_be16(&tx_pkt[20], ARP_OPER_REQUEST);    // Operation (request)
+  memcpy(&tx_pkt[22], device_mac, 6);           // Sender MAC = our MAC
+  memcpy(&tx_pkt[28], DEVICE_IP, 4);            // Sender IP = our IP
+  memcpy(&tx_pkt[32], broadcast_mac, 6);        // Target MAC = broadcast
+  memcpy(&tx_pkt[36], DEVICE_IP, 4);            // Target IP = our IP (gratuitous)
+  tx_len += 28;
 
-  // // UDP header (8 bytes)
-  // write_be16(&tx_pkt[34], UDP_ECHO_PORT);  // src_port
-  // write_be16(&tx_pkt[36], 1234);           // dst_port (arbitrary)
-  // write_be16(&tx_pkt[38], 8 + 5);          // UDP length (header + data)
-  // write_be16(&tx_pkt[40], 0);              // checksum (optional)
-  // tx_len += 8;
+  // Setup send request for gratuitous ARP
+  user->arp_tx_packet.buffer = tx_pkt;
+  user->arp_tx_packet.buffer_size = tx_len;
 
-  // // UDP data (5 bytes): "HELLO"
-  // tx_pkt[42] = 'H';
-  // tx_pkt[43] = 'E';
-  // tx_pkt[44] = 'L';
-  // tx_pkt[45] = 'L';
-  // tx_pkt[46] = 'O';
-  // tx_len += 5;
+  user->arp_send_req.work.op = KWORK_OP_NET_SEND;
+  user->arp_send_req.work.callback = on_packet_sent;
+  user->arp_send_req.work.ctx = user;
+  user->arp_send_req.work.state = KWORK_STATE_DEAD;
+  user->arp_send_req.work.flags = 0;
+  user->arp_send_req.packets = &user->arp_tx_packet;
+  user->arp_send_req.num_packets = 1;
+  user->arp_send_req.packets_sent = 0;
 
-  // // Setup send request
-  // user->net_tx_packet.buffer = tx_pkt;
-  // user->net_tx_packet.buffer_size = tx_len;
-
-  // user->net_send_req.work.op = KWORK_OP_NET_SEND;
-  // user->net_send_req.work.callback = on_packet_sent;
-  // user->net_send_req.work.ctx = user;
-  // user->net_send_req.work.state = KWORK_STATE_DEAD;
-  // user->net_send_req.work.flags = 0;
-  // user->net_send_req.packets = &user->net_tx_packet;
-  // user->net_send_req.num_packets = 1;
-  // user->net_send_req.packets_sent = 0;
-
-  // err = ksubmit(user->kernel, &user->net_send_req.work);
-  // if (err != KERR_OK) {
-  //   printk("Outbound packet send failed: error ");
-  //   printk_dec(err);
-  //   printk("\n");
-  // } else {
-  //   printk("Outbound packet submitted\n");
-  // }
+  err = ksubmit(user->kernel, &user->arp_send_req.work);
+  if (err != KERR_OK) {
+    printk("Gratuitous ARP send failed: error ");
+    printk_dec(err);
+    printk("\n");
+  } else {
+    printk("Gratuitous ARP sent (announcing ");
+    printk_ip(DEVICE_IP);
+    printk(" at ");
+    printk_mac(device_mac);
+    printk(")\n");
+  }
 }
