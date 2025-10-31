@@ -17,9 +17,13 @@ void platform_interrupt_enable(platform_t *platform);
 // Disable interrupts (cli instruction)
 void platform_interrupt_disable(platform_t *platform);
 
-// Register IRQ handler
+// Register IRQ handler (for MSI-X devices)
 void irq_register(platform_t *platform, uint8_t irq_num,
                   void (*handler)(void *), void *context);
+
+// Register MMIO IRQ handler (edge-triggered, routes through IOAPIC)
+void irq_register_mmio(platform_t *platform, uint8_t irq_num,
+                       void (*handler)(void *), void *context);
 
 // Enable (unmask) a specific IRQ
 void irq_enable(platform_t *platform, uint8_t irq_num);
@@ -29,8 +33,3 @@ void irq_dispatch(uint8_t irq_num);
 
 // Interrupt handler (called from ISR stubs)
 void interrupt_handler(uint64_t vector);
-
-// Platform API wrappers
-int platform_irq_register(platform_t *platform, uint32_t irq_num,
-                          void (*handler)(void *), void *context);
-void platform_irq_enable(platform_t *platform, uint32_t irq_num);

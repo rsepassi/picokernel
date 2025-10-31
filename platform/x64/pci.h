@@ -29,6 +29,26 @@
 #define PCI_CMD_BUS_MASTER (1 << 2)
 #define PCI_CMD_INT_DISABLE (1 << 10)
 
+// PCI Capability IDs
+#define PCI_CAP_ID_MSIX 0x11
+
+// MSI-X capability register offsets (from capability pointer)
+#define MSIX_CAP_CONTROL 0x02 // Message Control
+#define MSIX_CAP_TABLE 0x04   // Table Offset/BIR
+#define MSIX_CAP_PBA 0x08     // Pending Bit Array Offset/BIR
+
+// MSI-X Control register bits
+#define MSIX_CONTROL_ENABLE (1 << 15)     // MSI-X Enable
+#define MSIX_CONTROL_FUNCTION_MASK (1 << 14) // Function Mask
+
+// MSI-X Table Entry structure (16 bytes per entry)
+typedef struct {
+  uint32_t msg_addr_low;  // Lower 32 bits of message address
+  uint32_t msg_addr_high; // Upper 32 bits of message address
+  uint32_t msg_data;      // Message data
+  uint32_t vector_control; // Vector control (bit 0 = masked)
+} __attribute__((packed)) msix_table_entry_t;
+
 // VirtIO PCI vendor/device IDs
 #define VIRTIO_PCI_VENDOR_ID 0x1AF4
 
@@ -45,5 +65,20 @@
 // PCI BAR types
 #define PCI_BAR_TYPE_MMIO 0
 #define PCI_BAR_TYPE_IO 1
+
+// Forward declaration
+struct platform_t;
+typedef struct platform_t platform_t;
+
+// MSI-X configuration functions
+uint8_t pci_find_msix_capability(platform_t *platform, uint8_t bus,
+                                 uint8_t slot, uint8_t func);
+void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
+                               uint8_t func, uint16_t vector_idx,
+                               uint8_t cpu_vector, uint8_t apic_id);
+void pci_enable_msix(platform_t *platform, uint8_t bus, uint8_t slot,
+                     uint8_t func);
+void pci_disable_intx(platform_t *platform, uint8_t bus, uint8_t slot,
+                      uint8_t func);
 
 // x64 implements the PCI platform interface via I/O ports (see platform.h)

@@ -224,26 +224,36 @@ void platform_interrupt_disable(platform_t *platform) {
 }
 
 // Register IRQ handler
+// For MSI-X devices, just register the handler - no IOAPIC routing needed
+// MSI-X messages go directly to LAPIC
 void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *),
                   void *context) {
   platform->irq_table[vector].handler = handler;
   platform->irq_table[vector].context = context;
+  // MSI-X: No IOAPIC routing - messages go directly to LAPIC
+}
 
-  // Route the IRQ through IOAPIC
+// Register IRQ handler for MMIO devices (edge-triggered)
+void irq_register_mmio(platform_t *platform, uint8_t vector,
+                       void (*handler)(void *), void *context) {
+  platform->irq_table[vector].handler = handler;
+  platform->irq_table[vector].context = context;
+
+  // Route the MMIO IRQ through IOAPIC (edge-triggered)
   // Vector 32 is timer (LAPIC, not IOAPIC)
   // Vectors 33+ are device IRQs
   if (vector >= 33) {
     uint8_t irq = vector - 32;
     uint8_t apic_id = 0; // BSP APIC ID
 
-    ioapic_route_irq(platform, irq, vector, apic_id);
+    ioapic_route_mmio_irq(platform, irq, vector, apic_id);
   }
 }
 
 // Enable (unmask) a specific IRQ
 void irq_enable(platform_t *platform, uint8_t vector) {
-  // Unmask the IRQ in the IOAPIC
-  // Vector 32 is timer (LAPIC), vectors 33+ are device IRQs (IOAPIC)
+  // Unmask in IOAPIC for MMIO devices (vectors 33+)
+  // MSI-X devices don't go through IOAPIC, so this is harmless for them
   if (vector >= 33) {
     uint8_t irq = vector - 32;
     ioapic_unmask_irq(platform, irq);

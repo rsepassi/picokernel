@@ -119,17 +119,17 @@ void ioapic_init(platform_t *platform) {
   printk("IOAPIC initialized\n");
 }
 
-// Route an IRQ to a vector
+// Route an IRQ to a vector (edge-triggered for MMIO devices)
 void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
                       uint8_t apic_id) {
   if (irq >= platform->ioapic.max_entries) {
     return;
   }
 
-  // Build redirection entry for level-triggered PCI interrupt
+  // Build redirection entry for edge-triggered MMIO interrupt
   uint64_t entry = (uint64_t)vector | IOAPIC_DELMOD_FIXED |
                    IOAPIC_DEST_PHYSICAL | IOAPIC_INTPOL_HIGH |
-                   IOAPIC_TRIGGER_LEVEL | IOAPIC_MASK |
+                   IOAPIC_TRIGGER_EDGE | IOAPIC_MASK |
                    ((uint64_t)apic_id << 56);
 
   ioapic_write_redtbl(&platform->ioapic, irq, entry);

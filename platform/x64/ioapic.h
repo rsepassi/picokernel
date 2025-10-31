@@ -34,9 +34,9 @@ typedef struct ioapic ioapic_t;
 // Initialize IOAPIC (finds base address from ACPI MADT)
 void ioapic_init(platform_t *platform);
 
-// Route an IRQ to a vector
-void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
-                      uint8_t apic_id);
+// Route an MMIO IRQ to a vector (edge-triggered)
+void ioapic_route_mmio_irq(platform_t *platform, uint8_t irq, uint8_t vector,
+                           uint8_t apic_id);
 
 // Mask/unmask an IRQ
 void ioapic_mask_irq(platform_t *platform, uint8_t irq);

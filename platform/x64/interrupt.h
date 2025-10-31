@@ -22,6 +22,10 @@ void platform_interrupt_disable(platform_t *platform);
 void irq_register(platform_t *platform, uint8_t vector, void (*handler)(void *),
                   void *context);
 
+// Register MMIO IRQ handler (edge-triggered)
+void irq_register_mmio(platform_t *platform, uint8_t vector,
+                       void (*handler)(void *), void *context);
+
 // Enable (unmask) a specific IRQ in the PIC
 void irq_enable(platform_t *platform, uint8_t vector);
 

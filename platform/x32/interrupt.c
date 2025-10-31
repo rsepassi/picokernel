@@ -223,18 +223,29 @@ void platform_interrupt_disable(platform_t *platform) {
   __asm__ volatile("cli");
 }
 
-// Register IRQ handler
+// Register IRQ handler (for MSI-X devices)
+// MSI-X messages go directly to LAPIC, no IOAPIC routing needed
 void irq_register(platform_t *platform, uint8_t irq_num,
                   void (*handler)(void *), void *context) {
   platform->irq_table[irq_num].handler = handler;
   platform->irq_table[irq_num].context = context;
+  // MSI-X: No IOAPIC routing - messages go directly to LAPIC
+}
 
-  // Route IRQ through IOAPIC (APIC ID 0 for BSP)
+// Register MMIO IRQ handler (edge-triggered, routes through IOAPIC)
+void irq_register_mmio(platform_t *platform, uint8_t irq_num,
+                       void (*handler)(void *), void *context) {
+  platform->irq_table[irq_num].handler = handler;
+  platform->irq_table[irq_num].context = context;
+
+  // Route MMIO IRQ through IOAPIC (edge-triggered)
   ioapic_route_irq(platform, irq_num, irq_num, 0);
 }
 
 // Enable (unmask) a specific IRQ
 void irq_enable(platform_t *platform, uint8_t irq_num) {
+  // Unmask in IOAPIC for MMIO devices
+  // MSI-X devices don't go through IOAPIC, so this is harmless for them
   ioapic_unmask_irq(platform, irq_num);
 }
 

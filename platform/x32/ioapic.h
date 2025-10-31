@@ -29,7 +29,7 @@ typedef struct ioapic_t ioapic_t;
 // Initialize IOAPIC (finds base address from ACPI MADT)
 void ioapic_init(platform_t *platform);
 
-// Route an IRQ to a vector
+// Route an IRQ to a vector (edge-triggered for MMIO devices)
 void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
                       uint8_t apic_id);
 

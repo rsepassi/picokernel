@@ -201,14 +201,22 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
   platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
-  // Setup interrupt
-  uint8_t irq_line = platform_pci_config_read8(platform, bus, slot, func,
-                                               PCI_REG_INTERRUPT_LINE);
-  uint32_t irq_vector = 32 + irq_line;
+  // Setup MSI-X interrupt (vector 33 for RNG)
+  uint8_t cpu_vector = 33;
+  uint8_t apic_id = 0; // BSP APIC ID
 
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
+  // Configure MSI-X vector 0 (first queue interrupt)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Register interrupt handler directly (no IOAPIC routing needed)
+  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
                         &platform->virtio_rng);
-  platform_irq_enable(platform, irq_vector);
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
@@ -247,9 +255,9 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Setup interrupt - add 32 to convert to interrupt vector
   uint32_t irq_vector = 32 + irq_num;
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
-                        &platform->virtio_rng);
-  platform_irq_enable(platform, irq_vector);
+  irq_register_mmio(platform, irq_vector, virtio_irq_handler,
+                    &platform->virtio_rng);
+  irq_enable(platform, irq_vector);
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
@@ -287,14 +295,22 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
   platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
 
-  // Setup interrupt
-  uint8_t irq_line = platform_pci_config_read8(platform, bus, slot, func,
-                                               PCI_REG_INTERRUPT_LINE);
-  uint32_t irq_vector = 32 + irq_line;
+  // Setup MSI-X interrupt (vector 34 for BLK)
+  uint8_t cpu_vector = 34;
+  uint8_t apic_id = 0; // BSP APIC ID
 
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
+  // Configure MSI-X vector 0 (first queue interrupt)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Register interrupt handler directly (no IOAPIC routing needed)
+  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
                         &platform->virtio_blk);
-  platform_irq_enable(platform, irq_vector);
 
   // Store device info
   platform->virtio_blk_ptr = &platform->virtio_blk;
@@ -347,9 +363,9 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Setup interrupt
   uint32_t irq_vector = 32 + irq_num;
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
-                        &platform->virtio_blk);
-  platform_irq_enable(platform, irq_vector);
+  irq_register_mmio(platform, irq_vector, virtio_irq_handler,
+                    &platform->virtio_blk);
+  irq_enable(platform, irq_vector);
 
   // Store device info
   platform->virtio_blk_ptr = &platform->virtio_blk;
@@ -408,14 +424,25 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
   platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
 
-  // Setup interrupt
-  uint8_t irq_line = platform_pci_config_read8(platform, bus, slot, func,
-                                               PCI_REG_INTERRUPT_LINE);
-  uint32_t irq_vector = 32 + irq_line;
+  // Setup MSI-X interrupt (vector 35 for NET)
+  uint8_t cpu_vector = 35;
+  uint8_t apic_id = 0; // BSP APIC ID
 
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
+  // Configure MSI-X vectors for RX and TX queues
+  // Vector 0: RX queue
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  // Vector 1: TX queue (same handler, same CPU vector for simplicity)
+  pci_configure_msix_vector(platform, bus, slot, func, 1, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Register interrupt handler directly (no IOAPIC routing needed)
+  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
                         &platform->virtio_net);
-  platform_irq_enable(platform, irq_vector);
 
   printk("[NET] Storing device info...\n");
   // Store device info
@@ -483,9 +510,9 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Setup interrupt
   uint32_t irq_vector = 32 + irq_num;
-  platform_irq_register(platform, irq_vector, virtio_irq_handler,
-                        &platform->virtio_net);
-  platform_irq_enable(platform, irq_vector);
+  irq_register_mmio(platform, irq_vector, virtio_irq_handler,
+                    &platform->virtio_net);
+  irq_enable(platform, irq_vector);
 
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
@@ -784,11 +811,13 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 void mmio_scan_devices(platform_t *platform) {
 // QEMU microvm VirtIO MMIO region layout
 // QEMU places devices starting at 0xFEB02A00 with 0x200 byte spacing
+// With ACPI enabled, QEMU assigns IRQs starting at 16 (not 5)
+// IRQs are assigned in device creation order, but MMIO addresses are reversed
 #define VIRTIO_MMIO_BASE 0xFEB00000ULL
 #define VIRTIO_MMIO_DEVICE_START 0x2A00 // First device offset
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
 #define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 5
+#define VIRTIO_MMIO_IRQ_BASE 5 // microvm default IRQ base
 #define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   printk("Probing for VirtIO MMIO devices...\n");
@@ -832,25 +861,28 @@ void mmio_scan_devices(platform_t *platform) {
     devices_found++;
 
     // Initialize RNG device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
         platform->virtio_rng_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       rng_initialized = 1;
     }
 
     // Initialize BLK device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
         platform->virtio_blk_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       blk_initialized = 1;
     }
 
     // Initialize NET device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_NET && !net_initialized &&
         platform->virtio_net_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       net_initialized = 1;
     }
