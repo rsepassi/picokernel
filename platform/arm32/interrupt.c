@@ -2,8 +2,11 @@
 // GICv2 (Generic Interrupt Controller) setup and interrupt handlers
 
 #include "interrupt.h"
+#include "platform.h"
 #include "platform_impl.h"
 #include "printk.h"
+#include "timer.h"
+#include <stddef.h>
 #include <stdint.h>
 
 // GICv2 register offsets (QEMU virt machine)
@@ -32,6 +35,9 @@
 // Using virtual timer (CNTV) for ARMv7-A
 #define TIMER_IRQ 27
 
+// Maximum number of IRQs supported by GICv2
+#define MAX_IRQS 1024
+
 // Memory-mapped register access helpers
 static inline void gicd_write32(uint32_t offset, uint32_t value) {
   *(volatile uint32_t *)(GICD_BASE + offset) = value;
@@ -56,8 +62,8 @@ static inline uint32_t gicc_read32(uint32_t offset) {
 // Only used for interrupt dispatch, not a general-purpose global.
 static platform_t *g_current_platform = NULL;
 
-// Forward declare timer handler
-void timer_handler(platform_t *platform);
+// Timer handler is declared in timer.h
+void generic_timer_handler(void *context);
 
 // Exception names for debugging
 static const char *exception_names[8] = {"Reset",
@@ -80,17 +86,14 @@ void interrupt_handler(uint32_t vector) {
     uint32_t iar = gicc_read32(GICC_IAR);
     uint32_t irq = iar & 0x3FF; // Interrupt ID is in bits [9:0]
 
-    if (irq == TIMER_IRQ) {
-      // Timer interrupt
-      timer_handler(g_current_platform);
-    } else if (irq >= 1020) {
+    if (irq >= 1020) {
       // Spurious interrupt (1020-1023 are special values)
       // No EOI needed for spurious interrupts
       return;
-    } else {
-      // Dispatch to registered handler
-      irq_dispatch(irq);
     }
+
+    // Dispatch to registered handler (including timer)
+    irq_dispatch(g_current_platform, irq);
 
     // Send EOI (End of Interrupt)
     gicc_write32(GICC_EOIR, iar);
@@ -116,7 +119,7 @@ void interrupt_handler(uint32_t vector) {
 
 // Initialize GIC
 static void gic_init(platform_t *platform) {
-  (void)platform; // Not used yet but will be needed for platform state
+  (void)platform; // Unused parameter
   // Disable distributor
   gicd_write32(GICD_CTLR, 0);
 
@@ -124,7 +127,7 @@ static void gic_init(platform_t *platform) {
   uint32_t typer = gicd_read32(GICD_TYPER);
   uint32_t num_lines = ((typer & 0x1F) + 1) * 32;
 
-  printk("GICv2 initialized: ");
+  printk("GIC Distributor: ");
   printk_dec(num_lines);
   printk(" interrupt lines\n");
 
@@ -144,15 +147,8 @@ static void gic_init(platform_t *platform) {
     gicd_write32(GICD_ICFGR + (i * 4), 0);
   }
 
-  // Enable timer interrupt
-  // ISENABLER registers: 32 interrupts per register
-  uint32_t reg_idx = TIMER_IRQ / 32;
-  uint32_t bit_idx = TIMER_IRQ % 32;
-  gicd_write32(GICD_ISENABLER0 + (reg_idx * 4), 1 << bit_idx);
-
-  printk("Enabled timer interrupt (IRQ ");
-  printk_dec(TIMER_IRQ);
-  printk(")\n");
+  // Don't enable timer interrupt here - it will be registered and enabled
+  // by interrupt_init() after the GIC is ready
 
   // Enable distributor (enable both Group 0 and Group 1 for non-secure mode)
   // Bit 0: Enable Group 0, Bit 1: Enable Group 1 (if in secure mode)
@@ -165,8 +161,14 @@ static void gic_init(platform_t *platform) {
 
   // Enable CPU interface for IRQ and FIQ
   // Bit 0: Enable Group 0 interrupts
-  // Try setting more enable bits to ensure interrupts are delivered
-  gicc_write32(GICC_CTLR, 0x1);
+  // Enable CPU interface
+  gicc_write32(GICC_CTLR, 1);
+
+  printk("GIC initialized (Distributor at 0x");
+  printk_hex32(GICD_BASE);
+  printk(", CPU Interface at 0x");
+  printk_hex32(GICC_BASE);
+  printk(")\n");
 }
 
 // External assembly function to set VBAR (Vector Base Address Register)
@@ -189,6 +191,9 @@ void interrupt_init(platform_t *platform) {
 
   // Initialize GIC
   gic_init(platform);
+
+  // Register timer interrupt with platform context
+  irq_register(platform, TIMER_IRQ, generic_timer_handler, platform);
 }
 
 // Enable interrupts (clear I bit in CPSR)
@@ -275,18 +280,23 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
 }
 
 // Dispatch IRQ to registered handler
-void irq_dispatch(uint32_t irq_num) {
+void irq_dispatch(platform_t *platform, uint32_t irq_num) {
   if (irq_num >= MAX_IRQS) {
     return;
   }
 
-  if (g_current_platform->irq_table[irq_num].handler != NULL) {
-    g_current_platform->irq_table[irq_num].handler(
-        g_current_platform->irq_table[irq_num].context);
-  } else {
-    // Unknown interrupt - just print a warning
-    printk("Unhandled IRQ: ");
-    printk_dec(irq_num);
-    printk("\n");
+  if (platform->irq_table[irq_num].handler != NULL) {
+    platform->irq_table[irq_num].handler(platform->irq_table[irq_num].context);
   }
+}
+
+// Platform API wrappers
+int platform_irq_register(platform_t *platform, uint32_t irq_num,
+                          void (*handler)(void *), void *context) {
+  irq_register(platform, irq_num, handler, context);
+  return 0; // Success
+}
+
+void platform_irq_enable(platform_t *platform, uint32_t irq_num) {
+  irq_enable(platform, irq_num);
 }

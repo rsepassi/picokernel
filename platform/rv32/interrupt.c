@@ -2,6 +2,7 @@
 // Trap vector setup and interrupt dispatching
 
 #include "interrupt.h"
+#include "platform.h"
 #include "platform_impl.h"
 #include "printk.h"
 #include "timer.h"
@@ -69,11 +70,11 @@ extern void trap_entry(void);
 
 // MMIO helper functions
 static inline void mmio_write32(uint32_t addr, uint32_t value) {
-  *(volatile uint32_t *)addr = value;
+  platform_mmio_write32((volatile uint32_t *)addr, value);
 }
 
 static inline uint32_t mmio_read32(uint32_t addr) {
-  return *(volatile uint32_t *)addr;
+  return platform_mmio_read32((volatile uint32_t *)addr);
 }
 
 // Module-local platform pointer

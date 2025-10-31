@@ -23,7 +23,7 @@ void irq_register(platform_t *platform, uint32_t irq_num,
 void irq_enable(platform_t *platform, uint32_t irq_num);
 
 // Dispatch IRQ (called from exception handler)
-void irq_dispatch(uint32_t irq_num);
+void irq_dispatch(platform_t *platform, uint32_t irq_num);
 
 // Common interrupt handler (called from assembly)
 void interrupt_handler(uint32_t vector);

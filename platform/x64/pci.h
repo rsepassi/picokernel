@@ -46,8 +46,4 @@
 #define PCI_BAR_TYPE_MMIO 0
 #define PCI_BAR_TYPE_IO 1
 
-// x64 implements the PCI platform interface (see pci_platform.h)
-// Additional x64-specific PCI functions:
-
-void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
-                        uint32_t value);
+// x64 implements the PCI platform interface via I/O ports (see platform.h)

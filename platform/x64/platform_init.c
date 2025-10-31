@@ -20,8 +20,19 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   (void)fdt; // x64 doesn't use FDT, but keep parameter for consistency
 
   platform->kernel = kernel;
-  platform->virtio_rng = NULL;
+  platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->virtio_net_ptr = NULL;
+  platform->has_block_device = false;
+  platform->has_net_device = false;
+
+  // Initialize PCI BAR allocator (QEMU x64 q35: PCI MMIO at 0xC0000000)
+  // For microvm, QEMU assigns BARs automatically
+  platform->pci_next_bar_addr = 0xC0000000;
+
+  // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
+  platform->last_overflow_count = 0;
 
   printk("Initializing x64 platform...\n");
 

@@ -66,8 +66,10 @@ void platform_pci_config_write16(platform_t *platform, uint8_t bus,
 }
 
 // Write 32-bit value to PCI config space
-void pci_config_write32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset,
-                        uint32_t value) {
+void platform_pci_config_write32(platform_t *platform, uint8_t bus,
+                                 uint8_t slot, uint8_t func, uint8_t offset,
+                                 uint32_t value) {
+  (void)platform; // Unused on x64 (uses I/O ports)
   uint32_t address = pci_make_address(bus, slot, func, offset);
   outl(PCI_CONFIG_ADDR, address);
   outl(PCI_CONFIG_DATA, value);

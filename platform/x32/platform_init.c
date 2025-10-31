@@ -25,9 +25,17 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->virtio_net_ptr = NULL;
+  platform->has_block_device = false;
+  platform->has_net_device = false;
+
+  // Initialize PCI BAR allocator (QEMU x86 q35: PCI MMIO at 0x80000000)
+  platform->pci_next_bar_addr = 0x80000000;
 
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
+  platform->last_overflow_count = 0;
 
   printk("Initializing x32 platform...\n");
 

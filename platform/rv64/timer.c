@@ -156,15 +156,28 @@ void timer_init(platform_t *platform, void *fdt) {
 }
 
 // Set a one-shot timer to fire after specified milliseconds
-void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds) {
-  if (!platform || !platform->timer_callback) {
-    printk("timer_set_oneshot_ms: NULL platform or callback\n");
+void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
+                          timer_callback_t callback) {
+  if (callback == NULL) {
+    printk("timer_set_oneshot_ms: NULL callback\n");
     return;
   }
+
+  if (platform->timebase_freq == 0) {
+    printk("timer_set_oneshot_ms: Timer not initialized\n");
+    return;
+  }
+
+  platform->timer_callback = callback;
 
   // Calculate ticks needed
   // ticks = (milliseconds * frequency) / 1000
   uint64_t ticks = ((uint64_t)milliseconds * platform->timebase_freq) / 1000;
+
+  // Ensure we have at least 1 tick
+  if (ticks == 0) {
+    ticks = 1;
+  }
 
   // Get current time
   uint64_t now = rdtime();

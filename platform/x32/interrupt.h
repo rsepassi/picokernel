@@ -29,3 +29,8 @@ void irq_dispatch(uint8_t irq_num);
 
 // Interrupt handler (called from ISR stubs)
 void interrupt_handler(uint64_t vector);
+
+// Platform API wrappers
+int platform_irq_register(platform_t *platform, uint32_t irq_num,
+                          void (*handler)(void *), void *context);
+void platform_irq_enable(platform_t *platform, uint32_t irq_num);

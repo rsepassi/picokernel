@@ -18,7 +18,16 @@ static void wfi_timer_callback(void) {}
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
-  platform->virtio_rng = NULL;
+  platform->virtio_rng_ptr = NULL;
+  platform->virtio_blk_ptr = NULL;
+  platform->virtio_net_ptr = NULL;
+  platform->has_block_device = false;
+  platform->has_net_device = false;
+  platform->last_overflow_count = 0;
+
+  // Initialize PCI BAR allocator
+  // RISC-V QEMU virt PCI MMIO region starts at 0x40000000
+  platform->pci_next_bar_addr = 0x40000000;
 
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
@@ -67,8 +76,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
     // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
-    platform->timer_callback = wfi_timer_callback;
-    timer_set_oneshot_ms(platform, timeout_ms_32);
+    timer_set_oneshot_ms(platform, timeout_ms_32, wfi_timer_callback);
   }
 
   // Atomically enable interrupts and wait
