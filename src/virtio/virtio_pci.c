@@ -2,6 +2,7 @@
 // Platform-agnostic PCI transport using platform hooks
 
 #include "virtio_pci.h"
+#include "kbase.h"
 #include "platform.h"
 
 // PCI config space register offsets
@@ -31,7 +32,7 @@ static inline void mmio_write8(volatile uint8_t *addr, uint8_t value) {
 }
 
 static inline void mmio_write64(volatile uint64_t *addr, uint64_t value) {
-  *addr = value;
+  memcpy((void *)addr, &value, sizeof(value));
 }
 
 // Find and map VirtIO PCI capabilities

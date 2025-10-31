@@ -177,6 +177,19 @@ void knet_buffer_release(kernel_t *k, knet_recv_req_t *req,
   platform_net_buffer_release(&k->platform, req, buffer_index);
 }
 
+// Initialize work item
+void kwork_init(kwork_t *work, uint32_t op, void *ctx,
+                kwork_callback_t callback, uint8_t flags) {
+  work->op = op;
+  work->callback = callback;
+  work->ctx = ctx;
+  work->result = KERR_OK;
+  work->state = KWORK_STATE_DEAD;
+  work->flags = flags;
+  work->next = NULL;
+  work->prev = NULL;
+}
+
 // Get next timeout for platform_wfi
 uint64_t kmain_next_delay(kernel_t *k) {
   if (k->timer_list_head == NULL) {
@@ -292,11 +305,8 @@ void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
   state->seed_ready = 0;
 
   // Setup RNG request for entropy
-  state->seed_req.work.op = KWORK_OP_RNG_READ;
-  state->seed_req.work.callback = csprng_seed_callback;
-  state->seed_req.work.ctx = state;
-  state->seed_req.work.state = KWORK_STATE_DEAD;
-  state->seed_req.work.flags = 0;
+  kwork_init(&state->seed_req.work, KWORK_OP_RNG_READ, state,
+             csprng_seed_callback, 0);
   state->seed_req.buffer = state->seed_buffer;
   state->seed_req.length = 64;
   state->seed_req.completed = 0;
@@ -314,7 +324,7 @@ void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
   // Initialize CSPRNG with entropy
   kcsprng_init(&k->rng, state->seed_buffer, sizeof(state->seed_buffer));
 
-  printk("CSPRNG initialized\n");
+  printk("[CSPRNG] CSPRNG initialized\n");
 }
 
 void kmain_step(kernel_t *k, uint64_t max_timeout) {

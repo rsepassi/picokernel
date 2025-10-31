@@ -131,6 +131,10 @@ kerr_t ksubmit(kernel_t *k, kwork_t *work);
 // Request cancellation (best-effort)
 kerr_t kcancel(kernel_t *k, kwork_t *work);
 
+// Initialize work item
+void kwork_init(kwork_t *work, uint32_t op, void *ctx,
+                kwork_callback_t callback, uint8_t flags);
+
 // Release a network receive buffer back to the ring
 void knet_buffer_release(kernel_t *k, knet_recv_req_t *req,
                          size_t buffer_index);

@@ -158,11 +158,8 @@ static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
   user->arp_tx_packet.buffer = tx_pkt;
   user->arp_tx_packet.buffer_size = tx_len;
 
-  user->arp_send_req.work.op = KWORK_OP_NET_SEND;
-  user->arp_send_req.work.callback = on_packet_sent;
-  user->arp_send_req.work.ctx = user;
-  user->arp_send_req.work.state = KWORK_STATE_DEAD;
-  user->arp_send_req.work.flags = 0;
+  kwork_init(&user->arp_send_req.work, KWORK_OP_NET_SEND, user, on_packet_sent,
+             0);
   user->arp_send_req.packets = &user->arp_tx_packet;
   user->arp_send_req.num_packets = 1;
   user->arp_send_req.packets_sent = 0;
@@ -306,11 +303,8 @@ static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
     user->icmp_tx_packet.buffer = tx_pkt;
     user->icmp_tx_packet.buffer_size = tx_len;
 
-    user->icmp_send_req.work.op = KWORK_OP_NET_SEND;
-    user->icmp_send_req.work.callback = on_packet_sent;
-    user->icmp_send_req.work.ctx = user;
-    user->icmp_send_req.work.state = KWORK_STATE_DEAD;
-    user->icmp_send_req.work.flags = 0;
+    kwork_init(&user->icmp_send_req.work, KWORK_OP_NET_SEND, user,
+               on_packet_sent, 0);
     user->icmp_send_req.packets = &user->icmp_tx_packet;
     user->icmp_send_req.num_packets = 1;
     user->icmp_send_req.packets_sent = 0;
@@ -435,11 +429,8 @@ static void handle_udp_packet(kuser_t *user, const uint8_t *pkt, size_t pkt_len,
   user->udp_tx_packet.buffer = tx_pkt;
   user->udp_tx_packet.buffer_size = tx_len;
 
-  user->udp_send_req.work.op = KWORK_OP_NET_SEND;
-  user->udp_send_req.work.callback = on_packet_sent;
-  user->udp_send_req.work.ctx = user;
-  user->udp_send_req.work.state = KWORK_STATE_DEAD;
-  user->udp_send_req.work.flags = 0;
+  kwork_init(&user->udp_send_req.work, KWORK_OP_NET_SEND, user, on_packet_sent,
+             0);
   user->udp_send_req.packets = &user->udp_tx_packet;
   user->udp_send_req.num_packets = 1;
   user->udp_send_req.packets_sent = 0;
@@ -722,11 +713,7 @@ void kmain_usermain(kuser_t *user) {
   printk("kmain_usermain: Requesting 32 random bytes...\n");
 
   // Setup RNG request
-  user->rng_req.work.op = KWORK_OP_RNG_READ;
-  user->rng_req.work.callback = on_random_ready;
-  user->rng_req.work.ctx = user;
-  user->rng_req.work.state = KWORK_STATE_DEAD;
-  user->rng_req.work.flags = 0;
+  kwork_init(&user->rng_req.work, KWORK_OP_RNG_READ, user, on_random_ready, 0);
   user->rng_req.buffer = user->random_buf;
   user->rng_req.length = 32;
   user->rng_req.completed = 0;
@@ -751,11 +738,8 @@ void kmain_usermain(kuser_t *user) {
   user->blk_segment.num_sectors = 1;
   user->blk_segment.completed_sectors = 0;
 
-  user->blk_req.work.op = KWORK_OP_BLOCK_READ;
-  user->blk_req.work.callback = on_block_complete;
-  user->blk_req.work.ctx = user;
-  user->blk_req.work.state = KWORK_STATE_DEAD;
-  user->blk_req.work.flags = 0;
+  kwork_init(&user->blk_req.work, KWORK_OP_BLOCK_READ, user, on_block_complete,
+             0);
   user->blk_req.segments = &user->blk_segment;
   user->blk_req.num_segments = 1;
 
@@ -797,11 +781,8 @@ void kmain_usermain(kuser_t *user) {
   KLOG("x");
 
   // Setup standing receive request
-  user->net_recv_req.work.op = KWORK_OP_NET_RECV;
-  user->net_recv_req.work.callback = on_packet_received;
-  user->net_recv_req.work.ctx = user;
-  user->net_recv_req.work.state = KWORK_STATE_DEAD;
-  user->net_recv_req.work.flags = KWORK_FLAG_STANDING; // Keep LIVE
+  kwork_init(&user->net_recv_req.work, KWORK_OP_NET_RECV, user,
+             on_packet_received, KWORK_FLAG_STANDING); // Keep LIVE
   user->net_recv_req.buffers = user->net_rx_bufs;
   user->net_recv_req.num_buffers = 4;
   user->net_recv_req.buffer_index = 0;
@@ -846,11 +827,8 @@ void kmain_usermain(kuser_t *user) {
   user->arp_tx_packet.buffer = tx_pkt;
   user->arp_tx_packet.buffer_size = tx_len;
 
-  user->arp_send_req.work.op = KWORK_OP_NET_SEND;
-  user->arp_send_req.work.callback = on_packet_sent;
-  user->arp_send_req.work.ctx = user;
-  user->arp_send_req.work.state = KWORK_STATE_DEAD;
-  user->arp_send_req.work.flags = 0;
+  kwork_init(&user->arp_send_req.work, KWORK_OP_NET_SEND, user, on_packet_sent,
+             0);
   user->arp_send_req.packets = &user->arp_tx_packet;
   user->arp_send_req.num_packets = 1;
   user->arp_send_req.packets_sent = 0;
