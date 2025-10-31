@@ -30,12 +30,15 @@
 #define CAUSE_EXTERNAL_INTERRUPT 9 // Supervisor external interrupt
 
 // PLIC (Platform-Level Interrupt Controller) base address for QEMU virt
+// RISC-V PLIC has separate contexts for M-mode and S-mode
+// Context 0 = M-mode hart 0, Context 1 = S-mode hart 0
+// Since we run in S-mode, we must use context 1 registers
 #define PLIC_BASE 0x0c000000UL
 #define PLIC_PRIORITY_BASE (PLIC_BASE + 0x000000)
 #define PLIC_PENDING_BASE (PLIC_BASE + 0x001000)
-#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002000)
-#define PLIC_THRESHOLD (PLIC_BASE + 0x200000)
-#define PLIC_CLAIM (PLIC_BASE + 0x200004)
+#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)   // Context 1 (S-mode hart 0)
+#define PLIC_THRESHOLD (PLIC_BASE + 0x201000)     // Context 1 (S-mode hart 0)
+#define PLIC_CLAIM (PLIC_BASE + 0x201004)         // Context 1 (S-mode hart 0)
 
 // Maximum number of IRQs supported by PLIC
 #define MAX_IRQS 128
@@ -236,7 +239,11 @@ void trap_handler(void) {
         if (irq > 0 && irq < MAX_IRQS) {
           // Dispatch to registered handler
           irq_dispatch(platform, irq);
-          // Complete the interrupt (write IRQ number back to PLIC)
+        }
+
+        // Complete the interrupt (write IRQ number back to PLIC)
+        // PLIC will re-trigger if more interrupts are pending
+        if (irq > 0) {
           mmio_write32(PLIC_CLAIM, irq);
         }
       }

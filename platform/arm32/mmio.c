@@ -5,12 +5,12 @@
 #include <stdint.h>
 
 // Memory barrier for MMIO operations
-// Uses DSB (Data Synchronization Barrier) to ensure:
+// Uses DSB SY (Data Synchronization Barrier, full System) to ensure:
 // - MMIO operations complete before proceeding
 // - No speculative reads/writes to device registers
 // - Proper ordering on ARM's weakly-ordered memory model
 static inline void mmio_barrier(void) {
-  __asm__ volatile("dsb" ::: "memory");
+  __asm__ volatile("dsb sy" ::: "memory");
 }
 
 // MMIO read functions with barriers

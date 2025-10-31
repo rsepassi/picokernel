@@ -24,20 +24,23 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval);
 static platform_t *g_current_platform = NULL;
 
 // PLIC (Platform-Level Interrupt Controller) base addresses for QEMU virt
+// RISC-V PLIC has separate contexts for M-mode and S-mode
+// Context 0 = M-mode hart 0, Context 1 = S-mode hart 0
+// Since we run in S-mode, we must use context 1 registers
 #define PLIC_BASE 0x0C000000ULL
 #define PLIC_PRIORITY_BASE (PLIC_BASE + 0x000000)
 #define PLIC_PENDING_BASE (PLIC_BASE + 0x001000)
-#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002000)
-#define PLIC_THRESHOLD_BASE (PLIC_BASE + 0x200000)
-#define PLIC_CLAIM_BASE (PLIC_BASE + 0x200004)
+#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)   // Context 1 (S-mode hart 0)
+#define PLIC_THRESHOLD_BASE (PLIC_BASE + 0x201000) // Context 1 (S-mode hart 0)
+#define PLIC_CLAIM_BASE (PLIC_BASE + 0x201004)     // Context 1 (S-mode hart 0)
 
 // Memory-mapped register access helpers
 static inline void mmio_write32(uint64_t addr, uint32_t value) {
-  *(volatile uint32_t *)addr = value;
+  platform_mmio_write32((volatile uint32_t *)addr, value);
 }
 
 static inline uint32_t mmio_read32(uint64_t addr) {
-  return *(volatile uint32_t *)addr;
+  return platform_mmio_read32((volatile uint32_t *)addr);
 }
 
 // CSR access macros
@@ -110,6 +113,7 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval) {
       }
 
       // Complete the interrupt by writing back the IRQ number
+      // PLIC will re-trigger if more interrupts are pending
       if (irq > 0) {
         mmio_write32(PLIC_CLAIM_BASE, irq);
       }

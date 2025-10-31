@@ -18,6 +18,7 @@ static void wfi_timer_callback(void) {}
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
+  platform->pci_next_bar_addr = 0x10000000; // PCI BAR allocation base
   kirq_ring_init(&platform->irq_ring);
 
   printk("Initializing ARM32 platform...\n");

@@ -194,6 +194,9 @@ void interrupt_init(platform_t *platform) {
 
   // Register timer interrupt with platform context
   irq_register(platform, TIMER_IRQ, generic_timer_handler, platform);
+
+  // Enable timer interrupt in GIC
+  irq_enable(platform, TIMER_IRQ);
 }
 
 // Enable interrupts (clear I bit in CPSR)
