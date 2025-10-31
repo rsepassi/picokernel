@@ -73,8 +73,8 @@ struct platform_t {
 
   // Interrupt state
   irq_entry_t irq_table[MAX_IRQS];
-  kirq_ring_t irq_ring;            // IRQ ring buffer for device interrupts
-  uint32_t last_overflow_count;    // Last observed overflow count for logging
+  kirq_ring_t irq_ring;         // IRQ ring buffer for device interrupts
+  uint32_t last_overflow_count; // Last observed overflow count for logging
 
   // Back-pointer to kernel
   void *kernel;

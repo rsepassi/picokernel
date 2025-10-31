@@ -69,11 +69,11 @@ static void on_packet_sent(kwork_t *work);
 static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
                            const uint8_t *target_ip);
 static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
-                               size_t pkt_len);
+                              size_t pkt_len);
 static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
-                                size_t pkt_len, const uint8_t *ip_hdr);
-static void handle_udp_packet(kuser_t *user, const uint8_t *pkt,
                                size_t pkt_len, const uint8_t *ip_hdr);
+static void handle_udp_packet(kuser_t *user, const uint8_t *pkt, size_t pkt_len,
+                              const uint8_t *ip_hdr);
 
 // Network configuration (QEMU user networking)
 static const uint8_t DEVICE_IP[4] = {10, 0, 2, 15};
@@ -137,21 +137,21 @@ static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
   const uint8_t *device_mac = user->kernel->platform.net_mac_address;
 
   // Ethernet header (14 bytes)
-  memcpy(&tx_pkt[0], target_mac, 6);     // dst_mac
-  memcpy(&tx_pkt[6], device_mac, 6);     // src_mac
+  memcpy(&tx_pkt[0], target_mac, 6); // dst_mac
+  memcpy(&tx_pkt[6], device_mac, 6); // src_mac
   write_be16(&tx_pkt[12], ETHERTYPE_ARP);
   tx_len += 14;
 
   // ARP packet (28 bytes)
-  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET);  // Hardware type
-  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);      // Protocol type
-  tx_pkt[18] = 6;                               // Hardware address length
-  tx_pkt[19] = 4;                               // Protocol address length
-  write_be16(&tx_pkt[20], ARP_OPER_REPLY);      // Operation (reply)
-  memcpy(&tx_pkt[22], device_mac, 6);           // Sender MAC
-  memcpy(&tx_pkt[28], DEVICE_IP, 4);            // Sender IP
-  memcpy(&tx_pkt[32], target_mac, 6);           // Target MAC
-  memcpy(&tx_pkt[36], target_ip, 4);            // Target IP
+  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET); // Hardware type
+  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);     // Protocol type
+  tx_pkt[18] = 6;                              // Hardware address length
+  tx_pkt[19] = 4;                              // Protocol address length
+  write_be16(&tx_pkt[20], ARP_OPER_REPLY);     // Operation (reply)
+  memcpy(&tx_pkt[22], device_mac, 6);          // Sender MAC
+  memcpy(&tx_pkt[28], DEVICE_IP, 4);           // Sender IP
+  memcpy(&tx_pkt[32], target_mac, 6);          // Target MAC
+  memcpy(&tx_pkt[36], target_ip, 4);           // Target IP
   tx_len += 28;
 
   // Setup send request
@@ -183,7 +183,7 @@ static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
 
 // Handle ARP packet
 static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
-                               size_t pkt_len) {
+                              size_t pkt_len) {
   // Minimum ARP packet: 14 (Ethernet) + 28 (ARP) = 42 bytes
   if (pkt_len < 42) {
     printk("ARP packet too small (");
@@ -239,7 +239,7 @@ static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
 
 // Handle ICMP packet (ping)
 static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
-                                size_t pkt_len, const uint8_t *ip_hdr) {
+                               size_t pkt_len, const uint8_t *ip_hdr) {
   // Minimum ICMP packet: 14 (Ethernet) + 20 (IP) + 8 (ICMP header) = 42 bytes
   if (pkt_len < 42) {
     printk("ICMP packet too small\n");
@@ -335,8 +335,8 @@ static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
 }
 
 // Handle UDP packet (echo server)
-static void handle_udp_packet(kuser_t *user, const uint8_t *pkt,
-                               size_t pkt_len, const uint8_t *ip_hdr) {
+static void handle_udp_packet(kuser_t *user, const uint8_t *pkt, size_t pkt_len,
+                              const uint8_t *ip_hdr) {
   // Minimum UDP packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
   if (pkt_len < 42) {
     printk("UDP packet too small\n");
@@ -825,21 +825,21 @@ void kmain_usermain(kuser_t *user) {
   const uint8_t broadcast_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
   // Ethernet header (14 bytes) - broadcast
-  memcpy(&tx_pkt[0], broadcast_mac, 6);  // dst_mac = broadcast
-  memcpy(&tx_pkt[6], device_mac, 6);     // src_mac = our MAC
+  memcpy(&tx_pkt[0], broadcast_mac, 6); // dst_mac = broadcast
+  memcpy(&tx_pkt[6], device_mac, 6);    // src_mac = our MAC
   write_be16(&tx_pkt[12], ETHERTYPE_ARP);
   tx_len += 14;
 
   // ARP packet (28 bytes) - gratuitous ARP
-  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET);  // Hardware type
-  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);      // Protocol type
-  tx_pkt[18] = 6;                               // Hardware address length
-  tx_pkt[19] = 4;                               // Protocol address length
-  write_be16(&tx_pkt[20], ARP_OPER_REQUEST);    // Operation (request)
-  memcpy(&tx_pkt[22], device_mac, 6);           // Sender MAC = our MAC
-  memcpy(&tx_pkt[28], DEVICE_IP, 4);            // Sender IP = our IP
-  memcpy(&tx_pkt[32], broadcast_mac, 6);        // Target MAC = broadcast
-  memcpy(&tx_pkt[36], DEVICE_IP, 4);            // Target IP = our IP (gratuitous)
+  write_be16(&tx_pkt[14], ARP_HTYPE_ETHERNET); // Hardware type
+  write_be16(&tx_pkt[16], ARP_PTYPE_IPV4);     // Protocol type
+  tx_pkt[18] = 6;                              // Hardware address length
+  tx_pkt[19] = 4;                              // Protocol address length
+  write_be16(&tx_pkt[20], ARP_OPER_REQUEST);   // Operation (request)
+  memcpy(&tx_pkt[22], device_mac, 6);          // Sender MAC = our MAC
+  memcpy(&tx_pkt[28], DEVICE_IP, 4);           // Sender IP = our IP
+  memcpy(&tx_pkt[32], broadcast_mac, 6);       // Target MAC = broadcast
+  memcpy(&tx_pkt[36], DEVICE_IP, 4); // Target IP = our IP (gratuitous)
   tx_len += 28;
 
   // Setup send request for gratuitous ARP

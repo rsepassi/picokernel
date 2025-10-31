@@ -33,7 +33,6 @@ typedef struct {
   knet_send_req_t udp_send_req;
   knet_buffer_t udp_tx_packet;
 
-
   uint8_t __attribute__((aligned(512))) sector_buffer[4096];
   uint8_t __attribute__((aligned(64))) net_rx_buf0[1514];
   uint8_t __attribute__((aligned(64))) net_rx_buf1[1514];
