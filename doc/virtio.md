@@ -7,14 +7,14 @@ separates device drivers, transport mechanisms, and platform-specific code.
 Currently supports VirtIO-RNG on both x64 (PCI) and arm64 (MMIO).
 
 **Architecture layers:**
-- **Device drivers** (`src/virtio/`) - Transport-agnostic device logic
+- **Device drivers** (`driver/virtio/`) - Transport-agnostic device logic
 - **Transport implementations** - PCI (x64) and MMIO (arm64)
 - **Platform integration** (`platform/*/`) - Device discovery, interrupts, cache coherency
 
 ## Code Organization
 
 ```
-src/virtio/
+driver/virtio/
   virtio.h/c          - Virtqueue management (descriptors, rings)
   virtio_pci.h/c      - Generic PCI transport
   virtio_mmio.h/c     - Generic MMIO transport
@@ -71,7 +71,7 @@ typedef struct {
 
 ### Virtqueue Operations
 
-Core operations in `src/virtio/virtio.c`:
+Core operations in `driver/virtio/virtio.c`:
 - `virtqueue_alloc_desc()` - Allocate descriptor from free list
 - `virtqueue_add_desc()` - Setup descriptor (address, length, flags)
 - `virtqueue_add_avail()` - Add descriptor to available ring
@@ -105,7 +105,7 @@ Uses VirtIO PCI modern interface with capability-based configuration.
 **Cache coherency:**
 - Hardware-maintained on x86-64 (no explicit cache operations needed)
 
-**Implementation:** `src/virtio/virtio_pci.c`, `platform/x64/platform_virtio.c`
+**Implementation:** `driver/virtio/virtio_pci.c`, `platform/x64/platform_virtio.c`
 
 ### MMIO Transport (arm64)
 
@@ -145,7 +145,7 @@ Uses VirtIO MMIO register interface for device access.
   - `dc ivac` (invalidate) before CPU reads
   - `dsb sy` memory barriers
 
-**Implementation:** `src/virtio/virtio_mmio.c`, `platform/arm64/virtio_mmio.c`
+**Implementation:** `driver/virtio/virtio_mmio.c`, `platform/arm64/virtio_mmio.c`
 
 ## Device Drivers
 
@@ -189,7 +189,7 @@ typedef struct {
    - Call `kplatform_complete_work()` with result
    - Free descriptor
 
-**Implementation:** `src/virtio/virtio_rng.c`
+**Implementation:** `driver/virtio/virtio_rng.c`
 
 ### User Code Example
 
@@ -424,13 +424,13 @@ Prints enabled state, priority, target CPU, trigger type, GIC registers.
 
 To add a new VirtIO device (e.g., virtio-blk):
 
-1. **Create device driver** (`src/virtio/virtio_blk.c`):
+1. **Create device driver** (`driver/virtio/virtio_blk.c`):
    - Define device-specific request structure
    - Implement work submission logic
    - Implement completion processing
    - Use transport-agnostic virtqueue operations
 
-2. **Add device ID** (`src/virtio/virtio.h`):
+2. **Add device ID** (`driver/virtio/virtio.h`):
    ```c
    #define VIRTIO_ID_BLOCK    2
    ```

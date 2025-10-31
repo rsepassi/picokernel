@@ -115,8 +115,8 @@ uint8_t pci_find_msix_capability(platform_t *platform, uint8_t bus,
   }
 
   // Walk capabilities list
-  uint8_t cap_ptr =
-      platform_pci_config_read8(platform, bus, slot, func, PCI_REG_CAPABILITIES);
+  uint8_t cap_ptr = platform_pci_config_read8(platform, bus, slot, func,
+                                              PCI_REG_CAPABILITIES);
   cap_ptr &= 0xFC; // Align to 4-byte boundary
 
   while (cap_ptr != 0) {
@@ -127,8 +127,7 @@ uint8_t pci_find_msix_capability(platform_t *platform, uint8_t bus,
     }
 
     // Next capability
-    cap_ptr =
-        platform_pci_config_read8(platform, bus, slot, func, cap_ptr + 1);
+    cap_ptr = platform_pci_config_read8(platform, bus, slot, func, cap_ptr + 1);
     cap_ptr &= 0xFC;
   }
 
@@ -150,12 +149,13 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
 
   // Read MSI-X table location (BAR and offset)
   uint32_t table_info = platform_pci_config_read32(platform, bus, slot, func,
-                                                    msix_cap + MSIX_CAP_TABLE);
-  uint8_t table_bir = table_info & 0x7; // BAR Index Register (bits 2:0)
+                                                   msix_cap + MSIX_CAP_TABLE);
+  uint8_t table_bir = table_info & 0x7;      // BAR Index Register (bits 2:0)
   uint32_t table_offset = table_info & ~0x7; // Table offset in BAR
 
   // Get BAR base address
-  uint64_t bar_addr = platform_pci_read_bar(platform, bus, slot, func, table_bir);
+  uint64_t bar_addr =
+      platform_pci_read_bar(platform, bus, slot, func, table_bir);
   if (bar_addr == 0) {
     return; // BAR not configured
   }

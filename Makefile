@@ -44,7 +44,8 @@ LD = ld.lld
 LDFLAGS = --no-pie -static -nostdlib --gc-sections $(PLATFORM_LDFLAGS)
 
 # Source files
-SRC_DIR = src
+KERNEL_DIR = kernel
+DRIVER_DIR = driver
 
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
 
@@ -56,17 +57,17 @@ PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 PLATFORM_SHARED_SOURCES = $(addprefix $(PLATFORM_SHARED_DIR)/,$(PLATFORM_SHARED_SRCS))
 
 # Common C sources
-C_SOURCES = $(SRC_DIR)/kmain.c $(SRC_DIR)/printk.c \
-            $(SRC_DIR)/kernel.c $(SRC_DIR)/user.c \
-            $(SRC_DIR)/kcsprng.c \
-            $(SRC_DIR)/kbase.c \
-            $(SRC_DIR)/irq_ring.c \
-            $(SRC_DIR)/virtio/virtio.c \
-            $(SRC_DIR)/virtio/virtio_mmio.c \
-            $(SRC_DIR)/virtio/virtio_pci.c \
-            $(SRC_DIR)/virtio/virtio_rng.c \
-            $(SRC_DIR)/virtio/virtio_blk.c \
-            $(SRC_DIR)/virtio/virtio_net.c
+C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
+            $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/user.c \
+            $(KERNEL_DIR)/kcsprng.c \
+            $(KERNEL_DIR)/kbase.c \
+            $(KERNEL_DIR)/irq_ring.c \
+            $(DRIVER_DIR)/virtio/virtio.c \
+            $(DRIVER_DIR)/virtio/virtio_mmio.c \
+            $(DRIVER_DIR)/virtio/virtio_pci.c \
+            $(DRIVER_DIR)/virtio/virtio_rng.c \
+            $(DRIVER_DIR)/virtio/virtio_blk.c \
+            $(DRIVER_DIR)/virtio/virtio_net.c
 
 # Vendor sources
 VENDOR_DIR = vendor
@@ -74,13 +75,15 @@ VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(VENDOR_DIR)/monocypher/monocypher-ed25519.c
 
 # Header files (all .o files depend on all headers)
-HEADERS = $(shell find $(SRC_DIR) $(PLATFORM_DIR) $(PLATFORM_SHARED_DIR) -name '*.h' 2>/dev/null)
+HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) $(PLATFORM_SHARED_DIR) -name '*.h' 2>/dev/null)
 
 # Object files in build directory (maintaining source tree structure)
 PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
 PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
 PLATFORM_SHARED_OBJS = $(patsubst $(PLATFORM_SHARED_DIR)/%.c,$(BUILD_DIR)/shared/%.o,$(PLATFORM_SHARED_SOURCES))
-C_OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/src/%.o,$(C_SOURCES))
+KERNEL_OBJECTS = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(filter $(KERNEL_DIR)/%,$(C_SOURCES)))
+DRIVER_OBJECTS = $(patsubst $(DRIVER_DIR)/%.c,$(BUILD_DIR)/driver/%.o,$(filter $(DRIVER_DIR)/%,$(C_SOURCES)))
+C_OBJECTS = $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
 ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(PLATFORM_SHARED_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
@@ -114,22 +117,26 @@ all:
 	$(MAKE) PLATFORM=arm64
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/src/virtio
+	mkdir -p $(BUILD_DIR)/kernel
+	mkdir -p $(BUILD_DIR)/driver/virtio
 	mkdir -p $(BUILD_DIR)/platform
 	mkdir -p $(BUILD_DIR)/shared
 	mkdir -p $(BUILD_DIR)/vendor/monocypher
 
-$(BUILD_DIR)/src/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
+$(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+
+$(BUILD_DIR)/driver/%.o: $(DRIVER_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
 
 $(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
 
 $(BUILD_DIR)/shared/%.o: $(PLATFORM_SHARED_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
 
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(SRC_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -c $< -o $@
 
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -152,7 +159,7 @@ clean:
 	rm -rf build
 
 format:
-	clang-format -i $$(find src/ platform/ -type f \( -name '*.c' -o -name '*.h' \))
+	clang-format -i $$(find kernel/ driver/ platform/ -type f \( -name '*.c' -o -name '*.h' \))
 
 test: $(KERNEL)
 	@./script/run_test.sh $(PLATFORM) $(USE_PCI)

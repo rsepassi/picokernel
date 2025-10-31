@@ -30,14 +30,16 @@ vmos/
 │   │   └── [same structure]
 │   └── x64/
 │       └── [same structure]
-├── src/
+├── kernel/
 │   ├── main.c              # Common kernel entry point
 │   ├── malloc.c            # Simple memory allocator
 │   ├── string.c            # String utilities
-│   ├── net.c               # virtio Network device driver
-│   ├── block.c             # virtio Block device driver
-│   ├── rng.c               # virtio RNG driver
 │   └── printf.c            # Formatted output
+├── driver/
+│   └── virtio/
+│       ├── virtio_net.c    # virtio Network device driver
+│       ├── virtio_blk.c    # virtio Block device driver
+│       └── virtio_rng.c    # virtio RNG driver
 ```
 
 ## QEMU Virtual Machine Configuration

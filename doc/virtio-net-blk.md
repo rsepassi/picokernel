@@ -275,7 +275,7 @@ volatile+barriers or C11 atomics without changing the usage code.
 
 *Note: All the following will have a k prefix but elided here*
 
-**API Definition** (in `src/irq_ring.h`):
+**API Definition** (in `kernel/irq_ring.h`):
 
 ```c
 #ifndef IRQ_RING_H
@@ -312,7 +312,7 @@ uint32_t irq_ring_overflow_count(const irq_ring_t *ring);
 #endif // IRQ_RING_H
 ```
 
-**Structure Definition** (in `src/irq_ring.h`, after API):
+**Structure Definition** (in `kernel/irq_ring.h`, after API):
 
 ```c
 // Select implementation: 0 = volatile+barriers, 1 = C11 atomics
@@ -338,7 +338,7 @@ struct irq_ring {
 #endif
 ```
 
-**Implementation** (in `src/irq_ring.c`):
+**Implementation** (in `kernel/irq_ring.c`):
 
 ```c
 #include "irq_ring.h"
@@ -811,8 +811,8 @@ header. Users who need optimal IP header access can use the NET_IP_ALIGN pattern
 ### Block Device (virtio-blk)
 
 1. **Headers**:
-   - [ ] `src/virtio_blk.h`: Device structures, descriptor layouts
-   - [ ] Add `kblk_segment_t`, `kblk_req_t` to `src/kapi.h`
+   - [ ] `driver/virtio/virtio_blk.h`: Device structures, descriptor layouts
+   - [ ] Add `kblk_segment_t`, `kblk_req_t` to `kernel/kapi.h`
    - [ ] Add `KWORK_OP_BLOCK_READ/WRITE/FLUSH` to `kwork_op_t`
    - [ ] Add `KERR_IO_ERROR`, `KERR_NO_SPACE` to error codes
 
@@ -834,9 +834,9 @@ header. Users who need optimal IP header access can use the NET_IP_ALIGN pattern
 ### Network Device (virtio-net)
 
 1. **Headers**:
-   - [ ] `src/virtio_net.h`: Device structures, descriptor layouts
+   - [ ] `driver/virtio/virtio_net.h`: Device structures, descriptor layouts
    - [ ] Add `knet_buffer_t`, `knet_recv_req_t`, `knet_send_req_t` to
-         `src/kapi.h`
+         `kernel/kapi.h`
    - [ ] Add `KWORK_OP_NET_RECV/SEND` to `kwork_op_t`
 
 2. **Platform Implementation** (per platform):
@@ -1091,7 +1091,7 @@ Leverage the existing FDT parser to discover VirtIO MMIO devices dynamically:
 Block I/O currently only supports single-segment requests:
 
 ```c
-// src/virtio/virtio_blk.c:199-204
+// driver/virtio/virtio_blk.c:199-204
 // Only support single segment for now
 if (req->num_segments > 1) {
   kplatform_complete_work(k, work, KERR_INVALID);
@@ -1192,7 +1192,7 @@ typedef struct {
 - Properly distribute completion length across segments
 
 **Files to Modify:**
-- `src/virtio/virtio_blk.c` - virtio_blk_submit_work(), completion handler
+- `driver/virtio/virtio_blk.c` - virtio_blk_submit_work(), completion handler
 
 **Testing:**
 - Start with 2-segment requests (simpler than N-segment)
@@ -1213,7 +1213,7 @@ typedef struct {
 Network TX currently only supports single-packet requests:
 
 ```c
-// src/virtio/virtio_net.c:343-348
+// driver/virtio/virtio_net.c:343-348
 // For now, only support sending one packet at a time
 if (req->num_packets > 1) {
   kplatform_complete_work(k, work, KERR_INVALID);
@@ -1375,7 +1375,7 @@ typedef struct {
 
 **Files to Modify:**
 - `platform/arm64/platform_impl.h` - Extend knet_send_req_platform_t
-- `src/virtio/virtio_net.c` - virtio_net_submit_work(), TX completion handler
+- `driver/virtio/virtio_net.c` - virtio_net_submit_work(), TX completion handler
 
 **Testing:**
 - Start with 2-packet requests (simpler than N-packet)

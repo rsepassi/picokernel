@@ -817,7 +817,7 @@ void mmio_scan_devices(platform_t *platform) {
 #define VIRTIO_MMIO_DEVICE_START 0x2A00 // First device offset
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
 #define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 5 // microvm default IRQ base
+#define VIRTIO_MMIO_IRQ_BASE 5       // microvm default IRQ base
 #define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   printk("Probing for VirtIO MMIO devices...\n");

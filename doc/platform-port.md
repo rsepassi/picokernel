@@ -7,7 +7,7 @@ This document describes how to port the VMOS kernel to a new architecture. It do
 A platform port involves:
 1. Creating new platform-specific files
 2. Updating existing platform files to match the new kernel structure
-3. Implementing required platform APIs defined in `src/platform.h`
+3. Implementing required platform APIs defined in `kernel/platform.h`
 4. Configuring the build system
 
 ## Required New Files
@@ -51,7 +51,7 @@ Platform-specific configuration header. Currently minimal but provides a place f
 **pci.c** - Implement platform_pci_config_read/write functions:
 - ARM platforms: Use ECAM (memory-mapped configuration space at 0x4010000000)
 - x86 platforms: Use I/O ports (0xCF8/0xCFC)
-- See `src/platform.h` for the required API
+- See `kernel/platform.h` for the required API
 
 ### 3. Platform Hooks (`platform_hooks.c`)
 

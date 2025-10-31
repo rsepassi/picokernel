@@ -77,9 +77,9 @@ typedef struct platform_t {
   uint64_t tsc_per_ms;
 
   // VirtIO device structures
-  virtio_pci_transport_t virtio_pci_transport_rng; // PCI transport for RNG
-  virtio_pci_transport_t virtio_pci_transport_blk; // PCI transport for BLK
-  virtio_pci_transport_t virtio_pci_transport_net; // PCI transport for NET
+  virtio_pci_transport_t virtio_pci_transport_rng;   // PCI transport for RNG
+  virtio_pci_transport_t virtio_pci_transport_blk;   // PCI transport for BLK
+  virtio_pci_transport_t virtio_pci_transport_net;   // PCI transport for NET
   virtio_mmio_transport_t virtio_mmio_transport_rng; // MMIO transport for RNG
   virtio_mmio_transport_t virtio_mmio_transport_blk; // MMIO transport for BLK
   virtio_mmio_transport_t virtio_mmio_transport_net; // MMIO transport for NET

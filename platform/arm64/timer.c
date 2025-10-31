@@ -135,5 +135,5 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
 // Cancel any pending timer
 void timer_cancel(platform_t *platform) {
   (void)platform;
-  write_cntp_ctl_el0(0);  // Disable timer (clear ENABLE and IMASK bits)
+  write_cntp_ctl_el0(0); // Disable timer (clear ENABLE and IMASK bits)
 }

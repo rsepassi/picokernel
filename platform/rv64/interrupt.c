@@ -30,7 +30,7 @@ static platform_t *g_current_platform = NULL;
 #define PLIC_BASE 0x0C000000ULL
 #define PLIC_PRIORITY_BASE (PLIC_BASE + 0x000000)
 #define PLIC_PENDING_BASE (PLIC_BASE + 0x001000)
-#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)   // Context 1 (S-mode hart 0)
+#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)    // Context 1 (S-mode hart 0)
 #define PLIC_THRESHOLD_BASE (PLIC_BASE + 0x201000) // Context 1 (S-mode hart 0)
 #define PLIC_CLAIM_BASE (PLIC_BASE + 0x201004)     // Context 1 (S-mode hart 0)
 

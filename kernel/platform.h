@@ -108,7 +108,8 @@ uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
 
 // MMIO register access with appropriate memory barriers
 // These functions ensure proper synchronization on weakly-ordered architectures
-// (ARM, RISC-V) while remaining efficient on strongly-ordered architectures (x86)
+// (ARM, RISC-V) while remaining efficient on strongly-ordered architectures
+// (x86)
 //
 // Memory barriers ensure:
 // - MMIO operations complete before proceeding

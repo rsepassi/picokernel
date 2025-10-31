@@ -5,23 +5,23 @@
 
 ## Executive Summary
 
-Investigation of static and global variables in `src/` and `platform/` directories shows:
+Investigation of static and global variables in `kernel/` and `platform/` directories shows:
 
-- ✅ **src/ directory is clean** - No global state, only static helper functions
+- ✅ **kernel/ directory is clean** - No global state, only static helper functions
 - ⚠️ **platform/ implementations have extensive global state** that should be moved to `platform_t`
 
-All platform-specific globals should be moved into the `platform_t` structure, which is already embedded in `kernel_t` at `src/kernel.h:20`.
+All platform-specific globals should be moved into the `platform_t` structure, which is already embedded in `kernel_t` at `kernel/kernel.h:20`.
 
 ## Current State Analysis
 
-### src/ Directory - ✅ No Issues
+### kernel/ Directory - ✅ No Issues
 
-All `.c` files in `src/` properly use:
+All `.c` files in `kernel/` properly use:
 - Static helper functions only (correct usage for internal helpers)
 - No file-scope variables
 - All state properly passed through `kernel_t` structure
 
-The `kernel_t` structure (`src/kernel.h:19-34`) already contains all necessary state:
+The `kernel_t` structure (`kernel/kernel.h:19-34`) already contains all necessary state:
 - `platform_t platform` - Platform-specific state
 - Work queues (submit, cancel, ready, timer)
 - `kcsprng_ctx rng` - CSPRNG state
@@ -252,9 +252,9 @@ platform/x*/ioapic.c         - Remove g_ioapic, use platform->ioapic (x86 only)
 
 ### Verification Files (no changes needed)
 ```
-src/kernel.h                  - Already embeds platform_t
-src/kernel.c                  - Already passes platform_t
-src/platform.h                - Interface remains unchanged
+kernel/kernel.h                  - Already embeds platform_t
+kernel/kernel.c                  - Already passes platform_t
+kernel/platform.h                - Interface remains unchanged
 ```
 
 ## Benefits of Refactoring
@@ -266,7 +266,7 @@ src/platform.h                - Interface remains unchanged
 
 ## Notes
 
-- The `src/` directory is exemplary - no refactoring needed
+- The `kernel/` directory is exemplary - no refactoring needed
 - This refactoring is mechanical but touches many files
 - Consider using preprocessor macros during transition to support both old/new code
 - Total files affected: ~40-50 files across 6 platforms
@@ -305,7 +305,7 @@ static platform_t *g_current_platform = NULL;
 
 **Scope**: Only used for interrupt dispatch; not a general-purpose global.
 
-**4. Stack Overflow Prevention** (`src/kmain.c`)
+**4. Stack Overflow Prevention** (`kernel/kmain.c`)
 
 Moved `kernel_t` from stack to file-level static:
 ```c

@@ -273,5 +273,5 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
 // Cancel any pending timer
 void timer_cancel(platform_t *platform) {
   (void)platform;
-  sbi_set_timer(UINT64_MAX);  // Set to max value to disable
+  sbi_set_timer(UINT64_MAX); // Set to max value to disable
 }

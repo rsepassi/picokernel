@@ -274,5 +274,6 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
 
 // Cancel any pending timer
 void timer_cancel(platform_t *platform) {
-  lapic_write(platform->lapic_base, LAPIC_LVT_TIMER, 32 | 0x10000);  // Vector 32, masked
+  lapic_write(platform->lapic_base, LAPIC_LVT_TIMER,
+              32 | 0x10000); // Vector 32, masked
 }

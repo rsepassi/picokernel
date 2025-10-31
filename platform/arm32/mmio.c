@@ -67,4 +67,3 @@ void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
   addr32[1] = (uint32_t)(val >> 32);
   mmio_barrier();
 }
-

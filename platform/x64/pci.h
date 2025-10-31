@@ -38,14 +38,14 @@
 #define MSIX_CAP_PBA 0x08     // Pending Bit Array Offset/BIR
 
 // MSI-X Control register bits
-#define MSIX_CONTROL_ENABLE (1 << 15)     // MSI-X Enable
+#define MSIX_CONTROL_ENABLE (1 << 15)        // MSI-X Enable
 #define MSIX_CONTROL_FUNCTION_MASK (1 << 14) // Function Mask
 
 // MSI-X Table Entry structure (16 bytes per entry)
 typedef struct {
-  uint32_t msg_addr_low;  // Lower 32 bits of message address
-  uint32_t msg_addr_high; // Upper 32 bits of message address
-  uint32_t msg_data;      // Message data
+  uint32_t msg_addr_low;   // Lower 32 bits of message address
+  uint32_t msg_addr_high;  // Upper 32 bits of message address
+  uint32_t msg_data;       // Message data
   uint32_t vector_control; // Vector control (bit 0 = masked)
 } __attribute__((packed)) msix_table_entry_t;
 

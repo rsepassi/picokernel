@@ -28,14 +28,14 @@ int virtio_mmio_init(virtio_mmio_transport_t *mmio, void *base_addr) {
 
 // Reset device
 void virtio_mmio_reset(virtio_mmio_transport_t *mmio) {
-  platform_mmio_write32((volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_STATUS),
-                        0);
+  platform_mmio_write32(
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_STATUS), 0);
 }
 
 // Set device status
 void virtio_mmio_set_status(virtio_mmio_transport_t *mmio, uint8_t status) {
-  platform_mmio_write32((volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_STATUS),
-                        status);
+  platform_mmio_write32(
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_STATUS), status);
 }
 
 // Get device status
@@ -54,7 +54,8 @@ uint32_t virtio_mmio_get_device_id(virtio_mmio_transport_t *mmio) {
 uint32_t virtio_mmio_get_features(virtio_mmio_transport_t *mmio,
                                   uint32_t select) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_DEVICE_FEATURES_SEL),
+      (volatile uint32_t *)(void *)(mmio->base +
+                                    VIRTIO_MMIO_DEVICE_FEATURES_SEL),
       select);
   return platform_mmio_read32(
       (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_DEVICE_FEATURES));
@@ -64,7 +65,8 @@ uint32_t virtio_mmio_get_features(virtio_mmio_transport_t *mmio,
 void virtio_mmio_set_features(virtio_mmio_transport_t *mmio, uint32_t select,
                               uint32_t features) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_DRIVER_FEATURES_SEL),
+      (volatile uint32_t *)(void *)(mmio->base +
+                                    VIRTIO_MMIO_DRIVER_FEATURES_SEL),
       select);
   platform_mmio_write32(
       (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_DRIVER_FEATURES),
@@ -75,7 +77,8 @@ void virtio_mmio_set_features(virtio_mmio_transport_t *mmio, uint32_t select,
 uint16_t virtio_mmio_get_queue_size(virtio_mmio_transport_t *mmio,
                                     uint16_t queue_idx) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_SEL), queue_idx);
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_SEL),
+      queue_idx);
   return (uint16_t)platform_mmio_read32(
       (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_NUM_MAX));
 }
@@ -84,7 +87,8 @@ uint16_t virtio_mmio_get_queue_size(virtio_mmio_transport_t *mmio,
 int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
                             virtqueue_t *vq, uint16_t queue_size) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_SEL), queue_idx);
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_SEL),
+      queue_idx);
 
   // For modern devices, verify queue is not already in use (spec 4.2.3.2)
   if (mmio->version >= 2) {
@@ -96,7 +100,8 @@ int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
   }
 
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_NUM), queue_size);
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_NUM),
+      queue_size);
 
   if (mmio->version == 1) {
     // Legacy (version 1): Use QUEUE_PFN with page alignment
@@ -105,7 +110,8 @@ int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
     uint32_t pfn = (uint32_t)(queue_addr >> 12);
 
     platform_mmio_write32(
-        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_ALIGN), 4096);
+        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_ALIGN),
+        4096);
     platform_mmio_write32(
         (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_PFN), pfn);
   } else {
@@ -120,18 +126,22 @@ int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
 
     uint64_t avail_addr = (uint64_t)vq->avail;
     platform_mmio_write32(
-        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_DRIVER_LOW),
+        (volatile uint32_t *)(void *)(mmio->base +
+                                      VIRTIO_MMIO_QUEUE_DRIVER_LOW),
         (uint32_t)avail_addr);
     platform_mmio_write32(
-        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_DRIVER_HIGH),
+        (volatile uint32_t *)(void *)(mmio->base +
+                                      VIRTIO_MMIO_QUEUE_DRIVER_HIGH),
         (uint32_t)(avail_addr >> 32));
 
     uint64_t used_addr = (uint64_t)vq->used;
     platform_mmio_write32(
-        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_DEVICE_LOW),
+        (volatile uint32_t *)(void *)(mmio->base +
+                                      VIRTIO_MMIO_QUEUE_DEVICE_LOW),
         (uint32_t)used_addr);
     platform_mmio_write32(
-        (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_DEVICE_HIGH),
+        (volatile uint32_t *)(void *)(mmio->base +
+                                      VIRTIO_MMIO_QUEUE_DEVICE_HIGH),
         (uint32_t)(used_addr >> 32));
 
     platform_mmio_write32(
@@ -145,7 +155,8 @@ int virtio_mmio_setup_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx,
 void virtio_mmio_notify_queue(virtio_mmio_transport_t *mmio,
                               uint16_t queue_idx) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_NOTIFY), queue_idx);
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_QUEUE_NOTIFY),
+      queue_idx);
 }
 
 // Read ISR status
@@ -157,5 +168,6 @@ uint32_t virtio_mmio_read_isr(virtio_mmio_transport_t *mmio) {
 // Acknowledge ISR status
 void virtio_mmio_ack_isr(virtio_mmio_transport_t *mmio, uint32_t status) {
   platform_mmio_write32(
-      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_INTERRUPT_ACK), status);
+      (volatile uint32_t *)(void *)(mmio->base + VIRTIO_MMIO_INTERRUPT_ACK),
+      status);
 }

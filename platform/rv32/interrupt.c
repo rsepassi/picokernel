@@ -36,9 +36,9 @@
 #define PLIC_BASE 0x0c000000UL
 #define PLIC_PRIORITY_BASE (PLIC_BASE + 0x000000)
 #define PLIC_PENDING_BASE (PLIC_BASE + 0x001000)
-#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)   // Context 1 (S-mode hart 0)
-#define PLIC_THRESHOLD (PLIC_BASE + 0x201000)     // Context 1 (S-mode hart 0)
-#define PLIC_CLAIM (PLIC_BASE + 0x201004)         // Context 1 (S-mode hart 0)
+#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080) // Context 1 (S-mode hart 0)
+#define PLIC_THRESHOLD (PLIC_BASE + 0x201000)   // Context 1 (S-mode hart 0)
+#define PLIC_CLAIM (PLIC_BASE + 0x201004)       // Context 1 (S-mode hart 0)
 
 // Maximum number of IRQs supported by PLIC
 #define MAX_IRQS 128
