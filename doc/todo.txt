@@ -1,5 +1,4 @@
 * doc/virtio-net-blk.md
-* Timer heap
 * ksubmit timeout support
 * recv configure drop vs overwrite
 * scatter-gather io (net/blk)

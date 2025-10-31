@@ -62,6 +62,7 @@ C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
             $(KERNEL_DIR)/kcsprng.c \
             $(KERNEL_DIR)/kbase.c \
             $(KERNEL_DIR)/irq_ring.c \
+            $(KERNEL_DIR)/timer_heap.c \
             $(DRIVER_DIR)/virtio/virtio.c \
             $(DRIVER_DIR)/virtio/virtio_mmio.c \
             $(DRIVER_DIR)/virtio/virtio_pci.c \

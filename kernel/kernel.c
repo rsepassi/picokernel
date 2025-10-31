@@ -2,6 +2,7 @@
 
 #include "kernel.h"
 #include "printk.h"
+#include "timer_heap.h"
 
 // Run event loop until a condition is true or a maximum timeout is reached
 #define KWAIT_UNTIL(kernel, cond, step_timeout, max_timeout)                   \
@@ -42,54 +43,27 @@ static void enqueue_ready(kernel_t *k, kwork_t *work) {
 }
 
 static void enqueue_timer(kernel_t *k, kwork_t *work) {
-  work->next = NULL;
-  work->prev = k->timer_list_tail;
-
-  if (k->timer_list_tail != NULL) {
-    k->timer_list_tail->next = work;
-  } else {
-    k->timer_list_head = work;
-  }
-  k->timer_list_tail = work;
-}
-
-static void dequeue_timer(kernel_t *k, kwork_t *work) {
-  if (work->prev != NULL) {
-    work->prev->next = work->next;
-  } else {
-    k->timer_list_head = work->next;
-  }
-
-  if (work->next != NULL) {
-    work->next->prev = work->prev;
-  } else {
-    k->timer_list_tail = work->prev;
-  }
-
-  work->next = NULL;
-  work->prev = NULL;
+  ktimer_req_t *timer = CONTAINER_OF(work, ktimer_req_t, work);
+  timer_heap_insert(k, timer);
 }
 
 // Expire timers and move to ready queue
 static void expire_timers(kernel_t *k) {
-  kwork_t *timer = k->timer_list_head;
+  // Repeatedly extract minimum timer while it's expired
+  while (1) {
+    ktimer_req_t *timer = timer_heap_peek_min(k);
 
-  while (timer != NULL) {
-    kwork_t *next = timer->next;
-
-    ktimer_req_t *req = CONTAINER_OF(timer, ktimer_req_t, work);
-
-    if (req->deadline_ms <= k->current_time_ms) {
-      // Timer expired - remove from timer list
-      dequeue_timer(k, timer);
-
-      // Move to ready queue
-      timer->result = KERR_OK;
-      timer->state = KWORK_STATE_READY;
-      enqueue_ready(k, timer);
+    if (timer == NULL || timer->deadline_ms > k->current_time_ms) {
+      break; // No more expired timers
     }
 
-    timer = next;
+    // Timer expired - extract from heap
+    timer_heap_extract_min(k);
+
+    // Move to ready queue
+    timer->work.result = KERR_OK;
+    timer->work.state = KWORK_STATE_READY;
+    enqueue_ready(k, &timer->work);
   }
 }
 
@@ -192,30 +166,17 @@ void kwork_init(kwork_t *work, uint32_t op, void *ctx,
 
 // Get next timeout for platform_wfi
 uint64_t kmain_next_delay(kernel_t *k) {
-  if (k->timer_list_head == NULL) {
+  ktimer_req_t *timer = timer_heap_peek_min(k);
+
+  if (timer == NULL) {
     return UINT64_MAX; // No timers, wait forever
   }
 
-  // Scan for earliest timer (O(n) - will optimize to heap/wheel later)
-  uint64_t min_delay = UINT64_MAX;
-  kwork_t *timer = k->timer_list_head;
-
-  while (timer != NULL) {
-    ktimer_req_t *req = CONTAINER_OF(timer, ktimer_req_t, work);
-
-    if (req->deadline_ms <= k->current_time_ms) {
-      return 0; // Already expired
-    }
-
-    uint64_t delay = req->deadline_ms - k->current_time_ms;
-    if (delay < min_delay) {
-      min_delay = delay;
-    }
-
-    timer = timer->next;
+  if (timer->deadline_ms <= k->current_time_ms) {
+    return 0; // Already expired
   }
 
-  return min_delay;
+  return timer->deadline_ms - k->current_time_ms;
 }
 
 // Process kernel tick
@@ -250,12 +211,36 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
     work = next;
   }
 
-  // Submit work and cancellations to platform (bulk)
-  if (k->submit_queue_head != NULL || k->cancel_queue_head != NULL) {
-    platform_submit(&k->platform, k->submit_queue_head, k->cancel_queue_head);
-    k->submit_queue_head = k->submit_queue_tail = NULL;
-    k->cancel_queue_head = NULL;
+  // Process timer cancellations (timers are managed in kernel, not platform)
+  kwork_t *cancel = k->cancel_queue_head;
+  kwork_t *platform_cancel_head = NULL;
+  while (cancel != NULL) {
+    kwork_t *next = cancel->next;
+
+    if (cancel->op == KWORK_OP_TIMER) {
+      // Remove timer from heap
+      ktimer_req_t *timer = CONTAINER_OF(cancel, ktimer_req_t, work);
+      timer_heap_delete(k, timer);
+
+      // Mark as cancelled
+      cancel->result = KERR_CANCELLED;
+      cancel->state = KWORK_STATE_READY;
+      enqueue_ready(k, cancel);
+    } else {
+      // Keep non-timer cancellations for platform
+      cancel->next = platform_cancel_head;
+      platform_cancel_head = cancel;
+    }
+
+    cancel = next;
   }
+
+  // Submit work and non-timer cancellations to platform (bulk)
+  if (k->submit_queue_head != NULL || platform_cancel_head != NULL) {
+    platform_submit(&k->platform, k->submit_queue_head, platform_cancel_head);
+    k->submit_queue_head = k->submit_queue_tail = NULL;
+  }
+  k->cancel_queue_head = NULL;
 }
 
 // Platform → Kernel: Mark work as complete

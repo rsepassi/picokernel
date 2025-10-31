@@ -26,8 +26,8 @@ struct kernel {
   kwork_t *ready_queue_head;  // Singly-linked: ready for callback
 
   // Timer management
-  kwork_t *timer_list_head; // Doubly-linked: active timers
-  kwork_t *timer_list_tail;
+  ktimer_req_t *timer_heap_root; // Root of min-heap tree
+  size_t timer_heap_size;        // Number of active timers
   ktime_t current_time_ms;
 
   kcsprng_ctx rng;
