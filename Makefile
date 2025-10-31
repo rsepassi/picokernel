@@ -187,7 +187,7 @@ flake: $(KERNEL)
 	@FAILED=0; \
 	for i in 1 2 3 4 5 6 7 8 9 10; do \
 		echo "[$$i/10] Testing..."; \
-		if $(MAKE) test PLATFORM=$(PLATFORM) USE_PCI=$(USE_PCI) 2>&1 | grep -q "Test passed"; then \
+		if $(MAKE) test PLATFORM=$(PLATFORM) USE_PCI=$(USE_PCI) 2>&1 | grep -q "Overall: PASS"; then \
 			echo "[$$i/10] ✓ PASSED"; \
 		else \
 			FAILED=$$((FAILED + 1)); \
