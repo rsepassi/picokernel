@@ -11,7 +11,7 @@ PLATFORM_CFLAGS = -mgeneral-regs-only
 PLATFORM_LDFLAGS =
 
 # Platform-specific sources
-PLATFORM_C_SRCS = uart.c platform_init.c interrupt.c timer.c pci.c platform_virtio.c
+PLATFORM_C_SRCS = uart.c platform_init.c interrupt.c timer.c pci.c platform_virtio.c mmio.c
 PLATFORM_S_SRCS = boot.S vectors.S
 
 # Shared sources from src/ that this platform uses

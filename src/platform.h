@@ -103,6 +103,33 @@ uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
                                uint8_t func, uint8_t bar_num);
 
 // ===========================================================================
+// SECTION 2A: MMIO - Memory-mapped I/O register access
+// ===========================================================================
+
+// MMIO register access with appropriate memory barriers
+// These functions ensure proper synchronization on weakly-ordered architectures
+// (ARM, RISC-V) while remaining efficient on strongly-ordered architectures (x86)
+//
+// Memory barriers ensure:
+// - MMIO operations complete before proceeding
+// - No speculative reads/writes to device registers
+// - Proper ordering in weakly-ordered memory models
+//
+// Each platform implements these in platform/*/mmio.c
+
+// Read from MMIO registers
+uint8_t platform_mmio_read8(volatile uint8_t *addr);
+uint16_t platform_mmio_read16(volatile uint16_t *addr);
+uint32_t platform_mmio_read32(volatile uint32_t *addr);
+uint64_t platform_mmio_read64(volatile uint64_t *addr);
+
+// Write to MMIO registers
+void platform_mmio_write8(volatile uint8_t *addr, uint8_t val);
+void platform_mmio_write16(volatile uint16_t *addr, uint16_t val);
+void platform_mmio_write32(volatile uint32_t *addr, uint32_t val);
+void platform_mmio_write64(volatile uint64_t *addr, uint64_t val);
+
+// ===========================================================================
 // SECTION 3: Platform Lifecycle
 // ===========================================================================
 

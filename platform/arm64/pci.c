@@ -24,7 +24,7 @@ uint8_t platform_pci_config_read8(platform_t *platform, uint8_t bus,
   (void)platform; // Platform not needed for ECAM access
   volatile uint8_t *addr =
       (volatile uint8_t *)pci_ecam_address(bus, slot, func, offset);
-  return *addr;
+  return platform_mmio_read8(addr);
 }
 
 // Read 16-bit value from PCI config space
@@ -34,7 +34,7 @@ uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
   (void)platform; // Platform not needed for ECAM access
   volatile uint16_t *addr =
       (volatile uint16_t *)pci_ecam_address(bus, slot, func, offset);
-  return *addr;
+  return platform_mmio_read16(addr);
 }
 
 // Read 32-bit value from PCI config space
@@ -44,7 +44,7 @@ uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
   (void)platform; // Platform not needed for ECAM access
   volatile uint32_t *addr =
       (volatile uint32_t *)pci_ecam_address(bus, slot, func, offset);
-  return *addr;
+  return platform_mmio_read32(addr);
 }
 
 // Write 8-bit value to PCI config space
@@ -53,7 +53,7 @@ void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
   (void)platform; // Platform not needed for ECAM access
   volatile uint8_t *addr =
       (volatile uint8_t *)pci_ecam_address(bus, slot, func, offset);
-  *addr = value;
+  platform_mmio_write8(addr, value);
 }
 
 // Write 16-bit value to PCI config space
@@ -63,7 +63,7 @@ void platform_pci_config_write16(platform_t *platform, uint8_t bus,
   (void)platform; // Platform not needed for ECAM access
   volatile uint16_t *addr =
       (volatile uint16_t *)pci_ecam_address(bus, slot, func, offset);
-  *addr = value;
+  platform_mmio_write16(addr, value);
 }
 
 // Write 32-bit value to PCI config space
@@ -73,7 +73,7 @@ void platform_pci_config_write32(platform_t *platform, uint8_t bus,
   (void)platform; // Platform not needed for ECAM access
   volatile uint32_t *addr =
       (volatile uint32_t *)pci_ecam_address(bus, slot, func, offset);
-  *addr = value;
+  platform_mmio_write32(addr, value);
 }
 
 // Read BAR address

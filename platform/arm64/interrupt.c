@@ -36,11 +36,11 @@
 
 // Memory-mapped register access helpers
 static inline void mmio_write32(uint64_t addr, uint32_t value) {
-  *(volatile uint32_t *)addr = value;
+  platform_mmio_write32((volatile uint32_t *)addr, value);
 }
 
 static inline uint32_t mmio_read32(uint64_t addr) {
-  return *(volatile uint32_t *)addr;
+  return platform_mmio_read32((volatile uint32_t *)addr);
 }
 
 // Timer handler is declared in timer.h

@@ -12,29 +12,6 @@
 #define PCI_CMD_BUS_MASTER (1 << 2)
 #define PCI_CMD_INT_DISABLE (1 << 10)
 
-// MMIO helpers using platform hooks
-static inline uint32_t mmio_read32(volatile uint32_t *addr) { return *addr; }
-
-static inline uint16_t mmio_read16(volatile uint16_t *addr) { return *addr; }
-
-static inline uint8_t mmio_read8(volatile uint8_t *addr) { return *addr; }
-
-static inline void mmio_write32(volatile uint32_t *addr, uint32_t value) {
-  *addr = value;
-}
-
-static inline void mmio_write16(volatile uint16_t *addr, uint16_t value) {
-  *addr = value;
-}
-
-static inline void mmio_write8(volatile uint8_t *addr, uint8_t value) {
-  *addr = value;
-}
-
-static inline void mmio_write64(volatile uint64_t *addr, uint64_t value) {
-  memcpy((void *)addr, &value, sizeof(value));
-}
-
 // Find and map VirtIO PCI capabilities
 static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
   uint8_t cap_offset = platform_pci_config_read8(
@@ -115,37 +92,39 @@ int virtio_pci_init(virtio_pci_transport_t *pci, platform_t *platform,
 
 // Reset device
 void virtio_pci_reset(virtio_pci_transport_t *pci) {
-  mmio_write8((volatile uint8_t *)&pci->common_cfg->device_status, 0);
+  platform_mmio_write8((volatile uint8_t *)&pci->common_cfg->device_status, 0);
 }
 
 // Set device status
 void virtio_pci_set_status(virtio_pci_transport_t *pci, uint8_t status) {
-  mmio_write8((volatile uint8_t *)&pci->common_cfg->device_status, status);
+  platform_mmio_write8((volatile uint8_t *)&pci->common_cfg->device_status,
+                       status);
 }
 
 // Get device status
 uint8_t virtio_pci_get_status(virtio_pci_transport_t *pci) {
-  return mmio_read8((volatile uint8_t *)&pci->common_cfg->device_status);
+  return platform_mmio_read8(
+      (volatile uint8_t *)&pci->common_cfg->device_status);
 }
 
 // Get device features
 uint32_t virtio_pci_get_features(virtio_pci_transport_t *pci, uint32_t select) {
-  mmio_write32(&pci->common_cfg->device_feature_select, select);
-  return mmio_read32(&pci->common_cfg->device_feature);
+  platform_mmio_write32(&pci->common_cfg->device_feature_select, select);
+  return platform_mmio_read32(&pci->common_cfg->device_feature);
 }
 
 // Set driver features
 void virtio_pci_set_features(virtio_pci_transport_t *pci, uint32_t select,
                              uint32_t features) {
-  mmio_write32(&pci->common_cfg->driver_feature_select, select);
-  mmio_write32(&pci->common_cfg->driver_feature, features);
+  platform_mmio_write32(&pci->common_cfg->driver_feature_select, select);
+  platform_mmio_write32(&pci->common_cfg->driver_feature, features);
 }
 
 // Get queue size
 uint16_t virtio_pci_get_queue_size(virtio_pci_transport_t *pci,
                                    uint16_t queue_idx) {
-  mmio_write16(&pci->common_cfg->queue_select, queue_idx);
-  return mmio_read16(&pci->common_cfg->queue_size);
+  platform_mmio_write16(&pci->common_cfg->queue_select, queue_idx);
+  return platform_mmio_read16(&pci->common_cfg->queue_size);
 }
 
 // Setup queue
@@ -153,25 +132,26 @@ int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
                            virtqueue_t *vq, uint16_t queue_size) {
   (void)queue_size; // Unused parameter
   // Select queue
-  mmio_write16(&pci->common_cfg->queue_select, queue_idx);
+  platform_mmio_write16(&pci->common_cfg->queue_select, queue_idx);
 
   // Set queue addresses
-  mmio_write64(&pci->common_cfg->queue_desc, (uint64_t)vq->desc);
-  mmio_write64(&pci->common_cfg->queue_driver, (uint64_t)vq->avail);
-  mmio_write64(&pci->common_cfg->queue_device, (uint64_t)vq->used);
+  platform_mmio_write64(&pci->common_cfg->queue_desc, (uint64_t)vq->desc);
+  platform_mmio_write64(&pci->common_cfg->queue_driver, (uint64_t)vq->avail);
+  platform_mmio_write64(&pci->common_cfg->queue_device, (uint64_t)vq->used);
 
   // Store queue index for notifications
   vq->queue_index = queue_idx;
 
   // Get notify offset for this queue
-  uint16_t notify_off = mmio_read16(&pci->common_cfg->queue_notify_off);
+  uint16_t notify_off =
+      platform_mmio_read16(&pci->common_cfg->queue_notify_off);
   vq->notify_offset = notify_off;
 
   // Disable MSI-X for this queue (use legacy interrupts)
-  mmio_write16(&pci->common_cfg->queue_msix_vector, 0xFFFF);
+  platform_mmio_write16(&pci->common_cfg->queue_msix_vector, 0xFFFF);
 
   // Enable queue
-  mmio_write16(&pci->common_cfg->queue_enable, 1);
+  platform_mmio_write16(&pci->common_cfg->queue_enable, 1);
 
   return 0;
 }
@@ -185,10 +165,10 @@ void virtio_pci_notify_queue(virtio_pci_transport_t *pci, virtqueue_t *vq) {
   volatile uint16_t *notify_ptr = (volatile uint16_t *)notify_addr;
 
   // Write queue index to notify register
-  mmio_write16(notify_ptr, vq->queue_index);
+  platform_mmio_write16(notify_ptr, vq->queue_index);
 }
 
 // Read ISR status
 uint8_t virtio_pci_read_isr(virtio_pci_transport_t *pci) {
-  return mmio_read8(pci->isr_status);
+  return platform_mmio_read8(pci->isr_status);
 }
