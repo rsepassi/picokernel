@@ -1,5 +1,5 @@
 * doc/virtio-net-blk.md
-* Timer cancellation in wfi
+* Timer heap
 * ksubmit timeout support
 * recv configure drop vs overwrite
 * scatter-gather io (net/blk)
@@ -10,5 +10,4 @@
 * Should PCI code be shared?
 * Share 32-bit / 64-bit code?
 * -accel hvf/kvm
-* Use MSI-X interrupts instead of legacy INTx (PCI_REG_INTERRUPT_LINE)
 * compiler-rt, arm32 runtime.c
