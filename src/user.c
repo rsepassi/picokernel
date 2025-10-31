@@ -40,8 +40,9 @@ static uint16_t read_be16(const uint8_t *buf) {
 // Write 16-bit value to buffer (big-endian/network byte order)
 // Avoids unaligned access issues
 static void write_be16(uint8_t *buf, uint16_t val) {
-  buf[0] = (uint8_t)(val >> 8);
-  buf[1] = (uint8_t)(val);
+  volatile uint8_t *vbuf = buf;
+  vbuf[0] = (uint8_t)(val >> 8);
+  vbuf[1] = (uint8_t)(val);
 }
 
 // Calculate IP header checksum (RFC 791)
@@ -119,10 +120,23 @@ static void on_packet_received(kwork_t *work) {
 
   knet_recv_req_t *req = CONTAINER_OF(work, knet_recv_req_t, work);
   knet_buffer_t *rx_buf = &req->buffers[req->buffer_index];
+
+  // The virtio driver uses separate descriptors for header and data,
+  // so rx_buf->buffer already points to the Ethernet frame (no header)
   const uint8_t *pkt = rx_buf->buffer;
   size_t pkt_len = rx_buf->packet_length;
 
   user->packets_received++;
+
+  // Debug: Print first 20 bytes of Ethernet frame
+  printk("RX (");
+  printk_dec(pkt_len);
+  printk("): ");
+  for (size_t i = 0; i < pkt_len && i < 20; i++) {
+    printk_hex8(pkt[i]);
+    printk(" ");
+  }
+  printk("\n");
 
   // Minimum packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
   if (pkt_len < 42) {
@@ -139,9 +153,8 @@ static void on_packet_received(kwork_t *work) {
 
   // Only handle IPv4
   if (ethertype != ETHERTYPE_IPV4) {
-    printk("Non-IPv4 packet (ethertype 0x");
-    printk_hex8(ethertype >> 8);
-    printk_hex8(ethertype & 0xFF);
+    printk("Non-IPv4 packet (ethertype ");
+    printk_hex16(ethertype);
     printk("), dropping\n");
     goto release;
   }
@@ -520,8 +533,13 @@ void kmain_usermain(kuser_t *user) {
   user->net_rx_bufs[3].buffer_size = 1514;
   user->net_rx_bufs[3].packet_length = 0;
 
+  // Memory barrier before setting counters to prevent optimization issues
+  KLOG("x user ptr=");
+  printk_hex64((uintptr_t)user);
+  printk("\n");
   user->packets_received = 0;
   user->packets_sent = 0;
+  KLOG("x");
 
   // Setup standing receive request
   user->net_recv_req.work.op = KWORK_OP_NET_RECV;
@@ -541,4 +559,91 @@ void kmain_usermain(kuser_t *user) {
   } else {
     printk("Network recv request submitted (4 buffers)\n");
   }
+
+  // // Send a proactive outbound UDP packet to "prime" the QEMU network stack
+  // // This allows QEMU's user networking to establish the connection mapping
+  // // so it can route inbound packets to us
+  // printk("Sending outbound UDP packet to prime network connection...\n");
+
+  // uint8_t *tx_pkt = user->net_tx_buf;
+  // size_t tx_len = 0;
+
+  // // Ethernet header (14 bytes)
+  // // dst_mac = gateway (avoid memcpy to prevent alignment issues)
+  // tx_pkt[0] = GATEWAY_MAC[0];
+  // tx_pkt[1] = GATEWAY_MAC[1];
+  // tx_pkt[2] = GATEWAY_MAC[2];
+  // tx_pkt[3] = GATEWAY_MAC[3];
+  // tx_pkt[4] = GATEWAY_MAC[4];
+  // tx_pkt[5] = GATEWAY_MAC[5];
+  // // src_mac = our MAC
+  // tx_pkt[6] = 0x52;
+  // tx_pkt[7] = 0x54;
+  // tx_pkt[8] = 0x00;
+  // tx_pkt[9] = 0x12;
+  // tx_pkt[10] = 0x34;
+  // tx_pkt[11] = 0x56;
+  // write_be16(&tx_pkt[12], ETHERTYPE_IPV4);
+  // tx_len += 14;
+
+  // // IPv4 header (20 bytes)
+  // tx_pkt[14] = 0x45;  // Version 4, IHL 5
+  // tx_pkt[15] = 0x00;  // DSCP/ECN
+  // write_be16(&tx_pkt[16], 20 + 8 + 5);  // Total length (IP + UDP + data)
+  // write_be16(&tx_pkt[18], 0x1234);      // ID
+  // write_be16(&tx_pkt[20], 0x0000);      // Flags/Fragment
+  // tx_pkt[22] = 64;    // TTL
+  // tx_pkt[23] = IP_PROTOCOL_UDP;
+  // write_be16(&tx_pkt[24], 0x0000);      // Checksum (will calculate)
+  // // src_ip (avoid memcpy)
+  // tx_pkt[26] = DEVICE_IP[0];
+  // tx_pkt[27] = DEVICE_IP[1];
+  // tx_pkt[28] = DEVICE_IP[2];
+  // tx_pkt[29] = DEVICE_IP[3];
+  // // dst_ip (avoid memcpy)
+  // tx_pkt[30] = GATEWAY_IP[0];
+  // tx_pkt[31] = GATEWAY_IP[1];
+  // tx_pkt[32] = GATEWAY_IP[2];
+  // tx_pkt[33] = GATEWAY_IP[3];
+  // // Calculate IP checksum
+  // uint16_t ip_csum = ip_checksum(&tx_pkt[14], 20);
+  // write_be16(&tx_pkt[24], ip_csum);
+  // tx_len += 20;
+
+  // // UDP header (8 bytes)
+  // write_be16(&tx_pkt[34], UDP_ECHO_PORT);  // src_port
+  // write_be16(&tx_pkt[36], 1234);           // dst_port (arbitrary)
+  // write_be16(&tx_pkt[38], 8 + 5);          // UDP length (header + data)
+  // write_be16(&tx_pkt[40], 0);              // checksum (optional)
+  // tx_len += 8;
+
+  // // UDP data (5 bytes): "HELLO"
+  // tx_pkt[42] = 'H';
+  // tx_pkt[43] = 'E';
+  // tx_pkt[44] = 'L';
+  // tx_pkt[45] = 'L';
+  // tx_pkt[46] = 'O';
+  // tx_len += 5;
+
+  // // Setup send request
+  // user->net_tx_packet.buffer = tx_pkt;
+  // user->net_tx_packet.buffer_size = tx_len;
+
+  // user->net_send_req.work.op = KWORK_OP_NET_SEND;
+  // user->net_send_req.work.callback = on_packet_sent;
+  // user->net_send_req.work.ctx = user;
+  // user->net_send_req.work.state = KWORK_STATE_DEAD;
+  // user->net_send_req.work.flags = 0;
+  // user->net_send_req.packets = &user->net_tx_packet;
+  // user->net_send_req.num_packets = 1;
+  // user->net_send_req.packets_sent = 0;
+
+  // err = ksubmit(user->kernel, &user->net_send_req.work);
+  // if (err != KERR_OK) {
+  //   printk("Outbound packet send failed: error ");
+  //   printk_dec(err);
+  //   printk("\n");
+  // } else {
+  //   printk("Outbound packet submitted\n");
+  // }
 }

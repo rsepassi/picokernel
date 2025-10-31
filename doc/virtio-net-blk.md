@@ -1,7 +1,8 @@
 # VirtIO Block and Network Device Support
 
 *Status (Oct 30): blk and net devices have been added, new interrupt flow is
-implemented. Next steps are documented at the end.*
+implemented. BUILDS BUT NOT YET TESTED. After testing, next steps for
+development are documented at the end.*
 
 ## Overview
 

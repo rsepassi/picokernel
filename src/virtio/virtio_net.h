@@ -51,6 +51,7 @@ typedef struct {
 } __attribute__((packed)) virtio_net_config_t;
 
 // VirtIO Network packet header (prepended to all packets)
+// Basic 10-byte header (without VIRTIO_NET_F_MRG_RXBUF)
 typedef struct {
   uint8_t flags;        // Flags
   uint8_t gso_type;     // GSO type
@@ -58,7 +59,6 @@ typedef struct {
   uint16_t gso_size;    // GSO size
   uint16_t csum_start;  // Checksum start
   uint16_t csum_offset; // Checksum offset
-  uint16_t num_buffers; // Number of buffers (if VIRTIO_NET_F_MRG_RXBUF)
 } __attribute__((packed)) virtio_net_hdr_t;
 
 // Network header flags

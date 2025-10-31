@@ -43,7 +43,8 @@ int virtio_net_init_mmio(virtio_net_dev_t *net, virtio_mmio_transport_t *mmio,
     *guest_page_size_reg = 4096;
   }
 
-  // Feature negotiation (request MAC feature)
+  // Feature negotiation (request MAC feature only)
+  // We use the basic 10-byte header without MRG_RXBUF
   uint32_t features = (1 << VIRTIO_NET_F_MAC);
   virtio_mmio_set_features(mmio, features, 0);
 
@@ -123,9 +124,17 @@ int virtio_net_init_pci(virtio_net_dev_t *net, virtio_pci_transport_t *pci,
   // Driver
   virtio_pci_set_status(pci, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
 
-  // Feature negotiation (request MAC feature)
+  // Feature negotiation (request MAC feature only)
+  // We use the basic 10-byte header without MRG_RXBUF
   uint32_t features = (1 << VIRTIO_NET_F_MAC);
+  printk("[NET] Requesting features: ");
+  printk_hex32(features);
+  printk("\n");
   virtio_pci_set_features(pci, features, 0);
+  uint32_t negotiated = virtio_pci_get_features(pci, 0);
+  printk("[NET] Negotiated features: ");
+  printk_hex32(negotiated);
+  printk("\n");
 
   // Features OK
   uint8_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
@@ -373,7 +382,6 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
       hdr->gso_size = 0;
       hdr->csum_start = 0;
       hdr->csum_offset = 0;
-      hdr->num_buffers = 0;
 
       virtqueue_add_desc(&net->tx_vq, hdr_desc, (uint64_t)hdr,
                          sizeof(virtio_net_hdr_t), VIRTQ_DESC_F_NEXT);
@@ -401,6 +409,9 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
 
   // Kick RX device if we submitted any RX buffers
   if (submitted_rx > 0) {
+    printk("virtio_net: Submitted ");
+    printk_dec(submitted_rx);
+    printk(" RX buffers, notifying device\n");
     __sync_synchronize();
     if (net->transport_type == VIRTIO_TRANSPORT_MMIO) {
       virtio_mmio_notify_queue((virtio_mmio_transport_t *)net->transport,
@@ -426,11 +437,19 @@ void virtio_net_submit_work(virtio_net_dev_t *net, kwork_t *submissions,
 
 // Process interrupt (transport-agnostic)
 void virtio_net_process_irq(virtio_net_dev_t *net, kernel_t *k) {
+  printk("virtio_net: IRQ triggered\n");
+
   // Process RX completions
   while (virtqueue_has_used(&net->rx_vq)) {
     uint16_t desc_idx;
     uint32_t len;
     virtqueue_get_used(&net->rx_vq, &desc_idx, &len);
+
+    printk("virtio_net: RX completion desc_idx=");
+    printk_dec(desc_idx);
+    printk(" len=");
+    printk_dec(len);
+    printk("\n");
 
     knet_recv_req_t *req = net->active_rx_requests[desc_idx].req;
     if (req != NULL) {
@@ -444,6 +463,25 @@ void virtio_net_process_irq(virtio_net_dev_t *net, kernel_t *k) {
       } else {
         req->buffers[buffer_index].packet_length = 0;
       }
+
+      // DEBUG: Print first 20 bytes of header buffer
+      printk("Header buffer: ");
+      virtio_net_hdr_t *hdr = &rx_hdr_buffers[desc_idx];
+      uint8_t *hdr_bytes = (uint8_t *)hdr;
+      for (size_t i = 0; i < 20 && i < sizeof(virtio_net_hdr_t) + 8; i++) {
+        printk_hex8(hdr_bytes[i]);
+        printk(" ");
+      }
+      printk("\n");
+
+      // DEBUG: Print first 20 bytes of data buffer
+      printk("Data buffer: ");
+      uint8_t *data = req->buffers[buffer_index].buffer;
+      for (size_t i = 0; i < 20; i++) {
+        printk_hex8(data[i]);
+        printk(" ");
+      }
+      printk("\n");
 
       // Complete work (for standing work, callback fires but work stays LIVE)
       req->buffer_index = buffer_index; // Set for callback

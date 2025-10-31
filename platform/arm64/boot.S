@@ -13,6 +13,16 @@ _start:
     ldr x1, =stack_top
     mov sp, x1
 
+    // Clear BSS section (zero-initialize static/global variables)
+    ldr x1, =__bss_start
+    ldr x2, =__bss_end
+clear_bss_loop:
+    cmp x1, x2
+    b.hs clear_bss_done
+    str xzr, [x1], #8
+    b clear_bss_loop
+clear_bss_done:
+
     // Pass device tree pointer to kmain in x0
     // For ELF kernels, QEMU places DTB at start of RAM
     ldr x0, =0x40000000

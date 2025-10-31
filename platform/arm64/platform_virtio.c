@@ -375,6 +375,89 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
   printk(" MB)\n");
 }
 
+// Setup VirtIO-NET device via PCI
+static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
+                             uint8_t func) {
+  // Assign BAR addresses (bare-metal ARM64 needs to do this manually)
+  allocate_pci_bars(platform, bus, slot, func, "NET");
+
+  // Re-enable device
+  uint16_t command =
+      platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
+  command |= 0x0006; // Memory space + Bus master
+  platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                              command);
+
+  printk("[NET] Initializing PCI transport...\n");
+  // Initialize PCI transport for NET
+  if (virtio_pci_init(&platform->virtio_pci_transport_net, platform, bus, slot,
+                      func) < 0) {
+    printk("[NET] PCI transport init failed\n");
+    return;
+  }
+
+  printk("[NET] Initializing NET device...\n");
+  // Initialize NET device
+  if (virtio_net_init_pci(
+          &platform->virtio_net, &platform->virtio_pci_transport_net,
+          &platform->virtqueue_net_rx_memory,
+          &platform->virtqueue_net_tx_memory, platform->kernel) < 0) {
+    printk("[NET] NET device init failed\n");
+    return;
+  }
+
+  printk("[NET] Device initialized successfully\n");
+
+  // Initialize device base fields
+  platform->virtio_net.base.device_type = KDEVICE_TYPE_VIRTIO_NET;
+  platform->virtio_net.base.platform = platform;
+  platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
+  platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
+
+  // Setup interrupt
+  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
+                                              PCI_REG_INTERRUPT_PIN);
+
+  uint32_t base_spi = 3;
+  uint32_t spi_num = base_spi + ((slot + irq_pin - 1) % 4);
+  uint32_t irq_num = 32 + spi_num;
+
+  platform_irq_register(platform, irq_num, virtio_irq_handler,
+                        &platform->virtio_net);
+  platform_irq_enable(platform, irq_num);
+
+  printk("[NET] Storing device info...\n");
+  // Store device info
+  platform->virtio_net_ptr = &platform->virtio_net;
+  platform->has_net_device = true;
+
+  printk("[NET] Copying MAC address (from virtio_net struct at ");
+  printk_hex32((uint32_t)(uint64_t)&platform->virtio_net.mac_address[0]);
+  printk(")...\n");
+  for (int i = 0; i < 6; i++) {
+    printk("[NET] Copying MAC byte ");
+    printk_dec(i);
+    printk("...\n");
+    platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
+  }
+  printk("[NET] MAC copy complete\n");
+
+  printk("[NET] Logging MAC address...\n");
+  // Log device info
+  printk("  mac=");
+  for (int i = 0; i < 6; i++) {
+    if (i > 0)
+      printk(":");
+    uint8_t b = platform->net_mac_address[i];
+    uint8_t hi = (b >> 4) & 0xF;
+    uint8_t lo = b & 0xF;
+    printk_putc(hi < 10 ? '0' + hi : 'a' + (hi - 10));
+    printk_putc(lo < 10 ? '0' + lo : 'a' + (lo - 10));
+  }
+  printk("\n");
+  printk("[NET] Setup complete\n");
+}
+
 // Setup VirtIO-NET device via MMIO
 static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
                                   uint64_t mmio_size, uint32_t irq_num) {
@@ -457,6 +540,7 @@ void pci_scan_devices(platform_t *platform) {
   int devices_found = 0;
   int rng_initialized = 0;
   int blk_initialized = 0;
+  int net_initialized = 0;
 
   // Scan first 4 buses only (most systems have devices on bus 0)
   // Scanning all 256 buses takes too long
@@ -500,6 +584,13 @@ void pci_scan_devices(platform_t *platform) {
                                    device == VIRTIO_PCI_DEVICE_BLOCK_MODERN)) {
             virtio_blk_setup(platform, bus, slot, 0);
             blk_initialized = 1;
+          }
+
+          // Initialize NET device if found and not already initialized
+          if (!net_initialized && (device == VIRTIO_PCI_DEVICE_NET_LEGACY ||
+                                   device == VIRTIO_PCI_DEVICE_NET_MODERN)) {
+            virtio_net_setup(platform, bus, slot, 0);
+            net_initialized = 1;
           }
         }
       }
