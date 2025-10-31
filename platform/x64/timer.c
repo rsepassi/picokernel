@@ -259,3 +259,8 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
   // Set initial count (starts the timer)
   lapic_write(platform, LAPIC_TIMER_INIT, ticks);
 }
+
+// Cancel any pending timer
+void timer_cancel(platform_t *platform) {
+  lapic_write(platform, LAPIC_LVT_TIMER, 32 | 0x10000);  // Vector 32, masked (bit 16)
+}

@@ -22,6 +22,9 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
 // Get current time in milliseconds (uptime since timer_init)
 uint64_t timer_get_current_time_ms(platform_t *platform);
 
+// Cancel any pending timer
+void timer_cancel(platform_t *platform);
+
 // Send EOI (End Of Interrupt) to Local APIC
 void lapic_send_eoi(platform_t *platform);
 

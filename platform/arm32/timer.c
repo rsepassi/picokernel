@@ -135,3 +135,9 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
   // ms = (ticks * 1000) / freq_hz
   return (counter_elapsed * 1000) / platform->timer_freq;
 }
+
+// Cancel any pending timer
+void timer_cancel(platform_t *platform) {
+  (void)platform;
+  write_cntv_ctl(0);  // Disable timer
+}

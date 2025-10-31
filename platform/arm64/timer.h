@@ -21,5 +21,8 @@ uint64_t timer_get_frequency(platform_t *platform);
 // Get current time in milliseconds
 uint64_t timer_get_current_time_ms(platform_t *platform);
 
+// Cancel any pending timer
+void timer_cancel(platform_t *platform);
+
 // Timer interrupt handler (called from interrupt.c via IRQ dispatch)
 void generic_timer_handler(void *context);

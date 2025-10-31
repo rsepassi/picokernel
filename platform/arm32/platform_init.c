@@ -70,6 +70,11 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   // Atomically enable interrupts and wait
   __asm__ volatile("cpsie i; wfi" ::: "memory");
 
+  // Cancel timer if it was set
+  if (timeout_ms != UINT64_MAX) {
+    timer_cancel(platform);
+  }
+
   // Return current time
   return timer_get_current_time_ms(platform);
 }

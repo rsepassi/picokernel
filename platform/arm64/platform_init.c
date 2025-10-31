@@ -76,6 +76,11 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   __asm__ volatile("wfi" ::: "memory");
   __asm__ volatile("msr daifclr, #2" ::: "memory");
 
+  // Cancel timer if it was set
+  if (timeout_ms != UINT64_MAX) {
+    timer_cancel(platform);
+  }
+
   // Return current time
   return timer_get_current_time_ms(platform);
 }

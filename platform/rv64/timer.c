@@ -205,3 +205,9 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
   // ms = (ticks * 1000) / freq_hz
   return (counter_elapsed * 1000) / platform->timebase_freq;
 }
+
+// Cancel any pending timer
+void timer_cancel(platform_t *platform) {
+  (void)platform;
+  sbi_set_timer(~0ULL);  // Set to UINT64_MAX to disable
+}
