@@ -102,7 +102,7 @@ else
                 -device virtio-net-device,netdev=net0
 endif
 
-.PHONY: default run clean format
+.PHONY: default run clean format test test-all
 default: $(KERNEL)
 
 all:
@@ -153,3 +153,31 @@ clean:
 
 format:
 	clang-format -i $$(find src/ platform/ -type f \( -name '*.c' -o -name '*.h' \))
+
+test: $(KERNEL)
+	@./script/run_test.sh $(PLATFORM) $(USE_PCI)
+
+test-all:
+	@echo "=== Running tests for all platforms and transports ==="
+	@echo ""
+	@FAILED=0; \
+	PASSED=0; \
+	for platform in arm64 arm32 x64 x32 rv64 rv32; do \
+		for use_pci in 0 1; do \
+			transport="MMIO"; \
+			if [ "$$use_pci" = "1" ]; then transport="PCI"; fi; \
+			echo ">>> Testing $$platform with $$transport..."; \
+			if $(MAKE) test PLATFORM=$$platform USE_PCI=$$use_pci; then \
+				PASSED=$$((PASSED + 1)); \
+				echo "✓ $$platform ($$transport) PASSED"; \
+			else \
+				FAILED=$$((FAILED + 1)); \
+				echo "✗ $$platform ($$transport) FAILED"; \
+			fi; \
+			echo ""; \
+		done; \
+	done; \
+	echo "=== Test Summary ==="; \
+	echo "Passed: $$PASSED / 12"; \
+	echo "Failed: $$FAILED / 12"; \
+	if [ "$$FAILED" -gt 0 ]; then exit 1; fi

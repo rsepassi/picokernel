@@ -121,6 +121,7 @@ static void on_random_ready(kwork_t *work) {
       printk(" ");
   }
   printk("\n");
+  printk("[TEST PASS] RNG\n");
 }
 
 // Send ARP reply packet
@@ -457,6 +458,7 @@ static void handle_udp_packet(kuser_t *user, const uint8_t *pkt,
     printk(" len=");
     printk_dec(udp_data_len);
     printk("\n");
+    printk("[TEST PASS] Network Echo\n");
   }
 }
 
