@@ -102,7 +102,7 @@ else
                 -device virtio-net-device,netdev=net0
 endif
 
-.PHONY: default run clean format test test-all
+.PHONY: default run clean format test test-all flake flake-all
 default: $(KERNEL)
 
 all:
@@ -181,3 +181,21 @@ test-all:
 	echo "Passed: $$PASSED / 12"; \
 	echo "Failed: $$FAILED / 12"; \
 	if [ "$$FAILED" -gt 0 ]; then exit 1; fi
+
+flake: $(KERNEL)
+	@echo "=== Flake test: $(PLATFORM) with $(if $(filter 1,$(USE_PCI)),PCI,MMIO) (10 runs) ==="
+	@FAILED=0; \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		echo "[$$i/10] Testing..."; \
+		if $(MAKE) test PLATFORM=$(PLATFORM) USE_PCI=$(USE_PCI) 2>&1 | grep -q "Test passed"; then \
+			echo "[$$i/10] ✓ PASSED"; \
+		else \
+			FAILED=$$((FAILED + 1)); \
+			echo "[$$i/10] ✗ FAILED"; \
+		fi; \
+	done; \
+	echo "=== Results: $$((10 - FAILED))/10 passed ==="; \
+	if [ "$$FAILED" -gt 0 ]; then exit 1; fi
+
+flake-all:
+	@./script/flake_all.py
