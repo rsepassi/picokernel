@@ -1,0 +1,30 @@
+# x86-specific LLDB debugging commands
+# Source this file in LLDB with: command source platform/x86/script/debug/lldb_x86.txt
+
+echo \n=== x86 Register Dump ===\n
+
+# General purpose registers
+register read rax rbx rcx rdx rsi rdi rbp rsp rip
+
+# Segment registers
+echo \n--- Segment Registers ---\n
+register read cs ds es fs gs ss
+
+# Control registers
+echo \n--- Control Registers ---\n
+register read cr0 cr2 cr3 cr4
+
+# EFLAGS
+echo \n--- EFLAGS ---\n
+register read rflags
+
+# Define custom command to walk x86 page tables
+command script add -f lldb_x86_cmds.walk_page_tables walk_pt
+command script add -f lldb_x86_cmds.dump_idt dump_idt
+command script add -f lldb_x86_cmds.dump_gdt dump_gdt
+
+echo \n=== Custom x86 Commands Available ===\n
+echo   walk_pt <vaddr>  - Walk page tables for virtual address\n
+echo   dump_idt         - Dump Interrupt Descriptor Table\n
+echo   dump_gdt         - Dump Global Descriptor Table\n
+echo \n

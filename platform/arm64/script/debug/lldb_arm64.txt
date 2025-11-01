@@ -1,0 +1,37 @@
+# ARM64-specific LLDB debugging commands
+# Source this file in LLDB with: command source platform/arm64/script/debug/lldb_arm64.txt
+
+echo \n=== ARM64 Register Dump ===\n
+
+# General purpose registers
+echo --- General Purpose Registers ---\n
+register read x0 x1 x2 x3 x4 x5 x6 x7
+register read x8 x9 x10 x11 x12 x13 x14 x15
+register read x16 x17 x18 x19 x20 x21 x22 x23
+register read x24 x25 x26 x27 x28 x29 x30
+
+# Special registers
+echo \n--- Special Registers ---\n
+register read sp pc lr fp
+
+# Processor state
+echo \n--- Processor State ---\n
+register read cpsr
+
+# Exception level
+echo \n--- Exception Level ---\n
+register read CurrentEL
+
+# System registers (may not all be accessible depending on EL)
+# Uncomment if running at appropriate exception level
+# echo \n--- System Control Registers ---\n
+# register read SCTLR_EL1 TCR_EL1 TTBR0_EL1 TTBR1_EL1
+
+# Define custom command to walk ARM64 translation tables
+command script add -f lldb_arm64_cmds.walk_ttbr walk_ttbr
+command script add -f lldb_arm64_cmds.dump_exception_vectors dump_vectors
+
+echo \n=== Custom ARM64 Commands Available ===\n
+echo   walk_ttbr <vaddr>  - Walk translation tables for virtual address\n
+echo   dump_vectors       - Dump exception vector table\n
+echo \n

@@ -1,0 +1,31 @@
+# ARM32-specific LLDB debugging commands
+# Source this file in LLDB with: command source platform/arm32/script/debug/lldb_arm32.txt
+
+echo \n=== ARM32 Register Dump ===\n
+
+# General purpose registers
+echo --- General Purpose Registers ---\n
+register read r0 r1 r2 r3 r4 r5 r6 r7
+register read r8 r9 r10 r11 r12
+
+# Special registers
+echo \n--- Special Registers ---\n
+register read sp lr pc
+
+# Processor state
+echo \n--- Processor State ---\n
+register read cpsr
+
+# System control registers (may not all be accessible)
+# Uncomment if needed
+# echo \n--- System Control Registers ---\n
+# register read SCTLR TTBR0 TTBR1 DACR
+
+# Define custom command to walk ARM32 page tables
+command script add -f lldb_arm32_cmds.walk_page_tables walk_pt
+command script add -f lldb_arm32_cmds.dump_exception_vectors dump_vectors
+
+echo \n=== Custom ARM32 Commands Available ===\n
+echo   walk_pt <vaddr>  - Walk page tables for virtual address\n
+echo   dump_vectors     - Dump exception vector table\n
+echo \n

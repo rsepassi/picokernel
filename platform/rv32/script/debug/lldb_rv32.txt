@@ -1,0 +1,39 @@
+# RISC-V 32-specific LLDB debugging commands
+# Source this file in LLDB with: command source platform/rv32/script/debug/lldb_rv32.txt
+
+echo \n=== RISC-V 32 Register Dump ===\n
+
+# General purpose registers
+echo --- General Purpose Registers (x0-x31) ---\n
+register read x0 x1 x2 x3 x4 x5 x6 x7
+register read x8 x9 x10 x11 x12 x13 x14 x15
+register read x16 x17 x18 x19 x20 x21 x22 x23
+register read x24 x25 x26 x27 x28 x29 x30 x31
+
+# Special aliases
+echo \n--- Special Register Aliases ---\n
+register read zero ra sp gp tp
+register read fp a0 a1 a2 a3 a4 a5 a6 a7
+register read s0 s1
+register read pc
+
+# Control and Status Registers (CSRs)
+# Note: Access depends on privilege level
+echo \n--- Control and Status Registers ---\n
+# Uncomment if accessible
+# register read mstatus mie mip
+# register read mepc mcause mtval
+# register read sstatus sie sip
+# register read sepc scause stval
+# register read satp
+
+# Define custom commands for RISC-V debugging
+command script add -f lldb_rv32_cmds.walk_page_tables walk_pt
+command script add -f lldb_rv32_cmds.dump_csr dump_csr
+command script add -f lldb_rv32_cmds.decode_satp decode_satp
+
+echo \n=== Custom RISC-V 32 Commands Available ===\n
+echo   walk_pt <vaddr>  - Walk page tables for virtual address (SV32)\n
+echo   dump_csr         - Dump important CSR registers\n
+echo   decode_satp      - Decode satp register value\n
+echo \n
