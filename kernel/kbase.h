@@ -90,7 +90,7 @@
       printk("\n  ");                                                          \
       printk(msg);                                                             \
       printk("\n");                                                            \
-      kpanic(msg);                                                                \
+      kpanic(msg);                                                             \
     }                                                                          \
   } while (0)
 

@@ -139,7 +139,8 @@ static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
 }
 
 // 64-bit MMIO write for RV32 (split into two 32-bit writes)
-static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+static inline void platform_mmio_write64(volatile uint64_t *addr,
+                                         uint64_t val) {
   // On RV32, 64-bit writes must be done as two 32-bit writes
   // Write low word first, then high word
   volatile uint32_t *addr32 = (volatile uint32_t *)addr;
@@ -152,7 +153,7 @@ static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) 
 // RV32 QEMU virt: PCI interrupts use standard INTx swizzling
 // Base IRQ = 32, rotated by (device + pin - 1) % 4
 static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
-                                                 uint8_t slot, uint8_t irq_pin) {
+                                                uint8_t slot, uint8_t irq_pin) {
   (void)platform;
   uint32_t base_irq = 32; // First PCI interrupt
   return base_irq + ((slot + irq_pin - 1) % 4);
@@ -161,7 +162,7 @@ static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
 // Calculate MMIO IRQ number from device index
 // RV32 QEMU virt: MMIO IRQs start at 1
 static inline uint32_t platform_mmio_irq_number(platform_t *platform,
-                                                 int index) {
+                                                int index) {
   (void)platform;
   return 1 + index; // MMIO IRQ base is 1
 }

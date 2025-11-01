@@ -133,7 +133,8 @@ static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
 }
 
 // 64-bit MMIO write for ARM64 (direct write with barrier)
-static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+static inline void platform_mmio_write64(volatile uint64_t *addr,
+                                         uint64_t val) {
   *addr = val;
   platform_mmio_barrier();
 }
@@ -142,7 +143,7 @@ static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) 
 // ARM64 QEMU virt: PCI interrupts use standard INTx swizzling
 // Base IRQ = 3 (SPI), rotated by (device + pin - 1) % 4
 static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
-                                                 uint8_t slot, uint8_t irq_pin) {
+                                                uint8_t slot, uint8_t irq_pin) {
   (void)platform;
   uint32_t base_spi = 3; // First PCI interrupt SPI
   uint32_t spi_num = base_spi + ((slot + irq_pin - 1) % 4);
@@ -151,7 +152,8 @@ static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
 
 // Calculate MMIO IRQ number from device index
 // ARM64 QEMU virt: MMIO IRQs are SPIs starting at offset 16
-static inline uint32_t platform_mmio_irq_number(platform_t *platform, int index) {
+static inline uint32_t platform_mmio_irq_number(platform_t *platform,
+                                                int index) {
   (void)platform;
   uint32_t spi_num = 16 + index; // MMIO IRQ base (SPI 16)
   return 32 + spi_num;           // GIC IRQ = 32 + SPI

@@ -62,11 +62,11 @@ struct kwork {
 // Timer request structure
 typedef struct ktimer_req ktimer_req_t;
 struct ktimer_req {
-  kwork_t work;              // Embedded work item
-  uint64_t deadline_ms;      // Absolute deadline
-  ktimer_req_t *parent;      // Intrusive heap parent
-  ktimer_req_t *left;        // Intrusive heap left child
-  ktimer_req_t *right;       // Intrusive heap right child
+  kwork_t work;         // Embedded work item
+  uint64_t deadline_ms; // Absolute deadline
+  ktimer_req_t *parent; // Intrusive heap parent
+  ktimer_req_t *left;   // Intrusive heap left child
+  ktimer_req_t *right;  // Intrusive heap right child
 };
 
 // RNG request structure

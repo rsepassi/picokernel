@@ -31,8 +31,8 @@ void kdebug_dump_work_history(void) {
 
   printk("\nLast work transitions:\n");
 
-  const char *state_names[] = {
-      "DEAD", "SUBMIT_REQUESTED", "LIVE", "CANCEL_REQUESTED", "READY"};
+  const char *state_names[] = {"DEAD", "SUBMIT_REQUESTED", "LIVE",
+                               "CANCEL_REQUESTED", "READY"};
 
   for (uint32_t i = 0; i < 16; i++) {
     if (k->work_history[i].work == NULL) {

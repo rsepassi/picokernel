@@ -203,9 +203,8 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
       // 64-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                   (uint32_t)aligned_addr);
-      platform_pci_config_write32(
-          platform, bus, slot, func, bar_offset + 4,
-          (uint32_t)(aligned_addr >> 32));
+      platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
+                                  (uint32_t)(aligned_addr >> 32));
       platform->pci_next_bar_addr = aligned_addr + size;
       i++; // Skip next BAR (high 32 bits)
     } else {

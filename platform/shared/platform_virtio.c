@@ -1,7 +1,7 @@
 // Shared VirtIO Platform Integration
 // Discovers and initializes VirtIO devices using generic transport layer
-// Platform must provide: platform_pci_irq_swizzle(), platform_mmio_irq_number(),
-// and VIRTIO_MMIO_* defines
+// Platform must provide: platform_pci_irq_swizzle(),
+// platform_mmio_irq_number(), and VIRTIO_MMIO_* defines
 
 #include "interrupt.h"
 #include "kernel.h"

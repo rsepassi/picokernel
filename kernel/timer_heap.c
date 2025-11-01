@@ -4,7 +4,8 @@
 #include "timer_heap.h"
 
 // Navigate to a specific position in the heap tree using binary path
-// Position is 1-indexed (1 = root, 2 = left child of root, 3 = right child, etc.)
+// Position is 1-indexed (1 = root, 2 = left child of root, 3 = right child,
+// etc.)
 static ktimer_req_t *timer_heap_navigate(ktimer_req_t *root, size_t position) {
   if (position == 0 || root == NULL) {
     return NULL;
@@ -36,7 +37,8 @@ static ktimer_req_t *timer_heap_navigate(ktimer_req_t *root, size_t position) {
 }
 
 // Find parent of a position (NULL for root)
-static ktimer_req_t *timer_heap_find_parent(ktimer_req_t *root, size_t position) {
+static ktimer_req_t *timer_heap_find_parent(ktimer_req_t *root,
+                                            size_t position) {
   if (position <= 1) {
     return NULL;
   }
@@ -51,7 +53,8 @@ static ktimer_req_t **timer_heap_find_insertion_slot(kernel_t *k) {
     return &k->timer_heap_root;
   }
 
-  ktimer_req_t *parent = timer_heap_find_parent(k->timer_heap_root, new_position);
+  ktimer_req_t *parent =
+      timer_heap_find_parent(k->timer_heap_root, new_position);
   if (parent == NULL) {
     return NULL;
   }
@@ -87,7 +90,8 @@ static void timer_heap_swap(ktimer_req_t *a, ktimer_req_t *b) {
 
 // Bubble up to restore min-heap property
 static void timer_heap_bubble_up(ktimer_req_t *node) {
-  while (node->parent != NULL && node->deadline_ms < node->parent->deadline_ms) {
+  while (node->parent != NULL &&
+         node->deadline_ms < node->parent->deadline_ms) {
     timer_heap_swap(node, node->parent);
     node = node->parent;
   }
@@ -102,7 +106,8 @@ static void timer_heap_bubble_down(ktimer_req_t *node) {
       smallest = node->left;
     }
 
-    if (node->right != NULL && node->right->deadline_ms < smallest->deadline_ms) {
+    if (node->right != NULL &&
+        node->right->deadline_ms < smallest->deadline_ms) {
       smallest = node->right;
     }
 
@@ -133,7 +138,8 @@ void timer_heap_insert(kernel_t *k, ktimer_req_t *timer) {
 
   // Set parent pointer
   if (k->timer_heap_size > 0) {
-    timer->parent = timer_heap_find_parent(k->timer_heap_root, k->timer_heap_size + 1);
+    timer->parent =
+        timer_heap_find_parent(k->timer_heap_root, k->timer_heap_size + 1);
   }
 
   k->timer_heap_size++;
@@ -232,7 +238,8 @@ void timer_heap_delete(kernel_t *k, ktimer_req_t *timer) {
   k->timer_heap_size--;
 
   // Restore heap property - try both up and down
-  if (timer->parent != NULL && timer->deadline_ms < timer->parent->deadline_ms) {
+  if (timer->parent != NULL &&
+      timer->deadline_ms < timer->parent->deadline_ms) {
     timer_heap_bubble_up(timer);
   } else {
     timer_heap_bubble_down(timer);

@@ -2,9 +2,9 @@
 
 #include "kbase.h"
 #include "kernel.h"
+#include "mem_debug.h"
 #include "printk.h"
 #include "user.h"
-#include "mem_debug.h"
 
 static kernel_t g_kernel;
 static kuser_t g_user;
