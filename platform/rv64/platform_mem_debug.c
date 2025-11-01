@@ -84,6 +84,7 @@ void platform_mem_validate_critical(void) {
   // 3. Verify kernel base address
   if (text_start != KERNEL_BASE) {
     printk("[MEM] ERROR: Kernel not at expected base 0x80200000\n");
+    kpanic("Kernel base address corruption detected");
     all_ok = false;
   }
 
@@ -91,6 +92,7 @@ void platform_mem_validate_critical(void) {
   if (kmem_ranges_overlap(DTB_BASE, DTB_SIZE, text_start,
                           kernel_end - text_start)) {
     printk("[MEM] ERROR: Kernel overlaps with DTB region!\n");
+    kpanic("Kernel/DTB memory overlap detected");
     all_ok = false;
   }
 
@@ -119,6 +121,7 @@ void platform_mem_validate_critical(void) {
 
   if (!bss_zeroed) {
     printk("[MEM] ERROR: BSS not properly zeroed by boot.S\n");
+    kpanic("BSS section not properly zeroed");
     all_ok = false;
   } else {
     printk("[MEM] BSS zeroing: OK\n");
@@ -128,6 +131,7 @@ void platform_mem_validate_critical(void) {
   if (text_end > rodata_start || rodata_end > data_start ||
       data_end > bss_start) {
     printk("[MEM] ERROR: Kernel sections not properly ordered\n");
+    kpanic("Kernel sections improperly ordered");
     all_ok = false;
   }
 
@@ -157,6 +161,7 @@ void platform_mem_validate_critical(void) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
+      kpanic(".text section checksum mismatch - code corruption detected");
       all_ok = false;
     }
 
@@ -168,6 +173,7 @@ void platform_mem_validate_critical(void) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
+      kpanic(".rodata section checksum mismatch - data corruption detected");
       all_ok = false;
     }
   }
@@ -218,6 +224,7 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
   // 3. Validate platform timebase frequency was initialized
   if (platform->timebase_freq == 0) {
     printk("[MEM] ERROR: Timebase frequency not initialized\n");
+    kpanic("Platform timer not initialized");
     all_ok = false;
   } else {
     printk("[MEM] Timebase frequency: ");
@@ -280,6 +287,7 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
+      kpanic(".text section checksum mismatch after init - code corruption detected");
       all_ok = false;
     }
 
@@ -291,6 +299,7 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
+      kpanic(".rodata section checksum mismatch after init - data corruption detected");
       all_ok = false;
     }
   }
@@ -375,6 +384,7 @@ bool platform_mem_check_guard(void *addr, uint32_t size) {
       printk(": expected 0xDEADBEEFCAFEBABE, got 0x");
       printk_hex64(val);
       printk("\n");
+      kpanic("Memory guard corruption detected");
       ok = false;
     }
 
@@ -386,6 +396,7 @@ bool platform_mem_check_guard(void *addr, uint32_t size) {
         printk(": expected 0xDEADBEEFCAFEBABE, got 0x");
         printk_hex64(val);
         printk("\n");
+        kpanic("Memory guard corruption detected");
         ok = false;
       }
     }
