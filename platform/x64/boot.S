@@ -22,46 +22,81 @@ _start:
     mov %ebx, %esi
 
     // Set up page tables for long mode
-    // Identity map first 4 MiB (covers kernel at 1 MiB + stack)
+    // Identity map first 4 MiB (covers page tables at 0x9000 and kernel at 2 MiB)
     // Also map high MMIO region for LAPIC, IOAPIC, etc.
 
-    // Clear page table area (5 * 4096 bytes starting at 0x9000)
-    // PML4 at 0x9000, PDPT at 0xA000, PD0 at 0xB000, PD3 at 0xC000, PD_MMIO at 0xD000
-    // Using 0x9000+ avoids conflicts with BIOS data area (0x0000-0x7FFF)
-    mov $0x9000, %edi
+    // Clear page table area starting at 0x100000 (1 MiB)
+    // PML4 at 0x100000, PDPT at 0x101000, PD0 at 0x102000, PD3 at 0x103000, PT_kernel at 0x104000
+    // Avoids conflicts with: BIOS (0x0-0x7FFF), EBDA (0x80000-0x9FFFF), old 0xC000 confusion
+    // Total: 5 pages = 20 KiB
+    mov $0x100000, %edi
     mov $0x5000, %ecx
     xor %eax, %eax
     rep stosb
 
-    // Set up PML4 (Page Map Level 4) at 0x9000
-    mov $0x9000, %edi
-    mov $0xA003, %eax           // Address of PDPT | Present | Writable
+    // Set up PML4 (Page Map Level 4) at 0x100000
+    mov $0x100000, %edi
+    mov $0x101003, %eax         // Address of PDPT | Present | Writable
     mov %eax, (%edi)
 
-    // Set up PDPT (Page Directory Pointer Table) at 0xA000
-    mov $0xA000, %edi
-    mov $0xB003, %eax           // PDPT[0] -> PD at 0xB000 (for 0-1GB)
+    // Set up PDPT (Page Directory Pointer Table) at 0x101000
+    mov $0x101000, %edi
+    mov $0x102003, %eax         // PDPT[0] -> PD at 0x102000 (for 0-1GB)
     mov %eax, (%edi)
     add $24, %edi               // PDPT[3] (3 * 8 bytes)
-    mov $0xC003, %eax           // PDPT[3] -> PD at 0xC000 (for 3-4GB, MMIO region)
+    mov $0x103003, %eax         // PDPT[3] -> PD at 0x103000 (for 3-4GB, MMIO region)
     mov %eax, (%edi)
 
-    // Set up PD (Page Directory) at 0xB000 for first 1GB
-    // Identity map first 4 MiB using two 2 MiB pages
-    mov $0xB000, %edi
+    // Set up PD (Page Directory) at 0x102000 for first 1GB
+    // First 2 MiB: Use huge page for low memory (BIOS, page tables, etc.)
+    mov $0x102000, %edi
     mov $0x0083, %eax           // Address 0 | Present | Writable | Huge page
     mov %eax, (%edi)
+
+    // Second 2 MiB (0x200000-0x3FFFFF): Use 4KB pages for kernel
+    // This allows separate permissions for .text, .rodata, and .bss
     add $8, %edi
-    mov $0x200083, %eax         // Address 2 MiB | Present | Writable | Huge page
+    mov $0x104003, %eax         // PT at 0x104000 | Present | Writable (NOT huge page)
     mov %eax, (%edi)
 
-    // Set up PD at 0xC000 for MMIO region (3-4GB range, PDPT[3])
+    // Set up PT (Page Table) at 0x104000 for kernel region (0x200000-0x3FFFFF)
+    // Map 512 x 4KB pages = 2 MiB total with appropriate permissions:
+    // - .text (0x200000-0x20CFFF): Read-only
+    // - .rodata (0x20D000-0x20EFFF): Read-only
+    // - .bss+stack (0x20F000+): Read-Write
+    mov $0x104000, %edi         // PT base
+    mov $0x200000, %eax         // Start at physical 0x200000
+    mov $512, %ecx              // 512 entries
+
+.Lmap_kernel_pages:
+    mov %eax, %edx              // Copy physical address
+    and $~0xFFF, %edx           // Clear offset bits
+
+    // Check if this page needs R/W (bss starts at 0x20F000)
+    cmp $0x20F000, %edx
+    jge .Lkernel_rw             // >= 0x20F000: .bss, needs R/W
+
+    // .text and .rodata: Read-only (Present only)
+    or $0x01, %edx              // Present
+    jmp .Lkernel_write_pte
+
+.Lkernel_rw:
+    // .bss and stack: Read-Write
+    or $0x03, %edx              // Present | Writable
+
+.Lkernel_write_pte:
+    mov %edx, (%edi)
+    add $8, %edi                // Next PT entry
+    add $0x1000, %eax           // Next 4KB page
+    loop .Lmap_kernel_pages
+
+    // Set up PD at 0x103000 for MMIO region (3-4GB range, PDPT[3])
     // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
     // Map PCI MMIO range 0xC0000000-0xD0000000 (256 MiB) for PCI BARs
     // Map high MMIO range 0xFE000000-0xFF000000 (16 MiB) for LAPIC/IOAPIC
 
     // First, map PCI BAR region: 0xC0000000-0xD0000000 (128 x 2MB = 256MB)
-    mov $0xC000, %edi           // PD base, entry 0
+    mov $0x103000, %edi         // PD base, entry 0
     mov $0xC000009B, %eax       // 0xC0000000 | Present | Writable | Huge page | PCD | PWT
     mov $128, %ecx              // Map 128 x 2 MiB pages = 256 MiB
 .Lmap_pci_loop:
@@ -72,7 +107,7 @@ _start:
 
     // Second, map high MMIO region: 0xFE000000-0xFF000000 (8 x 2MB = 16MB)
     // This is PD entries 496-503 (496 * 8 = 3968 bytes offset)
-    mov $0xC000, %edi
+    mov $0x103000, %edi
     add $3968, %edi             // PD[496]
     mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT
     mov $8, %ecx                // Map 8 x 2 MiB pages = 16 MiB
@@ -83,7 +118,7 @@ _start:
     loop .Lmap_mmio_loop
 
     // Load CR3 with PML4 address
-    mov $0x9000, %eax
+    mov $0x100000, %eax
     mov %eax, %cr3
 
     // Enable PAE (Physical Address Extension) in CR4
@@ -160,7 +195,7 @@ gdt_descriptor:
     .word gdt_end - gdt_start - 1  // Limit (2 bytes)
     .quad gdt_start                 // Base address (8 bytes) - must be 64-bit for long mode
 
-// Stack space (64 KiB)
+// Stack space (64 KiB) - placed at end of BSS
 .section .bss
 .align 16
 stack_bottom:

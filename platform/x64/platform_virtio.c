@@ -106,15 +106,24 @@ static void virtio_irq_handler(void *context) {
 void pci_scan_devices(platform_t *platform);
 void mmio_scan_devices(platform_t *platform);
 
-// Helper function to allocate PCI BARs for a device
-// This handles both 32-bit and 64-bit BARs, skipping I/O BARs
+// Helper to validate BAR address is in valid MMIO range
+static bool is_valid_bar_address(uint64_t addr) {
+  // Valid x64 MMIO ranges (avoid RAM and reserved areas):
+  // 0xC0000000-0xFEBFFFFF: PCI MMIO window (typical for QEMU)
+  // Reject addresses below 0xC0000000 (likely RAM)
+  // Reject addresses in high MMIO reserved ranges (0xFEC00000+: IOAPIC/LAPIC)
+  if (addr >= 0xC0000000ULL && addr < 0xFEC00000ULL) {
+    return true; // Valid PCI MMIO range
+  }
+  return false;
+}
+
+// Helper function to configure PCI BARs for a device
+// Prefers existing QEMU-assigned BARs, falls back to manual allocation
 static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                               uint8_t func, const char *device_name) {
-  printk("[");
-  printk(device_name);
-  printk("] Allocating BARs starting at 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  bool any_allocated = false;
+  bool any_existing = false;
 
   for (int i = 0; i < 6; i++) {
     uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
@@ -130,9 +139,37 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
       continue;
     }
 
-    // Write all 1s to get BAR size
+    // Check if 64-bit BAR
+    uint32_t bar_type = (bar_val >> 1) & 0x3;
+    bool is_64bit = (bar_type == 0x2);
+
+    // Read existing BAR address (QEMU may have pre-assigned it)
+    uint64_t existing_addr;
+    if (is_64bit && i < 5) {
+      uint32_t bar_high =
+          platform_pci_config_read32(platform, bus, slot, func, bar_offset + 4);
+      existing_addr = ((uint64_t)bar_high << 32) | (bar_val & ~0xFULL);
+    } else {
+      existing_addr = bar_val & ~0xFULL;
+    }
+
+    // If BAR is already assigned and valid, use it (trust QEMU/firmware)
+    if (existing_addr != 0 && is_valid_bar_address(existing_addr)) {
+      any_existing = true;
+      if (is_64bit) {
+        i++; // Skip next BAR (high 32 bits)
+      }
+      continue; // Keep existing assignment
+    }
+
+    // BAR is unassigned or invalid - need to allocate manually
+    // Temporarily disable device to probe BAR size
+    uint16_t old_command =
+        platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
     platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
                                 0); // Disable device
+
+    // Write all 1s to get BAR size
     platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                 0xFFFFFFFF);
     uint32_t size_mask =
@@ -141,15 +178,28 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     uint32_t size = ~size_mask + 1;
 
     if (size == 0) {
+      // Restore command register and continue
+      platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                  old_command);
       continue; // BAR not implemented
     }
 
     // Align address to BAR size (BARs must be naturally aligned)
     uint64_t aligned_addr = KALIGN(platform->pci_next_bar_addr, (uint64_t)size);
 
-    // Check if 64-bit BAR
-    uint32_t bar_type = (bar_val >> 1) & 0x3;
-    if (bar_type == 0x2) {
+    // Validate allocated address is in valid range
+    if (!is_valid_bar_address(aligned_addr)) {
+      printk("[");
+      printk(device_name);
+      printk("] ERROR: Allocated BAR address 0x");
+      printk_hex64(aligned_addr);
+      printk(" is outside valid MMIO range\n");
+      platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                  old_command);
+      continue;
+    }
+
+    if (is_64bit) {
       // 64-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                   (uint32_t)aligned_addr);
@@ -164,13 +214,27 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                                   (uint32_t)aligned_addr);
       platform->pci_next_bar_addr = aligned_addr + size;
     }
+
+    any_allocated = true;
+
+    // Restore command register
+    platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                old_command);
   }
 
-  printk("[");
-  printk(device_name);
-  printk("] BARs allocated, next address: 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  // Log BAR configuration results
+  if (any_existing) {
+    printk("[");
+    printk(device_name);
+    printk("] Using QEMU-assigned BARs\n");
+  }
+  if (any_allocated) {
+    printk("[");
+    printk(device_name);
+    printk("] Allocated BARs, next address: 0x");
+    printk_hex64(platform->pci_next_bar_addr);
+    printk("\n");
+  }
 }
 
 // Setup VirtIO-RNG device via PCI
@@ -321,6 +385,13 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->has_block_device = true;
   platform->block_sector_size = platform->virtio_blk.sector_size;
   platform->block_capacity = platform->virtio_blk.capacity;
+
+  // DEBUG: Print values before logging
+  printk("[PLATFORM DEBUG] About to print: sector_size=");
+  printk_dec(platform->block_sector_size);
+  printk(", capacity=");
+  printk_dec(platform->block_capacity);
+  printk("\n");
 
   // Log device info
   printk("  sector_size=");

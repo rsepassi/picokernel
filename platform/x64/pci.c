@@ -4,6 +4,7 @@
 #include "pci.h"
 #include "io.h"
 #include "platform_impl.h"
+#include "printk.h"
 
 // PCI configuration space I/O ports
 #define PCI_CONFIG_ADDR 0xCF8
@@ -165,6 +166,15 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
       (volatile msix_table_entry_t *)(bar_addr + table_offset);
   volatile msix_table_entry_t *entry = &msix_table[vector_idx];
 
+  // DEBUG: Print MSI-X table address
+  printk("[MSIX DEBUG] bar_addr=0x");
+  printk_hex64(bar_addr);
+  printk(" table_offset=0x");
+  printk_hex32(table_offset);
+  printk(" entry_addr=0x");
+  printk_hex64((uint64_t)entry);
+  printk("\n");
+
   // MSI-X message format for x86/x64:
   // Address: 0xFEE00000 | (destination_id << 12)
   // Data: delivery_mode | trigger_mode | vector
@@ -172,11 +182,16 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
   uint32_t msg_addr_high = 0;
   uint32_t msg_data = cpu_vector; // Fixed delivery mode, edge-triggered
 
-  // Write MSI-X table entry
+  // Write MSI-X table entry (with memory barriers to ensure ordering)
+  printk("[MSIX] SKIPPING table writes to test corruption hypothesis\n");
   entry->msg_addr_low = msg_addr_low;
+  __asm__ volatile("mfence" ::: "memory");
   entry->msg_addr_high = msg_addr_high;
+  __asm__ volatile("mfence" ::: "memory");
   entry->msg_data = msg_data;
+  __asm__ volatile("mfence" ::: "memory");
   entry->vector_control = 0; // Unmask vector
+  __asm__ volatile("mfence" ::: "memory");
 }
 
 // Enable MSI-X for a device

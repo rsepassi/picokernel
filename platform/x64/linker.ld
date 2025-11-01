@@ -1,13 +1,13 @@
 /* x64 Linker Script for QEMU
- * Load kernel at 1 MiB
+ * Load kernel at 2 MiB to avoid BIOS/firmware data structures
  */
 
 ENTRY(_start)
 
 SECTIONS
 {
-    /* Place kernel at 1 MiB */
-    . = 0x100000;
+    /* Place kernel at 2 MiB to avoid BIOS data structures (ACPI tables, etc.) */
+    . = 0x200000;
 
     .note.Xen : {
       *(.note.Xen)
@@ -24,13 +24,13 @@ SECTIONS
         *(.rodata*)
     }
 
-    /* Align data section to prevent gaps */
-    . = ALIGN(16);
+    /* Align data section to page boundary */
+    . = ALIGN(4096);
     .data : {
         *(.data*)
     }
 
-    /* Align BSS section properly */
+    /* Align BSS section to page boundary */
     . = ALIGN(4096);
     .bss : {
         __bss_start = .;
