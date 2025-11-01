@@ -1,281 +1,498 @@
 // x86 Platform Memory Debugging Implementation
-// Implements kernel/mem_debug.h interface for x86/x64
+// Implements mem_debug.h interface for x86/x64
 
-#include "kbase.h"
-#include "kernel/mem_debug.h"
+#include "mem_debug.h"
 #include "platform.h"
+#include "printk.h"
 
 #ifdef KDEBUG
 
-// Memory region definitions for x86
-#define MEM_REGION_PAGE_TABLES_BASE 0x100000
-#define MEM_REGION_PAGE_TABLES_SIZE 0x5000
-#define MEM_REGION_KERNEL_BASE 0x200000
-#define MEM_REGION_KERNEL_TEXT_END 0x20D000
-#define MEM_REGION_RODATA_BASE 0x20D000
-#define MEM_REGION_RODATA_END 0x20F000
-#define MEM_REGION_BSS_BASE 0x20F000
-#define MEM_REGION_KERNEL_END 0x23DC00
+// x86/x64 memory layout constants (QEMU)
+#define PAGE_TABLES_BASE 0x100000ULL
+#define PAGE_TABLES_SIZE 0x5000ULL  // 20 KiB (5 pages)
+#define KERNEL_BASE 0x200000ULL     // Kernel starts at 2 MiB
+#define RAM_SIZE 0x08000000ULL      // 128 MiB default
 
-// Memory region descriptor (x86-specific)
-typedef struct {
-  const char *name;
-  uptr base;
-  u32 size;
-  bool writable;
-} mem_region_t;
+// MMIO addresses for x86/x64
+#define LAPIC_DEFAULT_BASE 0xFEE00000ULL
+#define IOAPIC_DEFAULT_BASE 0xFEC00000ULL
 
-// Validate a specific memory region
-static bool validate_region(const mem_region_t *region) {
-  printks("[MEM] Validating ");
-  printks(region->name);
-  printks(" (0x");
-  printk_hex64(region->base);
-  printks(" - 0x");
-  printk_hex64(region->base + region->size);
-  printks(", ");
-  printk_dec(region->size);
-  printks(" bytes, ");
-  printks(region->writable ? "R/W" : "R/O");
-  printks(")\n");
+// Memory region constants for platform_mem_print_layout()
+// These use linker symbols for accuracy, but provide defaults for hardcoded layout printing
+#define MEM_REGION_PAGE_TABLES_BASE 0x100000ULL
+#define MEM_REGION_PAGE_TABLES_SIZE 0x5000ULL
+#define MEM_REGION_KERNEL_BASE 0x200000ULL
+#define MEM_REGION_KERNEL_TEXT_END ((uintptr_t)_text_end)
+#define MEM_REGION_RODATA_BASE ((uintptr_t)_rodata_start)
+#define MEM_REGION_RODATA_END ((uintptr_t)_rodata_end)
+#define MEM_REGION_BSS_BASE ((uintptr_t)_bss_start)
+#define MEM_REGION_KERNEL_END ((uintptr_t)_end)
 
-  // For read-only regions, detect if they look corrupted
-  if (!region->writable) {
-    const u8 *p = (const u8 *)region->base;
-    u32 null_count = 0;
-    u32 sample_size = region->size < 256 ? region->size : 256;
-
-    for (u32 i = 0; i < sample_size; i++) {
-      if (p[i] == 0)
-        null_count++;
-    }
-
-    // If more than 90% nulls in a non-BSS section, suspicious
-    if (region->base < MEM_REGION_BSS_BASE &&
-        (null_count * 100 / sample_size) > 90) {
-      printks("[MEM] WARNING: ");
-      printks(region->name);
-      printks(" appears corrupted (>90% null bytes)\n");
-      return false;
-    }
-  }
-
-  return true;
-}
+// Linker-provided symbols (both naming conventions supported)
+extern uint8_t _text_start[], _text_end[];
+extern uint8_t _rodata_start[], _rodata_end[];
+extern uint8_t _data_start[], _data_end[];
+extern uint8_t _bss_start[], _bss_end[];
+extern uint8_t __bss_start[], __bss_end[];
+extern uint8_t _end[];
+extern uint8_t stack_bottom[], stack_top[];
 
 // Validate critical memory regions (page tables, kernel sections)
 void platform_mem_validate_critical(void) {
+  printk("\n[MEM] === x86/x64 Early Boot Validation ===\n");
   bool all_ok = true;
 
-  printks("\n[MEM] === x86 Memory Region Validation ===\n");
+  // 1. Validate Page Tables region
+  printk("[MEM] Page Tables: 0x");
+  printk_hex64(PAGE_TABLES_BASE);
+  printk(" - 0x");
+  printk_hex64(PAGE_TABLES_BASE + PAGE_TABLES_SIZE - 1);
+  printk(" (");
+  printk_dec(PAGE_TABLES_SIZE);
+  printk(" bytes)\n");
 
-  // Define critical regions
-  static const mem_region_t regions[] = {
-      {"Page Tables", MEM_REGION_PAGE_TABLES_BASE, MEM_REGION_PAGE_TABLES_SIZE,
-       true},
-      {".text", MEM_REGION_KERNEL_BASE,
-       MEM_REGION_KERNEL_TEXT_END - MEM_REGION_KERNEL_BASE, false},
-      {".rodata", MEM_REGION_RODATA_BASE,
-       MEM_REGION_RODATA_END - MEM_REGION_RODATA_BASE, false},
-      {".bss", MEM_REGION_BSS_BASE, MEM_REGION_KERNEL_END - MEM_REGION_BSS_BASE,
-       true},
-  };
+  // 2. Validate kernel sections using linker symbols
+  uintptr_t text_start = (uintptr_t)_text_start;
+  uintptr_t text_end = (uintptr_t)_text_end;
+  uintptr_t rodata_start = (uintptr_t)_rodata_start;
+  uintptr_t rodata_end = (uintptr_t)_rodata_end;
+  uintptr_t data_start = (uintptr_t)_data_start;
+  uintptr_t data_end = (uintptr_t)_data_end;
+  uintptr_t bss_start = (uintptr_t)_bss_start;
+  uintptr_t bss_end = (uintptr_t)_bss_end;
+  uintptr_t kernel_end = (uintptr_t)_end;
 
-  for (u32 i = 0; i < ARRAY_SIZE(regions); i++) {
-    if (!validate_region(&regions[i])) {
+  printk("[MEM] .text:   0x");
+  printk_hex64(text_start);
+  printk(" - 0x");
+  printk_hex64(text_end);
+  uint32_t text_size = text_end - text_start;
+  printk(" (");
+  printk_dec(text_size);
+  printk(" bytes)\n");
+
+  printk("[MEM] .rodata: 0x");
+  printk_hex64(rodata_start);
+  printk(" - 0x");
+  printk_hex64(rodata_end);
+  uint32_t rodata_size = rodata_end - rodata_start;
+  printk(" (");
+  printk_dec(rodata_size);
+  printk(" bytes)\n");
+
+  printk("[MEM] .data:   0x");
+  printk_hex64(data_start);
+  printk(" - 0x");
+  printk_hex64(data_end);
+  uint32_t data_size = data_end - data_start;
+  printk(" (");
+  printk_dec(data_size);
+  printk(" bytes)\n");
+
+  printk("[MEM] .bss:    0x");
+  printk_hex64(bss_start);
+  printk(" - 0x");
+  printk_hex64(bss_end);
+  uint32_t bss_size = bss_end - bss_start;
+  printk(" (");
+  printk_dec(bss_size);
+  printk(" bytes)\n");
+
+  // 3. Verify kernel base address (allow for .note.Xen section before .text)
+  // The linker script places kernel at 0x200000, but .text may start slightly after
+  if (text_start < KERNEL_BASE || text_start > KERNEL_BASE + 0x1000) {
+    printk("[MEM] ERROR: Kernel .text not near expected base 0x200000 (at 0x");
+    printk_hex64(text_start);
+    printk(")\n");
+    all_ok = false;
+  }
+
+  // 4. Check sections don't overlap with page tables
+  if (kmem_ranges_overlap(PAGE_TABLES_BASE, PAGE_TABLES_SIZE, text_start,
+                          kernel_end - text_start)) {
+    printk("[MEM] ERROR: Kernel overlaps with page tables!\n");
+    all_ok = false;
+  }
+
+  // 5. Validate stack
+  uintptr_t stack_bot = (uintptr_t)stack_bottom;
+  uintptr_t stack_t = (uintptr_t)stack_top;
+  uint32_t stack_size = stack_t - stack_bot;
+
+  printk("[MEM] Stack:   0x");
+  printk_hex64(stack_bot);
+  printk(" - 0x");
+  printk_hex64(stack_t);
+  printk(" (");
+  printk_dec(stack_size);
+  printk(" bytes, grows down)\n");
+
+  if (stack_size != 65536) {
+    printk("[MEM] WARNING: Stack size is not 64 KiB as expected\n");
+  }
+
+  // 6. Check BSS is zeroed (sample check - first and last 64 bytes)
+  bool bss_zeroed = kmem_validate_pattern((void *)bss_start, 64, 0x00);
+  if (bss_end - bss_start > 128) {
+    bss_zeroed &= kmem_validate_pattern((void *)(bss_end - 64), 64, 0x00);
+  }
+
+  if (!bss_zeroed) {
+    printk("[MEM] ERROR: BSS not properly zeroed by boot.S\n");
+    all_ok = false;
+  } else {
+    printk("[MEM] BSS zeroing: OK\n");
+  }
+
+  // 7. Check sections are properly ordered and aligned
+  if (text_end > rodata_start || rodata_end > data_start ||
+      data_end > bss_start) {
+    printk("[MEM] ERROR: Kernel sections not properly ordered\n");
+    all_ok = false;
+  }
+
+  printk("[MEM] Total kernel size: ");
+  printk_dec(kernel_end - text_start);
+  printk(" bytes\n");
+
+  // 8. Verify .text and .rodata checksums
+  printk("[MEM] Verifying section checksums...\n");
+
+  uint32_t expected_text_crc = platform_get_expected_text_checksum();
+  uint32_t expected_rodata_crc = platform_get_expected_rodata_checksum();
+
+  if (expected_text_crc == 0 && expected_rodata_crc == 0) {
+    printk("[MEM] WARNING: Expected checksums not set (build may not have run "
+           "checksum script)\n");
+  } else {
+    uint32_t actual_text_crc = kmem_checksum_section(_text_start, _text_end);
+    uint32_t actual_rodata_crc = kmem_checksum_section(_rodata_start, _rodata_end);
+
+    printk("[MEM] .text checksum:   expected=0x");
+    printk_hex32(expected_text_crc);
+    printk(", actual=0x");
+    printk_hex32(actual_text_crc);
+    if (actual_text_crc == expected_text_crc) {
+      printk(" OK\n");
+    } else {
+      printk(" MISMATCH!\n");
+      all_ok = false;
+    }
+
+    printk("[MEM] .rodata checksum: expected=0x");
+    printk_hex32(expected_rodata_crc);
+    printk(", actual=0x");
+    printk_hex32(actual_rodata_crc);
+    if (actual_rodata_crc == expected_rodata_crc) {
+      printk(" OK\n");
+    } else {
+      printk(" MISMATCH!\n");
       all_ok = false;
     }
   }
 
-  // Check for overlaps
-  printks("\n[MEM] Checking for region overlaps:\n");
-  for (u32 i = 0; i < ARRAY_SIZE(regions); i++) {
-    for (u32 j = i + 1; j < ARRAY_SIZE(regions); j++) {
-      uptr a_end = regions[i].base + regions[i].size;
-      uptr b_end = regions[j].base + regions[j].size;
-
-      if (kmem_ranges_overlap(regions[i].base, regions[i].size, regions[j].base,
-                              regions[j].size)) {
-        printks("[MEM] ERROR: ");
-        printks(regions[i].name);
-        printks(" overlaps with ");
-        printks(regions[j].name);
-        printks("\n");
-        all_ok = false;
-      }
-    }
+  if (all_ok) {
+    printk("[MEM] === Early Boot Validation PASSED ===\n\n");
+  } else {
+    printk("[MEM] === Early Boot Validation FAILED ===\n\n");
   }
-
-  printks("\n[MEM] === Validation ");
-  printks(all_ok ? "PASSED" : "FAILED");
-  printks(" ===\n\n");
 }
 
 // Validate post-initialization state
 void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
-  (void)platform;
-  (void)fdt;
-  printks("\n[MEM] === x86 Post-Init Validation ===\n");
-  printks("[MEM] x86 post-init validation not implemented yet\n");
-  printks("[MEM] === Validation SKIPPED ===\n\n");
+  (void)fdt; // x86/x64 doesn't use FDT - uses FW_CFG instead
+  printk("\n[MEM] === x86/x64 Post-Init Validation ===\n");
+  bool all_ok = true;
+
+  // 1. Validate FW_CFG device (x86 uses FW_CFG instead of FDT)
+  // FW_CFG is accessed via I/O ports 0x510/0x511
+  printk("[MEM] FW_CFG I/O ports: 0x510/0x511 (used for device discovery)\n");
+
+  // 2. Probe MMIO regions are accessible
+  volatile uint32_t *lapic_base = (volatile uint32_t *)platform->lapic_base;
+
+  printk("[MEM] LAPIC (");
+  if (platform->lapic_base != 0) {
+    printk_hex64(platform->lapic_base);
+    printk("): ");
+    uint32_t lapic_id = *lapic_base;
+    (void)lapic_id; // Mark as used
+    printk("accessible\n");
+  } else {
+    printk("not initialized)\n");
+    all_ok = false;
+  }
+
+  printk("[MEM] IOAPIC (");
+  if (platform->ioapic.base_addr != 0) {
+    printk_hex32(platform->ioapic.base_addr);
+    printk("): ");
+    // IOAPIC uses indirect register access, so we can't directly read
+    printk("configured (max entries: ");
+    printk_dec(platform->ioapic.max_entries);
+    printk(")\n");
+  } else {
+    printk("not initialized)\n");
+  }
+
+  // Check if VirtIO MMIO devices are present (if USE_PCI=0)
+  // VirtIO MMIO would typically be at known addresses, but x86 typically uses PCI
+  printk("[MEM] VirtIO transport: ");
+#ifdef USE_PCI
+  printk("PCI (ECAM or I/O port config space)\n");
+#else
+  printk("MMIO (not typical for x86)\n");
+#endif
+
+  // 3. Validate platform TSC frequency was initialized
+  if (platform->tsc_freq == 0) {
+    printk("[MEM] ERROR: TSC frequency not initialized\n");
+    all_ok = false;
+  } else {
+    printk("[MEM] TSC frequency: ");
+    printk_dec((uint32_t)(platform->tsc_freq / 1000000)); // Convert to MHz
+    printk(" MHz (");
+    printk_dec((uint32_t)(platform->tsc_freq / 1000)); // Convert to KHz
+    printk(" KHz)\n");
+  }
+
+  // 4. Report device discoveries
+  printk("[MEM] VirtIO RNG device: ");
+  if (platform->virtio_rng_ptr != NULL) {
+    printk("found\n");
+  } else {
+    printk("not found\n");
+  }
+
+  printk("[MEM] VirtIO BLK device: ");
+  if (platform->has_block_device) {
+    printk("found (");
+    printk_dec(platform->block_sector_size);
+    printk(" byte sectors, ");
+    printk_dec((uint32_t)(platform->block_capacity >> 10)); // Convert to K sectors
+    printk("K sectors)\n");
+  } else {
+    printk("not found\n");
+  }
+
+  printk("[MEM] VirtIO NET device: ");
+  if (platform->has_net_device) {
+    printk("found (MAC: ");
+    for (int i = 0; i < 6; i++) {
+      printk_hex8(platform->net_mac_address[i]);
+      if (i < 5)
+        printk(":");
+    }
+    printk(")\n");
+  } else {
+    printk("not found\n");
+  }
+
+  // 5. Re-verify checksums after initialization
+  printk("[MEM] Re-verifying section checksums after init...\n");
+
+  uint32_t expected_text_crc = platform_get_expected_text_checksum();
+  uint32_t expected_rodata_crc = platform_get_expected_rodata_checksum();
+
+  if (expected_text_crc != 0 || expected_rodata_crc != 0) {
+    uint32_t actual_text_crc = kmem_checksum_section(_text_start, _text_end);
+    uint32_t actual_rodata_crc = kmem_checksum_section(_rodata_start, _rodata_end);
+
+    printk("[MEM] .text checksum:   expected=0x");
+    printk_hex32(expected_text_crc);
+    printk(", actual=0x");
+    printk_hex32(actual_text_crc);
+    if (actual_text_crc == expected_text_crc) {
+      printk(" OK\n");
+    } else {
+      printk(" MISMATCH!\n");
+      all_ok = false;
+    }
+
+    printk("[MEM] .rodata checksum: expected=0x");
+    printk_hex32(expected_rodata_crc);
+    printk(", actual=0x");
+    printk_hex32(actual_rodata_crc);
+    if (actual_rodata_crc == expected_rodata_crc) {
+      printk(" OK\n");
+    } else {
+      printk(" MISMATCH!\n");
+      all_ok = false;
+    }
+  }
+
+  if (all_ok) {
+    printk("[MEM] === Post-Init Validation PASSED ===\n\n");
+  } else {
+    printk("[MEM] === Post-Init Validation FAILED ===\n\n");
+  }
 }
 
 // Print x86 memory map
 void platform_mem_print_layout(void) {
-  printks("\n[MEM] === x86 Memory Map ===\n");
-  printks("  BIOS/Low Memory:     0x00000000 - 0x000FFFFF (1 MiB)\n");
+  printk("\n[MEM] === x86 Memory Map ===\n");
+  printk("  BIOS/Low Memory:     0x00000000 - 0x000FFFFF (1 MiB)\n");
 
-  printks("  Page Tables:         0x");
-  printk_hex64(MEM_REGION_PAGE_TABLES_BASE);
-  printks(" - 0x");
-  printk_hex64(MEM_REGION_PAGE_TABLES_BASE + MEM_REGION_PAGE_TABLES_SIZE);
-  printks(" (");
-  printk_dec(MEM_REGION_PAGE_TABLES_SIZE / 1024);
-  printks(" KiB)\n");
+  printk("  Page Tables:         0x");
+  printk_hex64(PAGE_TABLES_BASE);
+  printk(" - 0x");
+  printk_hex64(PAGE_TABLES_BASE + PAGE_TABLES_SIZE);
+  printk(" (");
+  printk_dec(PAGE_TABLES_SIZE / 1024);
+  printk(" KiB)\n");
 
-  printks("  Kernel .text:        0x");
-  printk_hex64(MEM_REGION_KERNEL_BASE);
-  printks(" - 0x");
-  printk_hex64(MEM_REGION_KERNEL_TEXT_END);
-  printks(" (");
-  printk_dec((MEM_REGION_KERNEL_TEXT_END - MEM_REGION_KERNEL_BASE) / 1024);
-  printks(" KiB)\n");
+  uintptr_t text_start = (uintptr_t)_text_start;
+  uintptr_t text_end = (uintptr_t)_text_end;
+  uintptr_t rodata_start = (uintptr_t)_rodata_start;
+  uintptr_t rodata_end = (uintptr_t)_rodata_end;
+  uintptr_t bss_start = (uintptr_t)_bss_start;
+  uintptr_t kernel_end = (uintptr_t)_end;
 
-  printks("  Kernel .rodata:      0x");
-  printk_hex64(MEM_REGION_RODATA_BASE);
-  printks(" - 0x");
-  printk_hex64(MEM_REGION_RODATA_END);
-  printks(" (");
-  printk_dec((MEM_REGION_RODATA_END - MEM_REGION_RODATA_BASE) / 1024);
-  printks(" KiB)\n");
+  printk("  Kernel .text:        0x");
+  printk_hex64(text_start);
+  printk(" - 0x");
+  printk_hex64(text_end);
+  printk(" (");
+  printk_dec((text_end - text_start) / 1024);
+  printk(" KiB)\n");
 
-  printks("  Kernel .bss+stack:   0x");
-  printk_hex64(MEM_REGION_BSS_BASE);
-  printks(" - 0x");
-  printk_hex64(MEM_REGION_KERNEL_END);
-  printks(" (");
-  printk_dec((MEM_REGION_KERNEL_END - MEM_REGION_BSS_BASE) / 1024);
-  printks(" KiB)\n");
+  printk("  Kernel .rodata:      0x");
+  printk_hex64(rodata_start);
+  printk(" - 0x");
+  printk_hex64(rodata_end);
+  printk(" (");
+  printk_dec((rodata_end - rodata_start) / 1024);
+  printk(" KiB)\n");
 
-  printks("  Free RAM:            0x");
-  printk_hex64(MEM_REGION_KERNEL_END);
-  printks(" - 0x08000000 (~");
-  printk_dec((0x08000000 - MEM_REGION_KERNEL_END) / (1024 * 1024));
-  printks(" MiB)\n");
+  printk("  Kernel .bss+stack:   0x");
+  printk_hex64(bss_start);
+  printk(" - 0x");
+  printk_hex64(kernel_end);
+  printk(" (");
+  printk_dec((kernel_end - bss_start) / 1024);
+  printk(" KiB)\n");
 
-  printks("  PCI MMIO:            0xC0000000 - 0xD0000000 (256 MiB)\n");
-  printks("  High MMIO:           0xFE000000 - 0xFF000000 (16 MiB)\n");
-  printks("    - IOAPIC:          0xFEC00000\n");
-  printks("    - Local APIC:      0xFEE00000\n");
-  printks("\n");
+  printk("  Free RAM:            0x");
+  printk_hex64(kernel_end);
+  printk(" - 0x08000000 (~");
+  printk_dec((0x08000000 - kernel_end) / (1024 * 1024));
+  printk(" MiB)\n");
+
+  printk("  PCI MMIO:            0xC0000000 - 0xD0000000 (256 MiB)\n");
+  printk("  High MMIO:           0xFE000000 - 0xFF000000 (16 MiB)\n");
+  printk("    - IOAPIC:          0xFEC00000\n");
+  printk("    - Local APIC:      0xFEE00000\n");
+  printk("\n");
 }
 
 // Dump virtual address translation (x86 page tables)
-void platform_mem_dump_translation(uptr vaddr) {
-  printks("\n[MEM] Virtual address translation for 0x");
+void platform_mem_dump_translation(uintptr_t vaddr) {
+  printk("\n[MEM] Virtual address translation for 0x");
   printk_hex64(vaddr);
-  printks(":\n");
+  printk(":\n");
 
   // x86-64 4-level paging: PML4 → PDPT → PD → PT → Physical
-  u32 pml4_idx = (vaddr >> 39) & 0x1FF;
-  u32 pdpt_idx = (vaddr >> 30) & 0x1FF;
-  u32 pd_idx = (vaddr >> 21) & 0x1FF;
-  u32 pt_idx = (vaddr >> 12) & 0x1FF;
-  u32 offset = vaddr & 0xFFF;
+  // Cast to uint64_t to avoid shift overflow on x32 (32-bit pointers)
+  uint64_t vaddr64 = vaddr;
+  uint32_t pml4_idx = (vaddr64 >> 39) & 0x1FF;
+  uint32_t pdpt_idx = (vaddr64 >> 30) & 0x1FF;
+  uint32_t pd_idx = (vaddr64 >> 21) & 0x1FF;
+  uint32_t pt_idx = (vaddr64 >> 12) & 0x1FF;
+  uint32_t offset = vaddr64 & 0xFFF;
 
-  printks("  PML4 index: ");
+  printk("  PML4 index: ");
   printk_dec(pml4_idx);
-  printks(", PDPT index: ");
+  printk(", PDPT index: ");
   printk_dec(pdpt_idx);
-  printks(", PD index: ");
+  printk(", PD index: ");
   printk_dec(pd_idx);
-  printks(", PT index: ");
+  printk(", PT index: ");
   printk_dec(pt_idx);
-  printks(", Offset: 0x");
+  printk(", Offset: 0x");
   printk_hex32(offset);
-  printks("\n");
+  printk("\n");
 
   // Read PML4 entry
-  uptr pml4_base = 0x100000; // Known PML4 location
-  uptr pml4_entry_addr = pml4_base + (pml4_idx * 8);
-  u64 pml4_entry = *(u64 *)pml4_entry_addr;
+  uintptr_t pml4_base = 0x100000; // Known PML4 location
+  uintptr_t pml4_entry_addr = pml4_base + (pml4_idx * 8);
+  uint64_t pml4_entry = *(uint64_t *)pml4_entry_addr;
 
-  printks("  PML4[");
+  printk("  PML4[");
   printk_dec(pml4_idx);
-  printks("] @ 0x");
+  printk("] @ 0x");
   printk_hex64(pml4_entry_addr);
-  printks(" = 0x");
+  printk(" = 0x");
   printk_hex64(pml4_entry);
-  printks("\n");
+  printk("\n");
 
   if (!(pml4_entry & 1)) {
-    printks("  -> Not present\n");
+    printk("  -> Not present\n");
     return;
   }
 
   // Continue with PDPT, PD, PT if present...
-  printks("  (Full page table walk not implemented yet)\n");
+  printk("  (Full page table walk not implemented yet)\n");
 }
 
 // Dump x86 page tables
 void platform_mem_dump_pagetables(void) {
-  printks("\n[MEM] x86 Page Table Dump:\n");
+  printk("\n[MEM] x86 Page Table Dump:\n");
 
   // PML4 at 0x100000
-  printks("  PML4 (0x100000):\n");
+  printk("  PML4 (0x100000):\n");
   kmem_dump((const void *)0x100000, 64);
 
   // PDPT at 0x101000
-  printks("\n  PDPT (0x101000):\n");
+  printk("\n  PDPT (0x101000):\n");
   kmem_dump((const void *)0x101000, 64);
 
   // PD0 at 0x102000 (first few entries)
-  printks("\n  PD0 (0x102000) - First 4 entries:\n");
+  printk("\n  PD0 (0x102000) - First 4 entries:\n");
   kmem_dump((const void *)0x102000, 32);
 
   // PD3 at 0x103000 (MMIO region, first few entries)
-  printks("\n  PD3 (0x103000) - First 4 entries:\n");
+  printk("\n  PD3 (0x103000) - First 4 entries:\n");
   kmem_dump((const void *)0x103000, 32);
 
   // PT at 0x104000 (kernel region, first few entries)
-  printks("\n  PT (0x104000) - First 8 entries:\n");
+  printk("\n  PT (0x104000) - First 8 entries:\n");
   kmem_dump((const void *)0x104000, 64);
 }
 
 // Set memory guard (canary value)
-void platform_mem_set_guard(void *addr, u32 size) {
+void platform_mem_set_guard(void *addr, uint32_t size) {
   // For simplicity, write a pattern at the start and end
   if (size >= 8) {
-    *(u64 *)addr = 0xDEADBEEFCAFEBABEULL;
+    *(uint64_t *)addr = 0xDEADBEEFCAFEBABEULL;
     if (size >= 16) {
-      *(u64 *)((uptr)addr + size - 8) = 0xDEADBEEFCAFEBABEULL;
+      *(uint64_t *)((uintptr_t)addr + size - 8) = 0xDEADBEEFCAFEBABEULL;
     }
   }
 }
 
 // Check memory guard is intact
-bool platform_mem_check_guard(void *addr, u32 size) {
+bool platform_mem_check_guard(void *addr, uint32_t size) {
   bool ok = true;
 
   if (size >= 8) {
-    u64 val = *(u64 *)addr;
+    uint64_t val = *(uint64_t *)addr;
     if (val != 0xDEADBEEFCAFEBABEULL) {
-      printks("[MEM] GUARD FAILED at 0x");
-      printk_hex64((uptr)addr);
-      printks(": expected 0xDEADBEEFCAFEBABE, got 0x");
+      printk("[MEM] GUARD FAILED at 0x");
+      printk_hex64((uintptr_t)addr);
+      printk(": expected 0xDEADBEEFCAFEBABE, got 0x");
       printk_hex64(val);
-      printks("\n");
+      printk("\n");
       ok = false;
     }
 
     if (size >= 16) {
-      val = *(u64 *)((uptr)addr + size - 8);
+      val = *(uint64_t *)((uintptr_t)addr + size - 8);
       if (val != 0xDEADBEEFCAFEBABEULL) {
-        printks("[MEM] GUARD FAILED at 0x");
-        printk_hex64((uptr)addr + size - 8);
-        printks(": expected 0xDEADBEEFCAFEBABE, got 0x");
+        printk("[MEM] GUARD FAILED at 0x");
+        printk_hex64((uintptr_t)addr + size - 8);
+        printk(": expected 0xDEADBEEFCAFEBABE, got 0x");
         printk_hex64(val);
-        printks("\n");
+        printk("\n");
         ok = false;
       }
     }

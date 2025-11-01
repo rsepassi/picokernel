@@ -198,6 +198,8 @@ gdt_descriptor:
 // Stack space (64 KiB) - placed at end of BSS
 .section .bss
 .align 16
+.global stack_bottom
+.global stack_top
 stack_bottom:
     .skip 65536
 stack_top:

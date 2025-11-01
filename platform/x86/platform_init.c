@@ -41,7 +41,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   printk("Initializing x32 platform...\n");
 
   // Print memory map early during initialization
-  mem_print_map();
+  platform_mem_print_layout();
 
   // Initialize ACPI (must come before interrupt init, which uses ACPI for
   // IOAPIC)
@@ -68,10 +68,10 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   // Validate critical memory regions after device initialization
   printk("\n");
-  mem_validate_critical_regions();
+  platform_mem_validate_critical();
 
   // Dump page tables for debugging
-  mem_dump_page_tables();
+  platform_mem_dump_pagetables();
 
   printk("\nPlatform initialization complete.\n\n");
 }

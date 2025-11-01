@@ -12,6 +12,7 @@ PLATFORM_LDFLAGS =
 
 # Platform-specific sources
 PLATFORM_C_SRCS = uart.c platform_init.c interrupt.c timer.c runtime.c platform_debug.c \
-                  platform_mem_debug.c platform_checksums.c \
-                  ../shared/devicetree.c ../shared/mmio.c ../shared/pci_ecam.c ../shared/platform_virtio.c
+                  platform_mem_debug.c \
+                  ../shared/devicetree.c ../shared/mmio.c ../shared/pci_ecam.c ../shared/platform_virtio.c \
+                  ../shared/platform_checksums.c
 PLATFORM_S_SRCS = boot.S vectors.S

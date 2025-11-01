@@ -27,10 +27,4 @@ uint32_t platform_get_expected_rodata_checksum(void) {
   return platform_expected_checksums.rodata_crc32;
 }
 
-#else
-
-// Stubs for non-debug builds
-uint32_t platform_get_expected_text_checksum(void) { return 0; }
-uint32_t platform_get_expected_rodata_checksum(void) { return 0; }
-
-#endif
+#endif // KDEBUG
