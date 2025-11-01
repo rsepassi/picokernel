@@ -4,6 +4,7 @@
 #include "kernel.h"
 #include "printk.h"
 #include "user.h"
+#include "mem_debug.h"
 
 static kernel_t g_kernel;
 static kuser_t g_user;
@@ -15,10 +16,16 @@ kernel_t *kget_kernel__logonly__(void) { return &g_kernel; }
 void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
 
+  // Early boot validation (validates boot.S results)
+  KDEBUG_VALIDATE(platform_mem_validate_critical());
+
   // Initialize
   kernel_t *k = &g_kernel;
   kmain_init(k, fdt);
   KLOG("kmain_init ok");
+
+  // Post-init validation (validates device initialization)
+  KDEBUG_VALIDATE(platform_mem_validate_post_init(&k->platform, fdt));
 
   // User kickoff
   kuser_t *user = &g_user;

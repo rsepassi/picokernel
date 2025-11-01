@@ -98,11 +98,11 @@
 #ifdef KDEBUG
 #define KDEBUG_ASSERT(cond, msg) KASSERT(cond, msg)
 #define KDEBUG_LOG(msg) KLOG(msg)
-#define KDEBUG_VALIDATE(func) func()
+#define KDEBUG_VALIDATE(expr) expr
 #else
 #define KDEBUG_ASSERT(cond, msg) ((void)0)
 #define KDEBUG_LOG(msg) ((void)0)
-#define KDEBUG_VALIDATE(func) ((void)0)
+#define KDEBUG_VALIDATE(expr) ((void)0)
 #endif
 
 void *memcpy(void *dest, const void *src, size_t n);

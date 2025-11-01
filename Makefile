@@ -87,6 +87,8 @@ C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
             $(KERNEL_DIR)/kbase.c \
             $(KERNEL_DIR)/irq_ring.c \
             $(KERNEL_DIR)/timer_heap.c \
+            $(KERNEL_DIR)/mem_debug.c \
+            $(KERNEL_DIR)/crc32.c \
             $(DRIVER_DIR)/virtio/virtio.c \
             $(DRIVER_DIR)/virtio/virtio_mmio.c \
             $(DRIVER_DIR)/virtio/virtio_pci.c \
@@ -152,6 +154,10 @@ $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
+ifeq ($(DEBUG),1)
+	@echo "Computing and patching section checksums..."
+	@./script/compute_checksums.py $@
+endif
 
 run: $(KERNEL) $(DRIVE)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \

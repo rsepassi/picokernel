@@ -28,14 +28,18 @@ End of kernel (_end):     Varies by build (~240 KiB kernel size)
 ### Memory-Mapped I/O
 
 ```
-0x08000000 - 0x08000FFF:  VirtIO MMIO base (device 0)
-                          - Devices at 0x200 byte intervals:
-                          - 0x08000000, 0x08000200, 0x08000400...
+0x08000000 - 0x08020000:  GIC (Generic Interrupt Controller)
+                          - GIC Distributor (GICD) at 0x08000000
+                          - GIC CPU Interface (GICC) at 0x08010000
 
 0x09000000 - 0x09001FFF:  PL011 UART (8 KiB region)
                           - Debug output via platform_putc()
 
-0x08020000:               PCI ECAM base (if USE_PCI=1)
+0x0A000000 - 0x0A000FFF:  VirtIO MMIO base (device 0)
+                          - Devices at 0x200 byte intervals:
+                          - 0x0A000000, 0x0A000200, 0x0A000400...
+
+0x4010000000:             PCI ECAM base (if USE_PCI=1)
                           - Extended Configuration Access Mechanism
 ```
 

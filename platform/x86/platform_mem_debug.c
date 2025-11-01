@@ -106,6 +106,15 @@ void platform_mem_validate_critical(void) {
     printks(" ===\n\n");
 }
 
+// Validate post-initialization state
+void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
+    (void)platform;
+    (void)fdt;
+    printks("\n[MEM] === x86 Post-Init Validation ===\n");
+    printks("[MEM] x86 post-init validation not implemented yet\n");
+    printks("[MEM] === Validation SKIPPED ===\n\n");
+}
+
 // Print x86 memory map
 void platform_mem_print_layout(void) {
     printks("\n[MEM] === x86 Memory Map ===\n");

@@ -1,81 +1,83 @@
 #include "mem_debug.h"
 #include "kbase.h"
+#include "printk.h"
+#include "crc32.h"
 
 #ifdef KDEBUG
 
 // Hex dump with ASCII visualization
-void kmem_dump(const void* addr, u32 len) {
-    const u8* p = (const u8*)addr;
+void kmem_dump(const void* addr, uint32_t len) {
+    const uint8_t* p = (const uint8_t*)addr;
 
-    for (u32 i = 0; i < len; i += 16) {
+    for (uint32_t i = 0; i < len; i += 16) {
         // Address
-        printks("  0x");
-        printk_hex64((uptr)(p + i));
-        printks(": ");
+        printk("  0x");
+        printk_hex64((uintptr_t)(p + i));
+        printk(": ");
 
         // Hex bytes
-        for (u32 j = 0; j < 16; j++) {
+        for (uint32_t j = 0; j < 16; j++) {
             if (i + j < len) {
                 printk_hex8(p[i + j]);
-                printks(" ");
+                printk(" ");
             } else {
-                printks("   ");
+                printk("   ");
             }
         }
 
-        printks(" ");
+        printk(" ");
 
         // ASCII representation
-        for (u32 j = 0; j < 16 && i + j < len; j++) {
-            u8 c = p[i + j];
+        for (uint32_t j = 0; j < 16 && i + j < len; j++) {
+            uint8_t c = p[i + j];
             if (c >= 32 && c <= 126) {
-                printk_char(c);
+                printk_putc(c);
             } else {
-                printks(".");
+                printk(".");
             }
         }
 
-        printks("\n");
+        printk("\n");
     }
 }
 
 // Dump memory range with label
 void kmem_dump_range(const char* label, const void* start, const void* end) {
-    uptr s = (uptr)start;
-    uptr e = (uptr)end;
+    uintptr_t s = (uintptr_t)start;
+    uintptr_t e = (uintptr_t)end;
 
     if (e < s) {
-        printks("Invalid range: end < start\n");
+        printk("Invalid range: end < start\n");
         return;
     }
 
-    u32 len = (u32)(e - s);
+    uint32_t len = (uint32_t)(e - s);
 
-    printks(label);
-    printks(" (0x");
+    printk(label);
+    printk(" (0x");
     printk_hex64(s);
-    printks(" - 0x");
+    printk(" - 0x");
     printk_hex64(e);
-    printks(", ");
+    printk(", ");
     printk_dec(len);
-    printks(" bytes):\n");
+    printk(" bytes):\n");
 
     kmem_dump(start, len);
 }
 
 // Validate memory contains expected pattern
-bool kmem_validate_pattern(const void* addr, u32 len, u8 pattern) {
-    const u8* p = (const u8*)addr;
+bool kmem_validate_pattern(const void* addr, uint32_t len, uint8_t pattern) {
+    const uint8_t* p = (const uint8_t*)addr;
 
-    for (u32 i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len; i++) {
         if (p[i] != pattern) {
-            printks("Pattern mismatch at offset ");
+            printk("Pattern mismatch at offset ");
             printk_dec(i);
-            printks(": expected 0x");
+            printk(": expected 0x");
             printk_hex8(pattern);
-            printks(", got 0x");
+            printk(", got 0x");
             printk_hex8(p[i]);
-            printks("\n");
+            printk("\n");
             return false;
         }
     }
@@ -84,9 +86,9 @@ bool kmem_validate_pattern(const void* addr, u32 len, u8 pattern) {
 }
 
 // Check if two memory ranges overlap
-bool kmem_ranges_overlap(uptr a_start, u32 a_size, uptr b_start, u32 b_size) {
-    uptr a_end = a_start + a_size;
-    uptr b_end = b_start + b_size;
+bool kmem_ranges_overlap(uintptr_t a_start, uint32_t a_size, uintptr_t b_start, uint32_t b_size) {
+    uintptr_t a_end = a_start + a_size;
+    uintptr_t b_end = b_start + b_size;
 
     // Ranges don't overlap if one ends before the other starts
     if (a_end <= b_start || b_end <= a_start) {
@@ -94,6 +96,24 @@ bool kmem_ranges_overlap(uptr a_start, u32 a_size, uptr b_start, u32 b_size) {
     }
 
     return true;
+}
+
+// Compute CRC32 checksum of data (wrapper around crc32_compute)
+uint32_t kmem_crc32(const void* data, uint32_t len) {
+    return crc32_compute(data, len);
+}
+
+// Compute checksum of a memory section (convenience wrapper)
+uint32_t kmem_checksum_section(const void* start, const void* end) {
+    uintptr_t s = (uintptr_t)start;
+    uintptr_t e = (uintptr_t)end;
+
+    if (e <= s) {
+        return 0;
+    }
+
+    uint32_t len = (uint32_t)(e - s);
+    return kmem_crc32(start, len);
 }
 
 #endif // KDEBUG
