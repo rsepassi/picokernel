@@ -1,8 +1,8 @@
-// x32 VirtIO Platform Integration
+// x86 VirtIO Platform Integration
 // Discovers and initializes VirtIO devices using generic transport layer
 
-#include "acpi.h"
 #include "interrupt.h"
+#include "kbase.h"
 #include "kernel.h"
 #include "pci.h"
 #include "platform_impl.h"
@@ -106,15 +106,24 @@ static void virtio_irq_handler(void *context) {
 void pci_scan_devices(platform_t *platform);
 void mmio_scan_devices(platform_t *platform);
 
-// Helper function to allocate PCI BARs for a device
-// This handles both 32-bit and 64-bit BARs, skipping I/O BARs
+// Helper to validate BAR address is in valid MMIO range
+static bool is_valid_bar_address(uint64_t addr) {
+  // Valid x64 MMIO ranges (avoid RAM and reserved areas):
+  // 0xC0000000-0xFEBFFFFF: PCI MMIO window (typical for QEMU)
+  // Reject addresses below 0xC0000000 (likely RAM)
+  // Reject addresses in high MMIO reserved ranges (0xFEC00000+: IOAPIC/LAPIC)
+  if (addr >= 0xC0000000ULL && addr < 0xFEC00000ULL) {
+    return true; // Valid PCI MMIO range
+  }
+  return false;
+}
+
+// Helper function to configure PCI BARs for a device
+// Prefers existing QEMU-assigned BARs, falls back to manual allocation
 static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                               uint8_t func, const char *device_name) {
-  printk("[");
-  printk(device_name);
-  printk("] Allocating BARs starting at 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  bool any_allocated = false;
+  bool any_existing = false;
 
   for (int i = 0; i < 6; i++) {
     uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
@@ -130,9 +139,37 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
       continue;
     }
 
-    // Write all 1s to get BAR size
+    // Check if 64-bit BAR
+    uint32_t bar_type = (bar_val >> 1) & 0x3;
+    bool is_64bit = (bar_type == 0x2);
+
+    // Read existing BAR address (QEMU may have pre-assigned it)
+    uint64_t existing_addr;
+    if (is_64bit && i < 5) {
+      uint32_t bar_high =
+          platform_pci_config_read32(platform, bus, slot, func, bar_offset + 4);
+      existing_addr = ((uint64_t)bar_high << 32) | (bar_val & ~0xFULL);
+    } else {
+      existing_addr = bar_val & ~0xFULL;
+    }
+
+    // If BAR is already assigned and valid, use it (trust QEMU/firmware)
+    if (existing_addr != 0 && is_valid_bar_address(existing_addr)) {
+      any_existing = true;
+      if (is_64bit) {
+        i++; // Skip next BAR (high 32 bits)
+      }
+      continue; // Keep existing assignment
+    }
+
+    // BAR is unassigned or invalid - need to allocate manually
+    // Temporarily disable device to probe BAR size
+    uint16_t old_command =
+        platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
     platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
                                 0); // Disable device
+
+    // Write all 1s to get BAR size
     platform_pci_config_write32(platform, bus, slot, func, bar_offset,
                                 0xFFFFFFFF);
     uint32_t size_mask =
@@ -141,39 +178,69 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     uint32_t size = ~size_mask + 1;
 
     if (size == 0) {
+      // Restore command register and continue
+      platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                  old_command);
       continue; // BAR not implemented
     }
 
-    // Check if 64-bit BAR
-    uint32_t bar_type = (bar_val >> 1) & 0x3;
-    if (bar_type == 0x2) {
-      // 64-bit BAR - assign address
+    // Align address to BAR size (BARs must be naturally aligned)
+    uint64_t aligned_addr = KALIGN(platform->pci_next_bar_addr, (uint64_t)size);
+
+    // Validate allocated address is in valid range
+    if (!is_valid_bar_address(aligned_addr)) {
+      printk("[");
+      printk(device_name);
+      printk("] ERROR: Allocated BAR address 0x");
+      printk_hex64(aligned_addr);
+      printk(" is outside valid MMIO range\n");
+      platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                  old_command);
+      continue;
+    }
+
+    if (is_64bit) {
+      // 64-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
+                                  (uint32_t)aligned_addr);
       platform_pci_config_write32(
           platform, bus, slot, func, bar_offset + 4,
-          (uint32_t)(platform->pci_next_bar_addr >> 32));
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL; // Align to 4KB
+          (uint32_t)(aligned_addr >> 32));
+      platform->pci_next_bar_addr = aligned_addr + size;
       i++; // Skip next BAR (high 32 bits)
     } else {
-      // 32-bit BAR
+      // 32-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
+                                  (uint32_t)aligned_addr);
+      platform->pci_next_bar_addr = aligned_addr + size;
     }
+
+    any_allocated = true;
+
+    // Restore command register
+    platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
+                                old_command);
   }
 
-  printk("[");
-  printk(device_name);
-  printk("] BARs allocated, next address: 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  // Log BAR configuration results
+  if (any_existing) {
+    printk("[");
+    printk(device_name);
+    printk("] Using QEMU-assigned BARs\n");
+  }
+  if (any_allocated) {
+    printk("[");
+    printk(device_name);
+    printk("] Allocated BARs, next address: 0x");
+    printk_hex64(platform->pci_next_bar_addr);
+    printk("\n");
+  }
 }
 
 // Setup VirtIO-RNG device via PCI
 static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses (bare-metal needs to do this manually)
+  // Assign BAR addresses (bare-metal x64 needs to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "RNG");
 
   // Re-enable device
@@ -230,7 +297,7 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Initialize MMIO transport
   if (virtio_mmio_init(&platform->virtio_mmio_transport_rng,
-                       (void *)(uintptr_t)mmio_base) < 0) {
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -267,7 +334,7 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
 // Setup VirtIO-BLK device via PCI
 static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses
+  // Assign BAR addresses (bare-metal x64 needs to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "BLK");
 
   // Re-enable device
@@ -319,6 +386,13 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->block_sector_size = platform->virtio_blk.sector_size;
   platform->block_capacity = platform->virtio_blk.capacity;
 
+  // DEBUG: Print values before logging
+  printk("[PLATFORM DEBUG] About to print: sector_size=");
+  printk_dec(platform->block_sector_size);
+  printk(", capacity=");
+  printk_dec(platform->block_capacity);
+  printk("\n");
+
   // Log device info
   printk("  sector_size=");
   printk_dec(platform->block_sector_size);
@@ -338,7 +412,7 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Initialize MMIO transport
   if (virtio_mmio_init(&platform->virtio_mmio_transport_blk,
-                       (void *)(uintptr_t)mmio_base) < 0) {
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -389,7 +463,7 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
 // Setup VirtIO-NET device via PCI
 static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses
+  // Assign BAR addresses (bare-metal x64 needs to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "NET");
 
   // Re-enable device
@@ -450,8 +524,13 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net_ptr = &platform->virtio_net;
   platform->has_net_device = true;
 
-  printk("[NET] Copying MAC address...\n");
+  printk("[NET] Copying MAC address (from virtio_net struct at ");
+  printk_hex32((uint32_t)(uint64_t)&platform->virtio_net.mac_address[0]);
+  printk(")...\n");
   for (int i = 0; i < 6; i++) {
+    printk("[NET] Copying MAC byte ");
+    printk_dec(i);
+    printk("...\n");
     platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
   }
   printk("[NET] MAC copy complete\n");
@@ -479,7 +558,7 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
 
   // Initialize MMIO transport
   if (virtio_mmio_init(&platform->virtio_mmio_transport_net,
-                       (void *)(uintptr_t)mmio_base) < 0) {
+                       (void *)mmio_base) < 0) {
     return;
   }
 
@@ -807,11 +886,12 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 void mmio_scan_devices(platform_t *platform) {
 // QEMU microvm VirtIO MMIO region layout
 // QEMU places devices starting at 0xFEB02A00 with 0x200 byte spacing
+// IRQs are assigned in device creation order, but MMIO addresses are reversed
 #define VIRTIO_MMIO_BASE 0xFEB00000ULL
 #define VIRTIO_MMIO_DEVICE_START 0x2A00 // First device offset
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
 #define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 5
+#define VIRTIO_MMIO_IRQ_BASE 5       // IRQ base
 #define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   printk("Probing for VirtIO MMIO devices...\n");
@@ -827,7 +907,7 @@ void mmio_scan_devices(platform_t *platform) {
                     (i * VIRTIO_MMIO_DEVICE_STRIDE);
 
     // Read magic value
-    volatile uint32_t *magic_ptr = (volatile uint32_t *)(uintptr_t)base;
+    volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
     uint32_t magic = *magic_ptr;
 
     if (magic != VIRTIO_MMIO_MAGIC) {
@@ -835,8 +915,7 @@ void mmio_scan_devices(platform_t *platform) {
     }
 
     // Read device ID at offset 0x08
-    volatile uint32_t *device_id_ptr =
-        (volatile uint32_t *)(uintptr_t)(base + 0x08);
+    volatile uint32_t *device_id_ptr = (volatile uint32_t *)(base + 0x08);
     uint32_t device_id = *device_id_ptr;
 
     // Device ID 0 means empty slot
@@ -856,25 +935,28 @@ void mmio_scan_devices(platform_t *platform) {
     devices_found++;
 
     // Initialize RNG device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
         platform->virtio_rng_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       rng_initialized = 1;
     }
 
     // Initialize BLK device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
         platform->virtio_blk_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       blk_initialized = 1;
     }
 
     // Initialize NET device if found and not already initialized
+    // IRQ assigned based on MMIO slot position
     if (device_id == VIRTIO_ID_NET && !net_initialized &&
         platform->virtio_net_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
+      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i; // Slot-based IRQ
       virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
       net_initialized = 1;
     }

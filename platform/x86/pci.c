@@ -1,4 +1,4 @@
-// x64 PCI Configuration Space Access Implementation
+// x86 PCI Configuration Space Access Implementation
 // Uses I/O ports 0xCF8 (address) and 0xCFC (data)
 
 #include "pci.h"

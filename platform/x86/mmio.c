@@ -1,4 +1,4 @@
-// x32 MMIO Register Access with Memory Barriers
+// x86 MMIO Register Access with Memory Barriers
 // Implements platform MMIO functions with proper synchronization
 
 #include "platform.h"

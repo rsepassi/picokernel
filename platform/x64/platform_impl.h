@@ -22,7 +22,7 @@ typedef struct kernel kernel_t;
 
 // IOAPIC state structure (defined here to avoid circular dependency with
 // ioapic.h)
-typedef struct ioapic {
+typedef struct ioapic_t {
   uint32_t base_addr;  // MMIO base address
   uint32_t gsi_base;   // Global System Interrupt base
   uint8_t id;          // IOAPIC ID
@@ -73,8 +73,7 @@ typedef struct platform_t {
   uint64_t timer_start;
   uint64_t lapic_base;
   uint32_t ticks_per_ms;
-  uint64_t tsc_start;
-  uint64_t tsc_per_ms;
+  uint64_t tsc_freq; // TSC frequency in Hz (matches x32)
 
   // VirtIO device structures
   virtio_pci_transport_t virtio_pci_transport_rng;   // PCI transport for RNG
