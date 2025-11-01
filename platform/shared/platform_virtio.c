@@ -1,5 +1,7 @@
-// RV32 VirtIO Platform Integration
+// Shared VirtIO Platform Integration
 // Discovers and initializes VirtIO devices using generic transport layer
+// Platform must provide: platform_pci_irq_swizzle(), platform_mmio_irq_number(),
+// and VIRTIO_MMIO_* defines
 
 #include "interrupt.h"
 #include "kernel.h"
@@ -98,7 +100,7 @@ static void virtio_irq_handler(void *context) {
     kirq_ring_enqueue(&platform->irq_ring, context);
   }
 
-  // PLIC EOI sent by irq_dispatch()
+  // Platform interrupt controller EOI sent by irq_dispatch()
 }
 
 // Forward declarations
@@ -112,7 +114,7 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
   printk("[");
   printk(device_name);
   printk("] Allocating BARs starting at 0x");
-  printk_hex32(platform->pci_next_bar_addr);
+  printk_hex64(platform->pci_next_bar_addr);
   printk("\n");
 
   for (int i = 0; i < 6; i++) {
@@ -146,32 +148,34 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     // Check if 64-bit BAR
     uint32_t bar_type = (bar_val >> 1) & 0x3;
     if (bar_type == 0x2) {
-      // 64-bit BAR - assign address (only low 32 bits on RV32)
+      // 64-bit BAR - assign address
+      // Cast to uint64_t to support both 32-bit and 64-bit platforms
+      uint64_t bar_addr = platform->pci_next_bar_addr;
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  platform->pci_next_bar_addr);
+                                  (uint32_t)bar_addr);
       platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
-                                  0); // High 32 bits = 0
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFF; // Align to 4KB
-      i++;                                                    // Skip next BAR
+                                  (uint32_t)(bar_addr >> 32));
+      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL; // Align to 4KB
+      i++; // Skip next BAR (high 32 bits)
     } else {
       // 32-bit BAR
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  platform->pci_next_bar_addr);
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFF;
+                                  (uint32_t)platform->pci_next_bar_addr);
+      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
     }
   }
 
   printk("[");
   printk(device_name);
   printk("] BARs allocated, next address: 0x");
-  printk_hex32(platform->pci_next_bar_addr);
+  printk_hex64(platform->pci_next_bar_addr);
   printk("\n");
 }
 
 // Setup VirtIO-RNG device via PCI
 static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses (bare-metal RV32 needs to do this manually)
+  // Assign BAR addresses (bare-metal platforms need to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "RNG");
 
   // Re-enable device
@@ -200,14 +204,10 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
   platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
-  // Setup interrupt
+  // Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
-
-  // RV32 QEMU virt: PCI interrupts use standard INTx swizzling
-  // Base IRQ = 1, rotated by (device + pin - 1) % 4
-  uint32_t base_irq = 32; // First PCI interrupt
-  uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
+  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_rng);
@@ -218,8 +218,8 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
 }
 
 // Setup VirtIO-RNG device via MMIO
-static void virtio_rng_mmio_setup(platform_t *platform, uint32_t mmio_base,
-                                  uint32_t mmio_size, uint32_t irq_num) {
+static void virtio_rng_mmio_setup(platform_t *platform, uint64_t mmio_base,
+                                  uint64_t mmio_size, uint32_t irq_num) {
   (void)mmio_size; // Size not used in generic transport
 
   // Initialize MMIO transport
@@ -260,7 +260,7 @@ static void virtio_rng_mmio_setup(platform_t *platform, uint32_t mmio_base,
 // Setup VirtIO-BLK device via PCI
 static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses (bare-metal RV32 needs to do this manually)
+  // Assign BAR addresses (bare-metal platforms need to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "BLK");
 
   // Re-enable device
@@ -289,12 +289,10 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
   platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
 
-  // Setup interrupt
+  // Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
-
-  uint32_t base_irq = 32;
-  uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
+  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_blk);
@@ -319,8 +317,8 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
 }
 
 // Setup VirtIO-BLK device via MMIO
-static void virtio_blk_mmio_setup(platform_t *platform, uint32_t mmio_base,
-                                  uint32_t mmio_size, uint32_t irq_num) {
+static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
+                                  uint64_t mmio_size, uint32_t irq_num) {
   (void)mmio_size;
 
   // Initialize MMIO transport
@@ -375,7 +373,7 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint32_t mmio_base,
 // Setup VirtIO-NET device via PCI
 static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                              uint8_t func) {
-  // Assign BAR addresses (bare-metal RV32 needs to do this manually)
+  // Assign BAR addresses (bare-metal platforms need to do this manually)
   allocate_pci_bars(platform, bus, slot, func, "NET");
 
   // Re-enable device
@@ -385,19 +383,25 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
                               command);
 
+  printk("[NET] Initializing PCI transport...\n");
   // Initialize PCI transport for NET
   if (virtio_pci_init(&platform->virtio_pci_transport_net, platform, bus, slot,
                       func) < 0) {
+    printk("[NET] PCI transport init failed\n");
     return;
   }
 
+  printk("[NET] Initializing NET device...\n");
   // Initialize NET device
   if (virtio_net_init_pci(
           &platform->virtio_net, &platform->virtio_pci_transport_net,
           &platform->virtqueue_net_rx_memory,
           &platform->virtqueue_net_tx_memory, platform->kernel) < 0) {
+    printk("[NET] NET device init failed\n");
     return;
   }
+
+  printk("[NET] Device initialized successfully\n");
 
   // Initialize device base fields
   platform->virtio_net.base.device_type = KDEVICE_TYPE_VIRTIO_NET;
@@ -405,26 +409,32 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
   platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
 
-  // Setup interrupt
+  // Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
-
-  uint32_t base_irq = 32;
-  uint32_t irq_num = base_irq + ((slot + irq_pin - 1) % 4);
+  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
 
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_net);
   platform_irq_enable(platform, irq_num);
 
+  printk("[NET] Storing device info...\n");
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
   platform->has_net_device = true;
 
-  // Copy MAC address
+  printk("[NET] Copying MAC address (from virtio_net struct at ");
+  printk_hex32((uint32_t)(uint64_t)&platform->virtio_net.mac_address[0]);
+  printk(")...\n");
   for (int i = 0; i < 6; i++) {
+    printk("[NET] Copying MAC byte ");
+    printk_dec(i);
+    printk("...\n");
     platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
   }
+  printk("[NET] MAC copy complete\n");
 
+  printk("[NET] Logging MAC address...\n");
   // Log device info
   printk("  mac=");
   for (int i = 0; i < 6; i++) {
@@ -437,11 +447,12 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     printk_putc(lo < 10 ? '0' + lo : 'a' + (lo - 10));
   }
   printk("\n");
+  printk("[NET] Setup complete\n");
 }
 
 // Setup VirtIO-NET device via MMIO
-static void virtio_net_mmio_setup(platform_t *platform, uint32_t mmio_base,
-                                  uint32_t mmio_size, uint32_t irq_num) {
+static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
+                                  uint64_t mmio_size, uint32_t irq_num) {
   (void)mmio_size;
 
   // Initialize MMIO transport
@@ -479,11 +490,7 @@ static void virtio_net_mmio_setup(platform_t *platform, uint32_t mmio_base,
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
   platform->has_net_device = true;
-
-  // Copy MAC address
-  for (int i = 0; i < 6; i++) {
-    platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
-  }
+  memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
   // Log device info
   printk("  mac=");
@@ -773,18 +780,9 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 }
 
 // Probe for VirtIO MMIO devices at known addresses
-// QEMU RISC-V virt machine uses device tree for discovery
+// Platform must define VIRTIO_MMIO_* constants
 void mmio_scan_devices(platform_t *platform) {
   printk("Probing for VirtIO MMIO devices...\n");
-
-// QEMU RISC-V virt VirtIO MMIO region layout
-// QEMU places devices starting at 0x10001000 with variable spacing
-// In practice, device tree should be used for discovery
-#define VIRTIO_MMIO_BASE 0x10001000UL
-#define VIRTIO_MMIO_DEVICE_STRIDE 0x1000 // 4KB per device
-#define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 1       // IRQs start at 1 for VirtIO MMIO
-#define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   int devices_found = 0;
   int rng_initialized = 0;
@@ -793,7 +791,7 @@ void mmio_scan_devices(platform_t *platform) {
 
   // Scan for devices
   for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
-    uint32_t base = VIRTIO_MMIO_BASE + (i * VIRTIO_MMIO_DEVICE_STRIDE);
+    uint64_t base = VIRTIO_MMIO_BASE + (i * VIRTIO_MMIO_DEVICE_STRIDE);
 
     // Read magic value
     volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
@@ -815,7 +813,7 @@ void mmio_scan_devices(platform_t *platform) {
     printk("Found ");
     printk(virtio_mmio_device_name(device_id));
     printk(" at MMIO 0x");
-    printk_hex32(base);
+    printk_hex64(base);
     printk(" (device ID ");
     printk_dec(device_id);
     printk(")");
@@ -826,24 +824,24 @@ void mmio_scan_devices(platform_t *platform) {
     // Initialize RNG device if found and not already initialized
     if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
         platform->virtio_rng_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
-      virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
+      uint32_t irq_num = platform_mmio_irq_number(platform, i);
+      virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
       rng_initialized = 1;
     }
 
     // Initialize BLK device if found and not already initialized
     if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
         platform->virtio_blk_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
-      virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
+      uint32_t irq_num = platform_mmio_irq_number(platform, i);
+      virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
       blk_initialized = 1;
     }
 
     // Initialize NET device if found and not already initialized
     if (device_id == VIRTIO_ID_NET && !net_initialized &&
         platform->virtio_net_ptr == NULL) {
-      uint32_t irq = VIRTIO_MMIO_IRQ_BASE + i;
-      virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq);
+      uint32_t irq_num = platform_mmio_irq_number(platform, i);
+      virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
       net_initialized = 1;
     }
   }

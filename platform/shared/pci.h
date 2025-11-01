@@ -1,5 +1,5 @@
-// ARM64 PCI Configuration Space Access
-// PCI bus enumeration and config space access via ECAM
+// Shared PCI Configuration Space Definitions
+// Common PCI register offsets and VirtIO device IDs
 
 #pragma once
 
@@ -45,5 +45,3 @@
 // PCI BAR types
 #define PCI_BAR_TYPE_MMIO 0
 #define PCI_BAR_TYPE_IO 1
-
-// ARM64 implements the PCI platform interface via ECAM (see platform.h)

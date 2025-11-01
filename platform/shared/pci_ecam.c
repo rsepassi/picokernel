@@ -1,18 +1,15 @@
-// ARM64 PCI Configuration Space Access Implementation
+// Shared PCI Configuration Space Access Implementation (ECAM)
 // Uses ECAM (Enhanced Configuration Access Mechanism) - memory-mapped PCI
+// Platform must define PLATFORM_PCI_ECAM_BASE
 
 #include "pci.h"
 #include <stdint.h>
-
-// ECAM base address for QEMU virt machine
-// This is the standard base address used by QEMU's ARM virt platform
-#define PCI_ECAM_BASE 0x4010000000ULL
 
 // Calculate ECAM address for PCI configuration space access
 // ECAM layout: [bus:8][device:5][function:3][offset:12]
 static inline volatile void *pci_ecam_address(uint8_t bus, uint8_t slot,
                                               uint8_t func, uint8_t offset) {
-  uint64_t addr = PCI_ECAM_BASE | ((uint64_t)bus << 20) |
+  uint64_t addr = PLATFORM_PCI_ECAM_BASE | ((uint64_t)bus << 20) |
                   ((uint64_t)slot << 15) | ((uint64_t)func << 12) |
                   (uint64_t)offset;
   return (volatile void *)addr;
@@ -93,7 +90,7 @@ uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
 
   // Check if I/O space BAR (bit 0 set)
   if (bar_low & 0x1) {
-    // I/O space - return 0 as we don't support I/O BARs on ARM64
+    // I/O space - return 0 as we don't support I/O BARs
     return 0;
   }
 

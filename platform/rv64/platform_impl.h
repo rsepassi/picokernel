@@ -105,3 +105,52 @@ typedef struct {
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor chain head index
 } knet_send_req_platform_t;
+
+// ============================================================================
+// Platform-specific hooks for shared platform code
+// ============================================================================
+
+// PCI ECAM base address for QEMU RISC-V virt machine
+#define PLATFORM_PCI_ECAM_BASE 0x30000000ULL
+
+// VirtIO MMIO configuration for QEMU RISC-V virt
+#define VIRTIO_MMIO_BASE 0x10001000ULL
+#define VIRTIO_MMIO_DEVICE_STRIDE 0x1000 // 4KB per device
+#define VIRTIO_MMIO_MAX_DEVICES 8
+#define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
+
+// Memory barrier for MMIO operations
+// Uses FENCE instruction for I/O and memory ordering
+static inline void platform_mmio_barrier(void) {
+  __asm__ volatile("fence iorw, iorw" ::: "memory");
+}
+
+// 64-bit MMIO read for RV64 (direct read with barrier)
+static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
+  uint64_t val = *addr;
+  platform_mmio_barrier();
+  return val;
+}
+
+// 64-bit MMIO write for RV64 (direct write with barrier)
+static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+  *addr = val;
+  platform_mmio_barrier();
+}
+
+// Calculate PCI IRQ number from slot and pin
+// RISC-V QEMU virt: PCI interrupts use standard INTx swizzling
+// Base IRQ = 32, rotated by (device + pin - 1) % 4
+static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
+                                                 uint8_t slot, uint8_t irq_pin) {
+  (void)platform;
+  uint32_t base_irq = 32; // First PCI interrupt in PLIC
+  return base_irq + ((slot + irq_pin - 1) % 4);
+}
+
+// Calculate MMIO IRQ number from device index
+// RISC-V QEMU virt: MMIO IRQs start at 1 in PLIC
+static inline uint32_t platform_mmio_irq_number(platform_t *platform, int index) {
+  (void)platform;
+  return 1 + index; // PLIC external interrupts start at 1
+}

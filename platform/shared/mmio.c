@@ -1,42 +1,28 @@
-// ARM64 MMIO Register Access with Memory Barriers
+// Shared MMIO Register Access with Memory Barriers
 // Implements platform MMIO functions with proper synchronization
+// Platform must provide platform_mmio_barrier() inline function
 
 #include "platform.h"
 #include <stdint.h>
-
-// Memory barrier for MMIO operations
-// Uses DSB SY (Data Synchronization Barrier, full System) to ensure:
-// - MMIO operations complete before proceeding
-// - No speculative reads/writes to device registers
-// - Proper ordering on ARM's weakly-ordered memory model
-static inline void mmio_barrier(void) {
-  __asm__ volatile("dsb sy" ::: "memory");
-}
 
 // MMIO read functions with barriers
 // Barrier AFTER read ensures read completes before next operation
 
 uint8_t platform_mmio_read8(volatile uint8_t *addr) {
   uint8_t val = *addr;
-  mmio_barrier();
+  platform_mmio_barrier();
   return val;
 }
 
 uint16_t platform_mmio_read16(volatile uint16_t *addr) {
   uint16_t val = *addr;
-  mmio_barrier();
+  platform_mmio_barrier();
   return val;
 }
 
 uint32_t platform_mmio_read32(volatile uint32_t *addr) {
   uint32_t val = *addr;
-  mmio_barrier();
-  return val;
-}
-
-uint64_t platform_mmio_read64(volatile uint64_t *addr) {
-  uint64_t val = *addr;
-  mmio_barrier();
+  platform_mmio_barrier();
   return val;
 }
 
@@ -45,20 +31,19 @@ uint64_t platform_mmio_read64(volatile uint64_t *addr) {
 
 void platform_mmio_write8(volatile uint8_t *addr, uint8_t val) {
   *addr = val;
-  mmio_barrier();
+  platform_mmio_barrier();
 }
 
 void platform_mmio_write16(volatile uint16_t *addr, uint16_t val) {
   *addr = val;
-  mmio_barrier();
+  platform_mmio_barrier();
 }
 
 void platform_mmio_write32(volatile uint32_t *addr, uint32_t val) {
   *addr = val;
-  mmio_barrier();
+  platform_mmio_barrier();
 }
 
-void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
-  *addr = val;
-  mmio_barrier();
-}
+// Note: platform_mmio_read/write64() is implemented as inline in
+// platform_impl.h to allow platforms to handle 64-bit operations
+// appropriately (e.g., 32-bit platforms may split into two 32-bit writes)

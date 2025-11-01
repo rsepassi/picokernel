@@ -104,3 +104,61 @@ typedef struct {
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor chain head index
 } knet_send_req_platform_t;
+
+// ============================================================================
+// Platform-specific hooks for shared platform code
+// ============================================================================
+
+// PCI ECAM base address for QEMU virt machine with highmem=off
+// When highmem=off, ECAM is placed within 32-bit addressable space
+#define PLATFORM_PCI_ECAM_BASE 0x3f000000UL
+
+// VirtIO MMIO configuration for QEMU ARM virt
+#define VIRTIO_MMIO_BASE 0x0a000000ULL
+#define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
+#define VIRTIO_MMIO_MAX_DEVICES 32
+#define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
+
+// Memory barrier for MMIO operations
+// Uses DSB SY (Data Synchronization Barrier, full System)
+static inline void platform_mmio_barrier(void) {
+  __asm__ volatile("dsb sy" ::: "memory");
+}
+
+// 64-bit MMIO read for ARM32 (direct read with barrier)
+static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
+  uint64_t val = *addr;
+  platform_mmio_barrier();
+  return val;
+}
+
+// 64-bit MMIO write for ARM32 (split into two 32-bit writes with double barrier)
+static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+  // Write as two 32-bit stores (low first, then high) for compatibility
+  // This ensures proper ordering on 32-bit architectures
+  volatile uint32_t *addr32 = (volatile uint32_t *)addr;
+  addr32[0] = (uint32_t)(val & 0xFFFFFFFF);
+  platform_mmio_barrier();
+  addr32[1] = (uint32_t)(val >> 32);
+  platform_mmio_barrier();
+}
+
+// Calculate PCI IRQ number from slot and pin
+// ARM32 QEMU virt: PCI interrupts use standard INTx swizzling
+// Base SPI = 3, rotated by (device + pin - 1) % 4, then offset by 32 for GIC
+static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
+                                                 uint8_t slot, uint8_t irq_pin) {
+  (void)platform;
+  uint32_t base_spi = 3; // First PCI interrupt SPI
+  uint32_t spi_num = base_spi + ((slot + irq_pin - 1) % 4);
+  return 32 + spi_num; // GIC IRQ = 32 + SPI
+}
+
+// Calculate MMIO IRQ number from device index
+// ARM32 QEMU virt: MMIO IRQs are SPIs starting at offset 16
+static inline uint32_t platform_mmio_irq_number(platform_t *platform,
+                                                 int index) {
+  (void)platform;
+  uint32_t spi_num = 16 + index; // MMIO IRQ base (SPI 16)
+  return 32 + spi_num;           // GIC IRQ = 32 + SPI
+}
