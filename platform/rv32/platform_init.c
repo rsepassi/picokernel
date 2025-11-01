@@ -81,7 +81,7 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   }
 
   // Disable interrupts to check condition atomically
-  platform_interrupt_disable(platform);
+  __asm__ volatile("csrci sstatus, 0x2" ::: "memory");
 
   // Check if an interrupt has already fired (ring buffer has pending work)
   if (!kirq_ring_is_empty(&platform->irq_ring)) {
@@ -100,8 +100,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   }
 
   // Atomically enable interrupts and wait
-  platform_interrupt_enable(platform);
-  __asm__ volatile("wfi");
+  __asm__ volatile("wfi" ::: "memory");
+  __asm__ volatile("csrsi sstatus, 0x2" ::: "memory");
 
   // Cancel timer if it was set
   if (timeout_ms != UINT64_MAX) {

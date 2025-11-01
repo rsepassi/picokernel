@@ -1,5 +1,5 @@
-// RISC-V Interrupt Handling
-// Setup trap vector and interrupt control
+// RISC-V S-Mode Interrupt Handling
+// Setup trap vector and interrupt control for Supervisor mode
 
 #include "interrupt.h"
 #include "platform.h"
