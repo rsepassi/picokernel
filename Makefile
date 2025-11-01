@@ -6,6 +6,7 @@ PLATFORM ?= arm64
 USE_PCI ?= 0
 DRIVE ?= 0
 PORT ?= 0
+DEBUG ?= 0
 
 # Generate random defaults (immediate expansion)
 DRIVE_DEFAULT := /tmp/drive-$(shell date +%s)-$(shell jot -r 1 1000 9999).img
@@ -17,6 +18,13 @@ ifeq ($(DRIVE),0)
 endif
 ifeq ($(PORT),0)
   PORT := $(PORT_DEFAULT)
+endif
+
+# Debug flags for QEMU (enable GDB stub)
+ifeq ($(DEBUG),1)
+  QEMU_DEBUG_FLAGS := -s -S
+else
+  QEMU_DEBUG_FLAGS :=
 endif
 
 # Build directory
@@ -153,6 +161,7 @@ run: $(KERNEL)
 		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
 		$(QEMU_DEVICE_ARGS) \
+		$(QEMU_DEBUG_FLAGS) \
 		-kernel $(KERNEL) \
 		-no-reboot
 
