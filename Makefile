@@ -8,15 +8,14 @@ DRIVE ?= 0
 PORT ?= 0
 DEBUG ?= 0
 
-# Generate random defaults (immediate expansion)
-DRIVE_DEFAULT := /tmp/drive-$(shell date +%s)-$(shell jot -r 1 1000 9999).img
-PORT_DEFAULT := $(shell jot -r 1 49152 65535)
 
 # Use defaults if not overridden
 ifeq ($(DRIVE),0)
+	DRIVE_DEFAULT := /tmp/drive-$(shell date +%s)-$(shell jot -r 1 1000 9999).img
   DRIVE := $(DRIVE_DEFAULT)
 endif
 ifeq ($(PORT),0)
+	PORT_DEFAULT := $(shell jot -r 1 49152 65535)
   PORT := $(PORT_DEFAULT)
 endif
 
@@ -40,8 +39,6 @@ BUILD_DIR = build/$(PLATFORM)
 
 # Platform configuration
 PLATFORM_DIR = platform/$(PLATFORM)
-PLATFORM_SHARED_DIR = platform/shared
-PLATFORM_X86_DIR = platform/x86
 include $(PLATFORM_DIR)/platform.mk
 
 # Compiler
@@ -74,12 +71,6 @@ LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
 PLATFORM_C_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_C_SRCS))
 PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 
-# Shared sources (selected by platform.mk via PLATFORM_SHARED_SRCS)
-PLATFORM_SHARED_SOURCES = $(addprefix $(PLATFORM_SHARED_DIR)/,$(PLATFORM_SHARED_SRCS))
-
-# x86 shared sources (selected by platform.mk via PLATFORM_X86_SRCS)
-PLATFORM_X86_SOURCES = $(addprefix $(PLATFORM_X86_DIR)/,$(PLATFORM_X86_SRCS))
-
 # Common C sources
 C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
             $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/user.c \
@@ -102,19 +93,18 @@ VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(VENDOR_DIR)/monocypher/monocypher-ed25519.c
 
 # Header files (all .o files depend on all headers)
-HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) $(PLATFORM_SHARED_DIR) $(PLATFORM_X86_DIR) -name '*.h' 2>/dev/null)
+HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
 
 # Object files in build directory (maintaining source tree structure)
-PLATFORM_C_OBJS = $(patsubst $(PLATFORM_DIR)/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
-PLATFORM_S_OBJS = $(patsubst $(PLATFORM_DIR)/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
-PLATFORM_SHARED_OBJS = $(patsubst $(PLATFORM_SHARED_DIR)/%.c,$(BUILD_DIR)/shared/%.o,$(PLATFORM_SHARED_SOURCES))
-PLATFORM_X86_OBJS = $(patsubst $(PLATFORM_X86_DIR)/%.c,$(BUILD_DIR)/x86/%.o,$(PLATFORM_X86_SOURCES))
+# Platform sources may include files from ../shared or ../x86, so we match from platform/ root
+PLATFORM_C_OBJS = $(patsubst platform/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C_SOURCES))
+PLATFORM_S_OBJS = $(patsubst platform/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
 KERNEL_OBJECTS = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(filter $(KERNEL_DIR)/%,$(C_SOURCES)))
 DRIVER_OBJECTS = $(patsubst $(DRIVER_DIR)/%.c,$(BUILD_DIR)/driver/%.o,$(filter $(DRIVER_DIR)/%,$(C_SOURCES)))
 C_OBJECTS = $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(PLATFORM_SHARED_OBJS) $(PLATFORM_X86_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -125,7 +115,7 @@ all:
 	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,shared,x86,vendor/monocypher}
+	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,vendor/monocypher}
 
 # Generic C compilation rule for kernel, driver, and vendor sources
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
@@ -137,19 +127,14 @@ $(BUILD_DIR)/driver/%.o: $(DRIVER_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 $(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
-# Platform shared sources compilation
-$(BUILD_DIR)/shared/%.o: $(PLATFORM_SHARED_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
-
-$(BUILD_DIR)/x86/%.o: $(PLATFORM_X86_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
-
-# Platform-specific C sources
-$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+# Platform-specific C sources (handles nested directories like ../shared/ and ../x86/)
+$(BUILD_DIR)/platform/%.o: platform/%.c $(HEADERS) | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 # Platform-specific assembly sources
-$(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
+$(BUILD_DIR)/platform/%.o: platform/%.S | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)

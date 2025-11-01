@@ -22,9 +22,8 @@ PLATFORM_CFLAGS = -mx32 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mno-sse3 -mno
 PLATFORM_LDFLAGS = -m elf32_x86_64
 
 # Platform-specific sources (x32 only)
-PLATFORM_C_SRCS =
+PLATFORM_C_SRCS = ../x86/uart.c ../x86/devinfo.c ../x86/acpi.c ../x86/interrupt.c ../x86/ioapic.c \
+                  ../x86/timer.c ../x86/platform_init.c ../x86/pci.c ../x86/platform_hooks.c \
+                  ../x86/platform_virtio.c ../x86/mmio.c ../x86/platform_mem_debug.c ../x86/platform_debug.c \
+                  ../shared/platform_checksums.c
 PLATFORM_S_SRCS = boot.S isr.S
-
-# Shared x86 sources from platform/x86/
-PLATFORM_X86_SRCS = uart.c devinfo.c acpi.c interrupt.c ioapic.c timer.c platform_init.c \
-                    pci.c platform_hooks.c platform_virtio.c mmio.c platform_debug.c
