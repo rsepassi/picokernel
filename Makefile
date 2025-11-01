@@ -108,7 +108,7 @@ ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(VENDOR_OBJECT
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
-.PHONY: default run clean format test test-all flake flake-all debug-analyze debug-symbols debug-lldb
+.PHONY: default run clean format test test-all flake flake-all debug-analyze debug-symbols debug-lldb cloc
 default: $(KERNEL)
 
 all:
@@ -197,3 +197,6 @@ debug-lldb: $(DRIVE)
 	@echo ""
 	@$(MAKE) DEBUG=1 $(KERNEL)
 	@./script/debug/debug_lldb.sh $(KERNEL) $(PLATFORM) $(USE_PCI) $(DRIVE) $(PORT)
+
+cloc:
+	@./script/cloc_table.sh
