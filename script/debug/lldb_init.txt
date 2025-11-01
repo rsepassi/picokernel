@@ -1,0 +1,11 @@
+# Connect to QEMU
+gdb-remote localhost:1234
+
+# Set watchpoint on page table directory at 0xC000
+watchpoint set expression -w write -s 8 -- (void*)0xC000
+
+# Set watchpoint on .rodata section
+watchpoint set expression -w write -s 4096 -- (void*)0x20D000
+
+# Continue execution
+continue

@@ -94,6 +94,17 @@
     }                                                                          \
   } while (0)
 
+/* Conditional debug macros - compiled out in release builds */
+#ifdef KDEBUG
+#define KDEBUG_ASSERT(cond, msg) KASSERT(cond, msg)
+#define KDEBUG_LOG(msg) KLOG(msg)
+#define KDEBUG_VALIDATE(func) func()
+#else
+#define KDEBUG_ASSERT(cond, msg) ((void)0)
+#define KDEBUG_LOG(msg) ((void)0)
+#define KDEBUG_VALIDATE(func) ((void)0)
+#endif
+
 void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
 

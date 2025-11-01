@@ -20,10 +20,18 @@ ifeq ($(PORT),0)
   PORT := $(PORT_DEFAULT)
 endif
 
-# Debug flags for QEMU (enable GDB stub)
+# Debug build configuration
 ifeq ($(DEBUG),1)
-  QEMU_DEBUG_FLAGS := -s -S
+  # Debug mode: easier stepping, full debug info, frame pointers for backtraces
+  OPT_FLAGS := -O1
+  DEBUG_CFLAGS := -g3 -fno-omit-frame-pointer -DKDEBUG
+  DEBUG_LDFLAGS :=
+  QEMU_DEBUG_FLAGS := -s -S -d guest_errors
 else
+  # Release mode: full optimizations, strip symbols, omit frame pointers
+  OPT_FLAGS := -O2
+  DEBUG_CFLAGS := -fomit-frame-pointer
+  DEBUG_LDFLAGS := --strip-debug
   QEMU_DEBUG_FLAGS :=
 endif
 
@@ -38,7 +46,7 @@ include $(PLATFORM_DIR)/platform.mk
 
 # Compiler
 CC = clang
-CFLAGS = --target=$(TARGET) -O2 -static \
+CFLAGS = --target=$(TARGET) $(OPT_FLAGS) $(DEBUG_CFLAGS) -static \
 				 -ffreestanding -nostdlib -fno-builtin \
 				 -fno-pic -fno-pie \
 				 -fwrapv -fno-strict-aliasing \
@@ -50,7 +58,7 @@ CFLAGS = --target=$(TARGET) -O2 -static \
 
 # Linker
 LD = ld.lld
-LDFLAGS = --no-pie -static -nostdlib --gc-sections $(PLATFORM_LDFLAGS)
+LDFLAGS = --no-pie -static -nostdlib --gc-sections $(DEBUG_LDFLAGS) $(PLATFORM_LDFLAGS)
 
 # Source files
 KERNEL_DIR = kernel
@@ -119,7 +127,7 @@ else
                 -device virtio-net-device,netdev=net0
 endif
 
-.PHONY: default run clean format test test-all flake flake-all
+.PHONY: default run clean format test test-all flake flake-all debug-analyze debug-symbols
 default: $(KERNEL)
 
 all:
@@ -225,3 +233,13 @@ flake: $(KERNEL)
 
 flake-all:
 	@./script/flake_all.py
+
+# Debug targets
+debug-analyze: $(KERNEL)
+	@echo "Analyzing kernel binary for $(PLATFORM)..."
+	@./script/debug/analyze_elf.sh $(KERNEL)
+
+debug-symbols: $(KERNEL)
+	@echo "Generating symbol map for $(PLATFORM)..."
+	@./script/debug/dump_symbols.sh $(KERNEL) > $(BUILD_DIR)/symbols.txt
+	@echo "Symbol map written to $(BUILD_DIR)/symbols.txt"

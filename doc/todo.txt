@@ -1,4 +1,5 @@
 * Reliability
+* Ensure all symbols are prefixed with k platform etc
 * Rename platform_impl.h to platform_types.h, types-only
 * ksubmit timeout support
 * recv configure drop vs overwrite

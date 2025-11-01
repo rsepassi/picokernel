@@ -3,6 +3,7 @@
 
 #include "acpi.h"
 #include "interrupt.h"
+#include "mem_debug.h"
 #include "platform.h"
 #include "printk.h"
 #include "timer.h"
@@ -39,6 +40,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   printk("Initializing x32 platform...\n");
 
+  // Print memory map early during initialization
+  mem_print_map();
+
   // Initialize ACPI (must come before interrupt init, which uses ACPI for
   // IOAPIC)
   acpi_init(platform);
@@ -61,6 +65,13 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   printk("=== Starting VirtIO Device Scan ===\n\n");
   pci_scan_devices(platform);
   mmio_scan_devices(platform);
+
+  // Validate critical memory regions after device initialization
+  printk("\n");
+  mem_validate_critical_regions();
+
+  // Dump page tables for debugging
+  mem_dump_page_tables();
 
   printk("\nPlatform initialization complete.\n\n");
 }

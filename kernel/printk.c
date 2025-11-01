@@ -20,14 +20,12 @@ void printks(const char *str, size_t len) {
 
 void printk_hex8(uint8_t val) {
   const char hex[] = "0123456789abcdef";
-  printk("0x");
   printk_putc(hex[(val >> 4) & 0xf]);
   printk_putc(hex[val & 0xf]);
 }
 
 void printk_hex16(uint16_t val) {
   const char hex[] = "0123456789abcdef";
-  printk("0x");
   for (int i = 12; i >= 0; i -= 4) {
     printk_putc(hex[(val >> i) & 0xf]);
   }
@@ -35,7 +33,6 @@ void printk_hex16(uint16_t val) {
 
 void printk_hex32(uint32_t val) {
   const char hex[] = "0123456789abcdef";
-  printk("0x");
   for (int i = 28; i >= 0; i -= 4) {
     printk_putc(hex[(val >> i) & 0xf]);
   }
@@ -43,7 +40,6 @@ void printk_hex32(uint32_t val) {
 
 void printk_hex64(uint64_t val) {
   const char hex[] = "0123456789abcdef";
-  printk("0x");
   for (int i = 60; i >= 0; i -= 4) {
     printk_putc(hex[(val >> i) & 0xf]);
   }

@@ -16,14 +16,17 @@ on quick wins with zero runtime overhead in release builds.
 ### Existing Infrastructure
 
 **Build System:**
-- `DEBUG=1` flag enables QEMU debug mode (`-s -S` for GDB stub)
-- Always compiles with `-O2` optimization
-- No conditional debug builds or symbol preservation
+- `DEBUG=1` flag enables debug build mode (`-O1 -g3 -fno-omit-frame-pointer -DKDEBUG`) and QEMU debugging (`-s -S -d guest_errors`)
+- `DEBUG=0` (default) compiles with `-O2` optimization, strips debug symbols
+- Conditional debug compilation via `KDEBUG` flag
 
 **Scripts (script/debug/):**
 - `lldb_memdebug.txt` - Comprehensive LLDB script with memory validation breakpoints
 - `lldb_simple.txt` - Simplified debugging setup
 - `lldb_init.txt` - Basic initialization
+- `addr2line.sh` - Resolve crash addresses to source:line
+- `dump_symbols.sh` - Generate symbol map sorted by size
+- `analyze_elf.sh` - Comprehensive ELF binary analysis
 - `MEMORY_MAP_x64.md` - x64 memory layout documentation
 - `X64_MEM_DEBUG_STATUS.md` - Memory debugging status and known issues
 
@@ -31,6 +34,7 @@ on quick wins with zero runtime overhead in release builds.
 - `printk()` - Basic UART logging (NOT interrupt-safe)
 - `KASSERT()` - Fatal assertions with file/line/message
 - `KLOG()` - Timestamped logging
+- `KDEBUG_ASSERT()`, `KDEBUG_LOG()`, `KDEBUG_VALIDATE()` - Conditional debug macros (compiled out in release)
 - `kabort()` - Simple crash handler (infinite loop) - *will be replaced by enhanced `kpanic()`*
 
 **Platform-Specific (x86 only):**
@@ -43,20 +47,20 @@ on quick wins with zero runtime overhead in release builds.
 
 ### Key Gaps
 
-1. **No debug build mode** - Cannot disable optimizations for debugging
-2. **No symbol analysis tools** - Manual addr2line lookups
+1. ~~**No debug build mode**~~ ✅ RESOLVED - `DEBUG=1` enables `-O1 -g3 -DKDEBUG`
+2. ~~**No symbol analysis tools**~~ ✅ RESOLVED - `addr2line.sh`, `dump_symbols.sh`, `analyze_elf.sh`
 3. **Poor panic output** - No register dump, stack trace, or context
 4. **Platform-specific memory debugging** - Only x86 has validation tools
 5. **Manual LLDB workflow** - No automation or pretty-printers
-6. **No conditional compilation** - Debug checks always compiled in
+6. ~~**No conditional compilation**~~ ✅ RESOLVED - `KDEBUG` macros implemented
 
 ## Implementation Plan
 
-### Phase 1: Build System Enhancements
+### Phase 1: Build System Enhancements ✅ PARTIALLY DONE
 
 **Goal:** Add zero-overhead debug build mode with conditional compilation.
 
-#### 1.1 Unified DEBUG Flag (Makefile)
+#### 1.1 Unified DEBUG Flag (Makefile) ✅ DONE
 
 Add single debug control flag:
 ```makefile
@@ -102,7 +106,7 @@ endif
 #endif
 ```
 
-#### 1.2 New Makefile Targets
+#### 1.2 New Makefile Targets ⚠️ PARTIALLY DONE
 
 ```makefile
 # Launch LLDB connected to QEMU
@@ -132,11 +136,11 @@ debug-symbols: build/$(PLATFORM)/kernel.elf
 
 ---
 
-### Phase 2: Platform-Agnostic Debug Scripts
+### Phase 2: Platform-Agnostic Debug Scripts ⚠️ PARTIALLY DONE
 
 **Location:** `script/debug/` (architecture-independent tools)
 
-#### 2.1 Symbol Resolution (addr2line.sh)
+#### 2.1 Symbol Resolution (addr2line.sh) ✅ DONE
 
 ```bash
 #!/bin/bash
@@ -148,23 +152,24 @@ llvm-addr2line -e "$KERNEL_ELF" -f -C "$ADDRESS"
 
 **Use case:** Quickly resolve crash addresses to source locations.
 
-#### 2.2 Symbol Analysis (dump_symbols.sh)
+#### 2.2 Symbol Analysis (dump_symbols.sh) ✅ DONE
+
+**Note:** Simplified - removed awk strtonum (not portable on macOS). Outputs raw llvm-nm format.
 
 ```bash
 #!/bin/bash
 # Generate sorted symbol map with sizes
 KERNEL_ELF=$1
-llvm-nm --print-size --size-sort "$KERNEL_ELF" | \
-  awk '{printf "%s %8d %s\n", $1, strtonum("0x"$2), $3}'
+llvm-nm --print-size --size-sort "$KERNEL_ELF"
 ```
 
 **Output:**
 ```
-0000000000200000     4096 _start
-0000000000201000    12288 kmain
+0000000000200000 0000000000004096 T _start
+0000000000201000 0000000000012288 T kmain
 ```
 
-#### 2.3 ELF Analysis (analyze_elf.sh)
+#### 2.3 ELF Analysis (analyze_elf.sh) ✅ DONE
 
 ```bash
 #!/bin/bash
@@ -184,7 +189,7 @@ echo "=== Entry Point ==="
 llvm-readelf -h "$KERNEL_ELF" | grep Entry
 ```
 
-#### 2.4 LLDB Pretty-Printers (lldb_formatters.py)
+#### 2.4 LLDB Pretty-Printers (lldb_formatters.py) ❌ TODO
 
 **Purpose:** Human-readable structure dumps in LLDB.
 
@@ -215,7 +220,7 @@ def __lldb_init_module(debugger, dict):
 - `virtq` - Descriptor indices, ring positions
 - `platform_t` - IRQ handler list, device enumeration
 
-#### 2.5 Enhanced LLDB Scripts
+#### 2.5 Enhanced LLDB Scripts ❌ TODO
 
 **lldb_crashdump.txt:**
 ```
@@ -251,11 +256,11 @@ p kernel.timer_head
 
 ---
 
-### Phase 3: Runtime Debug Enhancements
+### Phase 3: Runtime Debug Enhancements ⚠️ PARTIALLY DONE
 
 **Goal:** Better panic output and conditional debugging.
 
-#### 3.1 Enhanced Panic Handler (kernel/kbase.c)
+#### 3.1 Enhanced Panic Handler (kernel/kbase.c) ❌ TODO
 
 Replace `kabort()` with enhanced `kpanic()` that dumps state before halting:
 
@@ -300,7 +305,7 @@ void platform_dump_stack(u32 bytes) {
 }
 ```
 
-#### 3.2 Conditional Assertion Macros (kernel/kbase.h)
+#### 3.2 Conditional Assertion Macros (kernel/kbase.h) ✅ DONE
 
 ```c
 #ifdef KDEBUG
@@ -328,7 +333,7 @@ KDEBUG_ASSERT(work_queue_is_valid(&kernel.work_live_head),
 KDEBUG_VALIDATE(validate_page_tables);
 ```
 
-#### 3.3 Work Queue Debugging (kernel/kernel.c)
+#### 3.3 Work Queue Debugging (kernel/kernel.c) ❌ TODO
 
 Add debug instrumentation (compiled out in release):
 
@@ -393,7 +398,7 @@ static void transition_work_state(kwork_t* work, kwork_state_t new_state) {
 
 ---
 
-### Phase 4: Platform-Specific Debug Tools
+### Phase 4: Platform-Specific Debug Tools ❌ TODO
 
 **Goal:** Generalize memory debugging to all platforms.
 
@@ -536,7 +541,7 @@ end
 
 ---
 
-### Phase 5: Documentation
+### Phase 5: Documentation ❌ TODO
 
 #### 5.1 Debugging Guide (doc/debugging.md)
 
@@ -678,7 +683,7 @@ vmos/
 │       └── lldb_simple.txt     # (existing)
 │
 └── doc/
-    ├── debug.md                # This file (implementation plan)
+    ├── debug_plan.md           # This file (implementation plan)
     ├── debugging.md            # User guide
     ├── api.md                  # (existing) API architecture
     ├── async.md                # (existing) Async work queue design
@@ -758,19 +763,19 @@ make debug-lldb PLATFORM=x64
 
 ## Success Metrics
 
-- [ ] Can build with `-O1 -g3` via `DEBUG=1`
+- [x] Can build with `-O1 -g3` via `DEBUG=1`
 - [ ] Can launch LLDB with `make debug-lldb PLATFORM=x64`
-- [ ] Can analyze binary with `make debug-analyze`
-- [ ] Can generate symbols with `make debug-symbols`
-- [ ] Can resolve crash addresses with `addr2line.sh`
+- [x] Can analyze binary with `make debug-analyze`
+- [x] Can generate symbols with `make debug-symbols`
+- [x] Can resolve crash addresses with `addr2line.sh`
 - [ ] `kpanic()` dumps registers, stack, and debug info (when `KDEBUG` enabled)
 - [ ] LLDB pretty-prints `kernel_t` and `kwork_t`
-- [ ] Debug checks compiled out in release builds (verified with objdump)
+- [x] Debug checks compiled out in release builds (verified with llvm-readelf)
 - [ ] Memory validation on all platforms (not just x86)
 - [ ] Platform-specific LLDB scripts for all architectures
 - [ ] Platform-specific memory map documentation in `platform/*/doc/`
 - [ ] Work queue history dumps in panic output (when `KDEBUG` enabled)
-- [ ] QEMU guest error logging enabled in debug mode
+- [x] QEMU guest error logging enabled in debug mode
 
 ---
 
@@ -794,3 +799,4 @@ make debug-lldb PLATFORM=x64
 ## Revision History
 
 - 2025-11-01: Initial plan - focusing on quick wins, zero overhead, LLDB workflow
+- 2025-11-01: Completed Phase 1.1, partial 1.2 (debug-analyze, debug-symbols), Phase 2.1-2.3 (debug scripts), Phase 3.2 (KDEBUG macros). Modified dump_symbols.sh to use raw llvm-nm output (removed awk strtonum for macOS compatibility).

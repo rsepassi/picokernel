@@ -1,0 +1,23 @@
+# Simple lldb script for debugging memory corruption
+gdb-remote localhost:1234
+
+# Set breakpoint at kmain entry
+breakpoint set --name kmain
+
+# Set watchpoint on .rodata to catch corruption
+watchpoint set expression -w write -s 256 -- (void*)0x20D000
+
+# Continue to kmain
+continue
+
+# When we hit kmain, examine page tables
+commands 1
+  x/8gx 0x100000
+  x/8gx 0x101000
+  x/8gx 0x102000
+  x/8gx 0x103000
+  register read cr3
+  continue
+done
+
+# Continue execution
