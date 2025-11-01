@@ -60,6 +60,10 @@ CFLAGS = --target=$(TARGET) $(OPT_FLAGS) $(DEBUG_CFLAGS) -static \
 LD = ld.lld
 LDFLAGS = --no-pie -static -nostdlib --gc-sections $(DEBUG_LDFLAGS) $(PLATFORM_LDFLAGS)
 
+# Common variables
+INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR)
+PLATFORMS = rv32 rv64 x32 x64 arm32 arm64
+
 # Source files
 KERNEL_DIR = kernel
 DRIVER_DIR = driver
@@ -112,75 +116,60 @@ ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(PLATFORM_SHARED_OBJS) $(PL
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
-# Device flags for QEMU (unified across all platforms)
-ifeq ($(USE_PCI),1)
-  QEMU_DEVICE_ARGS = -device virtio-rng-pci \
-                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
-                -device virtio-blk-pci,drive=hd0 \
-                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
-                -device virtio-net-pci,netdev=net0
-else
-  QEMU_DEVICE_ARGS = -device virtio-rng-device \
-                -drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
-                -device virtio-blk-device,drive=hd0 \
-                -netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
-                -device virtio-net-device,netdev=net0
-endif
-
-.PHONY: default run clean format test test-all flake flake-all debug-analyze debug-symbols
+.PHONY: default run clean format test test-all flake flake-all debug-analyze debug-symbols debug-lldb
 default: $(KERNEL)
 
 all:
-	$(MAKE) PLATFORM=rv32
-	$(MAKE) PLATFORM=rv64
-	$(MAKE) PLATFORM=x32
-	$(MAKE) PLATFORM=x64
-	$(MAKE) PLATFORM=arm32
-	$(MAKE) PLATFORM=arm64
+	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/kernel
-	mkdir -p $(BUILD_DIR)/driver/virtio
-	mkdir -p $(BUILD_DIR)/platform
-	mkdir -p $(BUILD_DIR)/shared
-	mkdir -p $(BUILD_DIR)/x86
-	mkdir -p $(BUILD_DIR)/vendor/monocypher
+	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,shared,x86,vendor/monocypher}
 
+# Generic C compilation rule for kernel, driver, and vendor sources
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/driver/%.o: $(DRIVER_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
+# Platform shared sources compilation
 $(BUILD_DIR)/shared/%.o: $(PLATFORM_SHARED_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/x86/%.o: $(PLATFORM_X86_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
+# Platform-specific C sources
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
+# Platform-specific assembly sources
 $(BUILD_DIR)/platform/%.o: $(PLATFORM_DIR)/%.S | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL): $(ALL_OBJECTS) $(C_SOURCES) $(PLATFORM_C_SOURCES) $(PLATFORM_SHARED_SOURCES) $(PLATFORM_X86_SOURCES) $(HEADERS) $(LINKER_SCRIPT)
+$(KERNEL): $(ALL_OBJECTS) $(LINKER_SCRIPT)
 	$(LD) $(LDFLAGS) -T $(LINKER_SCRIPT) $(ALL_OBJECTS) -o $@
 
-run: $(KERNEL)
-	test -f $(DRIVE) || dd if=/dev/zero of=$(DRIVE) bs=1M count=1
+run: $(KERNEL) $(DRIVE)
 	$(QEMU) -machine $(QEMU_MACHINE) -cpu $(QEMU_CPU) \
 		-m 128M -smp 1 \
 		-nographic -nodefaults -no-user-config \
 		-serial stdio \
 		$(QEMU_EXTRA_ARGS) \
-		$(QEMU_DEVICE_ARGS) \
+		-device virtio-rng-$(if $(filter 1,$(USE_PCI)),pci,device) \
+		-drive file=$(DRIVE),if=none,id=hd0,format=raw,cache=none \
+		-device virtio-blk-$(if $(filter 1,$(USE_PCI)),pci,device),drive=hd0 \
+		-netdev user,id=net0,hostfwd=udp::$(PORT)-10.0.2.15:8080 \
+		-device virtio-net-$(if $(filter 1,$(USE_PCI)),pci,device),netdev=net0 \
 		$(QEMU_DEBUG_FLAGS) \
 		-kernel $(KERNEL) \
 		-no-reboot
+
+$(DRIVE):
+	dd if=/dev/zero of=$@ bs=1M count=1
 
 clean:
 	rm -rf build
@@ -192,44 +181,10 @@ test: $(KERNEL)
 	@./script/run_test.sh $(PLATFORM) $(USE_PCI)
 
 test-all:
-	@echo "=== Running tests for all platforms and transports ==="
-	@echo ""
-	@FAILED=0; \
-	PASSED=0; \
-	for platform in arm64 arm32 x64 x32 rv64 rv32; do \
-		for use_pci in 0 1; do \
-			transport="MMIO"; \
-			if [ "$$use_pci" = "1" ]; then transport="PCI"; fi; \
-			echo ">>> Testing $$platform with $$transport..."; \
-			if $(MAKE) test PLATFORM=$$platform USE_PCI=$$use_pci; then \
-				PASSED=$$((PASSED + 1)); \
-				echo "✓ $$platform ($$transport) PASSED"; \
-			else \
-				FAILED=$$((FAILED + 1)); \
-				echo "✗ $$platform ($$transport) FAILED"; \
-			fi; \
-			echo ""; \
-		done; \
-	done; \
-	echo "=== Test Summary ==="; \
-	echo "Passed: $$PASSED / 12"; \
-	echo "Failed: $$FAILED / 12"; \
-	if [ "$$FAILED" -gt 0 ]; then exit 1; fi
+	@./script/test_all.sh
 
 flake: $(KERNEL)
-	@echo "=== Flake test: $(PLATFORM) with $(if $(filter 1,$(USE_PCI)),PCI,MMIO) (10 runs) ==="
-	@FAILED=0; \
-	for i in 1 2 3 4 5 6 7 8 9 10; do \
-		echo "[$$i/10] Testing..."; \
-		if $(MAKE) test PLATFORM=$(PLATFORM) USE_PCI=$(USE_PCI) 2>&1 | grep -q "Overall: PASS"; then \
-			echo "[$$i/10] ✓ PASSED"; \
-		else \
-			FAILED=$$((FAILED + 1)); \
-			echo "[$$i/10] ✗ FAILED"; \
-		fi; \
-	done; \
-	echo "=== Results: $$((10 - FAILED))/10 passed ==="; \
-	if [ "$$FAILED" -gt 0 ]; then exit 1; fi
+	@./script/flake.sh $(PLATFORM) $(USE_PCI)
 
 flake-all:
 	@./script/flake_all.py
@@ -243,3 +198,11 @@ debug-symbols: $(KERNEL)
 	@echo "Generating symbol map for $(PLATFORM)..."
 	@./script/debug/dump_symbols.sh $(KERNEL) > $(BUILD_DIR)/symbols.txt
 	@echo "Symbol map written to $(BUILD_DIR)/symbols.txt"
+
+debug-lldb: $(DRIVE)
+	@echo "Starting debug session for $(PLATFORM)..."
+	@echo "QEMU will start with GDB stub on port 1234"
+	@echo "LLDB will attach automatically"
+	@echo ""
+	@$(MAKE) DEBUG=1 $(KERNEL)
+	@./script/debug/debug_lldb.sh $(KERNEL) $(PLATFORM) $(USE_PCI) $(DRIVE) $(PORT)

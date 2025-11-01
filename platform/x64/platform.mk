@@ -23,4 +23,4 @@ PLATFORM_S_SRCS = boot.S isr.S
 
 # Shared x86 sources from platform/x86/
 PLATFORM_X86_SRCS = uart.c devinfo.c acpi.c interrupt.c ioapic.c timer.c platform_init.c \
-                    pci.c platform_hooks.c platform_virtio.c mmio.c mem_debug.c
+                    pci.c platform_hooks.c platform_virtio.c mmio.c mem_debug.c platform_debug.c

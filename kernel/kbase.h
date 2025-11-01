@@ -90,7 +90,7 @@
       printk("\n  ");                                                          \
       printk(msg);                                                             \
       printk("\n");                                                            \
-      kabort();                                                                \
+      kpanic(msg);                                                                \
     }                                                                          \
   } while (0)
 
@@ -108,7 +108,15 @@
 void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
 
-void kabort(void) __attribute__((noreturn));
+/* Enhanced panic handler - dumps registers, stack, and debug info */
+void kpanic(const char *msg) __attribute__((noreturn));
+
+/* Work queue debugging (KDEBUG only) */
+#ifdef KDEBUG
+void kdebug_dump_work_history(void);
+#else
+static inline void kdebug_dump_work_history(void) {}
+#endif
 
 /* Endianness conversion helpers (BSD-style) */
 

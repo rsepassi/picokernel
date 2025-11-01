@@ -156,6 +156,19 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
 // Called when a fatal error occurs or assertion fails
 // This function does not return
 void platform_abort(void) __attribute__((noreturn));
+
+// ===========================================================================
+// SECTION 3A: Platform Debug - Register and stack dumps
+// ===========================================================================
+
+// Dump platform registers to debug console
+// Platform-specific implementation (RIP/PC, SP, general purpose registers)
+void platform_dump_registers(void);
+
+// Dump stack contents to debug console
+// bytes: number of bytes to dump from current stack pointer
+void platform_dump_stack(uint32_t bytes);
+
 // ===========================================================================
 // SECTION 4: Interrupt Control
 // ===========================================================================

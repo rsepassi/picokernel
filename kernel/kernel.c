@@ -4,6 +4,80 @@
 #include "printk.h"
 #include "timer_heap.h"
 
+// Work queue debugging (KDEBUG only)
+#ifdef KDEBUG
+
+static void record_work_transition(kernel_t *k, kwork_t *work,
+                                   kwork_state_t from_state,
+                                   kwork_state_t to_state) {
+  if (k == NULL || work == NULL) {
+    return;
+  }
+
+  uint32_t idx = k->work_history_idx;
+  k->work_history[idx].work = work;
+  k->work_history[idx].from_state = (uint8_t)from_state;
+  k->work_history[idx].to_state = (uint8_t)to_state;
+  k->work_history[idx].timestamp_ms = k->current_time_ms;
+  k->work_history_idx = (idx + 1) % 16;
+}
+
+void kdebug_dump_work_history(void) {
+  kernel_t *k = kget_kernel__logonly__();
+  if (k == NULL) {
+    printk("\nNo work history (kernel not initialized)\n");
+    return;
+  }
+
+  printk("\nLast work transitions:\n");
+
+  const char *state_names[] = {
+      "DEAD", "SUBMIT_REQUESTED", "LIVE", "CANCEL_REQUESTED", "READY"};
+
+  for (uint32_t i = 0; i < 16; i++) {
+    if (k->work_history[i].work == NULL) {
+      continue; // Empty slot
+    }
+
+    printk("  ");
+    printk_hex64((uint64_t)k->work_history[i].work);
+    printk(": ");
+
+    uint8_t from = k->work_history[i].from_state;
+    uint8_t to = k->work_history[i].to_state;
+
+    if (from < 5) {
+      printk(state_names[from]);
+    } else {
+      printk("UNKNOWN");
+    }
+
+    printk(" -> ");
+
+    if (to < 5) {
+      printk(state_names[to]);
+    } else {
+      printk("UNKNOWN");
+    }
+
+    printk(" @ ");
+    printk_dec(k->work_history[i].timestamp_ms);
+    printk("ms\n");
+  }
+}
+
+#else
+// Release build: no-op
+static inline void record_work_transition(kernel_t *k, kwork_t *work,
+                                          kwork_state_t from_state,
+                                          kwork_state_t to_state) {
+  (void)k;
+  (void)work;
+  (void)from_state;
+  (void)to_state;
+}
+#endif
+
 // Run event loop until a condition is true or a maximum timeout is reached
 #define KWAIT_UNTIL(kernel, cond, step_timeout, max_timeout)                   \
   do {                                                                         \
@@ -62,6 +136,8 @@ static void expire_timers(kernel_t *k) {
 
     // Move to ready queue
     timer->work.result = KERR_OK;
+    record_work_transition(k, &timer->work, timer->work.state,
+                           KWORK_STATE_READY);
     timer->work.state = KWORK_STATE_READY;
     enqueue_ready(k, &timer->work);
   }
@@ -100,6 +176,7 @@ kerr_t ksubmit(kernel_t *k, kwork_t *work) {
   }
 
   // Queue for submission
+  record_work_transition(k, work, work->state, KWORK_STATE_SUBMIT_REQUESTED);
   work->state = KWORK_STATE_SUBMIT_REQUESTED;
   work->result = KERR_OK;
 
@@ -107,6 +184,7 @@ kerr_t ksubmit(kernel_t *k, kwork_t *work) {
   if (work->op == KWORK_OP_TIMER) {
     // Timers go directly to timer list
     enqueue_timer(k, work);
+    record_work_transition(k, work, work->state, KWORK_STATE_LIVE);
     work->state = KWORK_STATE_LIVE;
   } else {
     // Other operations go to submit queue for platform
@@ -128,6 +206,7 @@ kerr_t kcancel(kernel_t *k, kwork_t *work) {
 
   if (work->state == KWORK_STATE_LIVE) {
     // Move to cancel queue
+    record_work_transition(k, work, work->state, KWORK_STATE_CANCEL_REQUESTED);
     work->state = KWORK_STATE_CANCEL_REQUESTED;
     enqueue_cancel(k, work);
   }
@@ -158,6 +237,7 @@ void kwork_init(kwork_t *work, uint32_t op, void *ctx,
   work->callback = callback;
   work->ctx = ctx;
   work->result = KERR_OK;
+  // Note: No transition recording for init - kernel pointer not available here
   work->state = KWORK_STATE_DEAD;
   work->flags = flags;
   work->next = NULL;
@@ -200,8 +280,10 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
 
     // Standing work stays LIVE if successful, otherwise goes DEAD
     if ((work->flags & KWORK_FLAG_STANDING) && work->result == KERR_OK) {
+      record_work_transition(k, work, work->state, KWORK_STATE_LIVE);
       work->state = KWORK_STATE_LIVE;
     } else {
+      record_work_transition(k, work, work->state, KWORK_STATE_DEAD);
       work->state = KWORK_STATE_DEAD;
     }
 
@@ -224,6 +306,7 @@ void kmain_tick(kernel_t *k, uint64_t current_time) {
 
       // Mark as cancelled
       cancel->result = KERR_CANCELLED;
+      record_work_transition(k, cancel, cancel->state, KWORK_STATE_READY);
       cancel->state = KWORK_STATE_READY;
       enqueue_ready(k, cancel);
     } else {
@@ -250,6 +333,7 @@ void kplatform_complete_work(kernel_t *k, kwork_t *work, kerr_t result) {
   }
 
   work->result = result;
+  record_work_transition(k, work, work->state, KWORK_STATE_READY);
   work->state = KWORK_STATE_READY;
   enqueue_ready(k, work);
 }
@@ -261,6 +345,7 @@ void kplatform_cancel_work(kernel_t *k, kwork_t *work) {
   }
 
   work->result = KERR_CANCELLED;
+  record_work_transition(k, work, work->state, KWORK_STATE_READY);
   work->state = KWORK_STATE_READY;
   enqueue_ready(k, work);
 }

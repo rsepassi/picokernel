@@ -12,7 +12,7 @@ PLATFORM_LDFLAGS =
 
 # Platform-specific sources
 PLATFORM_C_SRCS = uart.c platform_init.c sbi.c timer.c interrupt.c \
-                  platform_hooks.c runtime.c
+                  platform_hooks.c runtime.c platform_debug.c
 PLATFORM_S_SRCS = boot.S trap.S
 
 # Shared sources from platform/shared/ that this platform uses

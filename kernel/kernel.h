@@ -31,6 +31,17 @@ struct kernel {
   ktime_t current_time_ms;
 
   kcsprng_ctx rng;
+
+#ifdef KDEBUG
+  // Work transition history (debug builds only)
+  struct {
+    kwork_t *work;
+    uint8_t from_state;
+    uint8_t to_state;
+    uint64_t timestamp_ms;
+  } work_history[16];
+  uint32_t work_history_idx;
+#endif
 };
 
 // Internal Kernel API

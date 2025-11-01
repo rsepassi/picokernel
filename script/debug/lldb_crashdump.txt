@@ -1,0 +1,54 @@
+# LLDB Crash Dump Script for VMOS
+# Usage: lldb build/<platform>/kernel.elf -s script/debug/lldb_crashdump.txt
+# Or after attach: command source script/debug/lldb_crashdump.txt
+
+# Connect to QEMU GDB stub (assumes QEMU running with -s on port 1234)
+gdb-remote localhost:1234
+
+# Load pretty-printers
+command script import script/debug/lldb_formatters.py
+
+echo \n=== VMOS Kernel Crash Dump ===\n
+
+# Show all registers
+echo \n--- Registers ---\n
+register read
+
+# Show backtrace
+echo \n--- Call Stack ---\n
+bt
+
+# Show current frame variables
+echo \n--- Local Variables ---\n
+frame variable
+
+# Show stack memory (64 bytes from stack pointer)
+echo \n--- Stack Dump (64 bytes) ---\n
+memory read -c64 $sp
+
+# Try to access global kernel structure
+echo \n--- Kernel State ---\n
+p kernel
+
+echo \n--- Platform State ---\n
+p kernel.platform
+
+# Work queue depths
+echo \n--- Work Queues ---\n
+p kernel.submit_queue_head
+p kernel.ready_queue_head
+p kernel.cancel_queue_head
+
+# Timer state
+echo \n--- Timer State ---\n
+p kernel.timer_heap_root
+p kernel.timer_heap_size
+p kernel.current_time_ms
+
+# Debug history (KDEBUG builds only)
+echo \n--- Work History (KDEBUG only) ---\n
+p kernel.work_history
+p kernel.work_history_idx
+
+echo \n=== End of Crash Dump ===\n
+echo Use 'c' to continue, 'ni' to step, 'si' to step into\n

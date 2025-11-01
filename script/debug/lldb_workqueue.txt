@@ -1,0 +1,64 @@
+# LLDB Work Queue Visualization Script for VMOS
+# Usage: lldb build/<platform>/kernel.elf -s script/debug/lldb_workqueue.txt
+# Or after attach: command source script/debug/lldb_workqueue.txt
+
+# Connect to QEMU GDB stub
+gdb-remote localhost:1234
+
+# Load pretty-printers
+command script import script/debug/lldb_formatters.py
+
+echo \n=== VMOS Work Queue State ===\n
+
+# Show current time
+echo \n--- Current Time ---\n
+p kernel.current_time_ms
+
+# Show submit queue
+echo \n--- Submit Queue (pending submission) ---\n
+p kernel.submit_queue_head
+p kernel.submit_queue_tail
+expr if (kernel.submit_queue_head) { kwork_t* w = kernel.submit_queue_head; while (w) { printf("  Work: %p\n", w); w = w->next; } } else { printf("  (empty)\n"); }
+
+# Show ready queue
+echo \n--- Ready Queue (ready for callback) ---\n
+p kernel.ready_queue_head
+expr if (kernel.ready_queue_head) { kwork_t* w = kernel.ready_queue_head; while (w) { printf("  Work: %p\n", w); w = w->next; } } else { printf("  (empty)\n"); }
+
+# Show cancel queue
+echo \n--- Cancel Queue (pending cancellation) ---\n
+p kernel.cancel_queue_head
+expr if (kernel.cancel_queue_head) { kwork_t* w = kernel.cancel_queue_head; while (w) { printf("  Work: %p\n", w); w = w->next; } } else { printf("  (empty)\n"); }
+
+# Show timer heap
+echo \n--- Timer Heap ---\n
+p kernel.timer_heap_size
+p kernel.timer_heap_root
+expr if (kernel.timer_heap_root) { printf("  Root deadline: %llu ms\n", kernel.timer_heap_root->deadline_ms); } else { printf("  (no active timers)\n"); }
+
+# Show device presence
+echo \n--- VirtIO Devices ---\n
+expr printf("  RNG: %s\n", kernel.platform.virtio_rng_ptr ? "present" : "absent")
+expr printf("  BLK: %s\n", kernel.platform.virtio_blk_ptr ? "present" : "absent")
+expr if (kernel.platform.virtio_blk_ptr) { printf("    Capacity: %llu sectors x %u bytes\n", kernel.platform.block_capacity, kernel.platform.block_sector_size); }
+expr printf("  NET: %s\n", kernel.platform.virtio_net_ptr ? "present" : "absent")
+expr if (kernel.platform.virtio_net_ptr) { printf("    MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", kernel.platform.net_mac_address[0], kernel.platform.net_mac_address[1], kernel.platform.net_mac_address[2], kernel.platform.net_mac_address[3], kernel.platform.net_mac_address[4], kernel.platform.net_mac_address[5]); }
+
+# Show CSPRNG state
+echo \n--- CSPRNG State ---\n
+p kernel.rng
+
+# Show work history (KDEBUG builds only)
+echo \n--- Work Transition History (KDEBUG only) ---\n
+expr for (int i = 0; i < 16; i++) { \
+    if (kernel.work_history[i].work) { \
+        printf("  [%d] %p: %u -> %u @ %llu ms\n", \
+               i, \
+               kernel.work_history[i].work, \
+               kernel.work_history[i].from_state, \
+               kernel.work_history[i].to_state, \
+               kernel.work_history[i].timestamp_ms); \
+    } \
+}
+
+echo \n=== End of Work Queue State ===\n

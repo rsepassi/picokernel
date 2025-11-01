@@ -49,14 +49,14 @@ on quick wins with zero runtime overhead in release builds.
 
 1. ~~**No debug build mode**~~ ✅ RESOLVED - `DEBUG=1` enables `-O1 -g3 -DKDEBUG`
 2. ~~**No symbol analysis tools**~~ ✅ RESOLVED - `addr2line.sh`, `dump_symbols.sh`, `analyze_elf.sh`
-3. **Poor panic output** - No register dump, stack trace, or context
-4. **Platform-specific memory debugging** - Only x86 has validation tools
-5. **Manual LLDB workflow** - No automation or pretty-printers
+3. ~~**Poor panic output**~~ ✅ RESOLVED - `kpanic()` dumps registers, stack, work history
+4. **Platform-specific memory debugging** - Only x86 has validation tools (Phase 4 TODO)
+5. ~~**Manual LLDB workflow**~~ ✅ RESOLVED - Pretty-printers and automated scripts available
 6. ~~**No conditional compilation**~~ ✅ RESOLVED - `KDEBUG` macros implemented
 
 ## Implementation Plan
 
-### Phase 1: Build System Enhancements ✅ PARTIALLY DONE
+### Phase 1: Build System Enhancements ⚠️ MOSTLY DONE (missing: debug-lldb target)
 
 **Goal:** Add zero-overhead debug build mode with conditional compilation.
 
@@ -108,35 +108,25 @@ endif
 
 #### 1.2 New Makefile Targets ⚠️ PARTIALLY DONE
 
-```makefile
-# Launch LLDB connected to QEMU
-debug-lldb: build/$(PLATFORM)/kernel.elf
-	@echo "Starting QEMU with debug stub..."
-	@make run DEBUG=1 PLATFORM=$(PLATFORM) &
-	@sleep 1
-	@lldb build/$(PLATFORM)/kernel.elf \
-	  -o "gdb-remote localhost:1234" \
-	  -s script/debug/lldb_init.txt
+**Implemented:**
+- ✅ `make debug-analyze PLATFORM=<arch>` - Comprehensive ELF analysis
+- ✅ `make debug-symbols PLATFORM=<arch>` - Generate symbol map
 
-# Analyze ELF binary
-debug-analyze: build/$(PLATFORM)/kernel.elf
-	@script/debug/analyze_elf.sh build/$(PLATFORM)/kernel.elf
+**Not implemented:**
+- ❌ `make debug-lldb PLATFORM=<arch>` - Automated LLDB attachment (manual workflow: use `lldb_crashdump.txt` or `lldb_workqueue.txt` scripts instead)
 
-# Generate symbol map
-debug-symbols: build/$(PLATFORM)/kernel.elf
-	@script/debug/dump_symbols.sh build/$(PLATFORM)/kernel.elf \
-	  > build/$(PLATFORM)/symbols.txt
+**Current workflow:**
+```bash
+# Debug build + run QEMU with GDB stub
+make DEBUG=1 run PLATFORM=x64
+
+# Attach LLDB manually (in another terminal)
+lldb build/x64/kernel.elf -s script/debug/lldb_crashdump.txt
 ```
-
-**Impact:**
-- `make DEBUG=1 run` - Single command for debug build + QEMU debugging
-- `make debug-lldb PLATFORM=x64` - Automated debugger attachment
-- `make debug-analyze` - Quick binary analysis
-- Zero cost in default builds
 
 ---
 
-### Phase 2: Platform-Agnostic Debug Scripts ⚠️ PARTIALLY DONE
+### Phase 2: Platform-Agnostic Debug Scripts ✅ DONE
 
 **Location:** `script/debug/` (architecture-independent tools)
 
@@ -189,78 +179,74 @@ echo "=== Entry Point ==="
 llvm-readelf -h "$KERNEL_ELF" | grep Entry
 ```
 
-#### 2.4 LLDB Pretty-Printers (lldb_formatters.py) ❌ TODO
+#### 2.4 LLDB Pretty-Printers (lldb_formatters.py) ✅ DONE
 
 **Purpose:** Human-readable structure dumps in LLDB.
 
-**Example for kwork_t:**
-```python
-def kwork_summary(valobj, dict):
-    state = valobj.GetChildMemberWithName('state').GetValue()
-    type_val = valobj.GetChildMemberWithName('type').GetValue()
+**Implementation:** `script/debug/lldb_formatters.py`
 
-    states = ['DEAD', 'SUBMIT_REQUESTED', 'LIVE', 'READY']
-    types = ['TIMER', 'RNG']
+**Features:**
+- Pretty-printing for all work request types: `kwork_t`, `ktimer_req_t`, `krng_req_t`, `kblk_req_t`, `knet_recv_req_t`, `knet_send_req_t`
+- Kernel state summary with queue depths and timer count
+- Platform summary with device enumeration and capabilities
+- Human-readable state, operation, and error code names
 
-    return f"kwork_t(state={states[int(state)]}, type={types[int(type_val)]})"
-
-def __lldb_init_module(debugger, dict):
-    debugger.HandleCommand('type summary add -F lldb_formatters.kwork_summary kwork_t')
+**Usage:**
 ```
-
-**LLDB output:**
-```
+(lldb) command script import script/debug/lldb_formatters.py
 (lldb) p work
-(kwork_t) $0 = kwork_t(state=LIVE, type=TIMER)
+(kwork_t) $0 = kwork_t(op=TIMER, state=LIVE, result=OK, flags=NONE)
 ```
 
-**Structures to pretty-print:**
-- `kernel_t` - Work queue depths, timer count, RNG state
-- `kwork_t` - State, type, callback name resolution
-- `virtq` - Descriptor indices, ring positions
-- `platform_t` - IRQ handler list, device enumeration
+**Formatted structures:**
+- `kernel_t` - Current time, work queue depths, timer count
+- `kwork_t` - Operation, state, result, flags
+- `ktimer_req_t` - Deadline with embedded work state
+- `krng_req_t`, `kblk_req_t`, `knet_*_req_t` - Request-specific fields
+- `platform_t` - VirtIO device presence (RNG, BLK with capacity, NET with MAC)
 
-#### 2.5 Enhanced LLDB Scripts ❌ TODO
+#### 2.5 Enhanced LLDB Scripts ✅ DONE
 
-**lldb_crashdump.txt:**
-```
-# Attach after crash and dump everything
-target create build/x64/kernel.elf
-gdb-remote localhost:1234
+**lldb_crashdump.txt:** Complete crash analysis script
 
-# Load formatters
-command script import script/debug/lldb_formatters.py
+**Features:**
+- Auto-connect to QEMU GDB stub
+- Load pretty-printers automatically
+- Dump all registers and call stack
+- Show local variables and stack memory
+- Display kernel and platform state
+- Show work queue depths and timer state
+- Display work transition history (KDEBUG builds)
 
-# Dump state
-register read
-bt
-frame variable
-memory read -c 64 $sp
-
-# Dump kernel structures
-p kernel
-p platform
+**Usage:**
+```bash
+lldb build/x64/kernel.elf -s script/debug/lldb_crashdump.txt
 ```
 
-**lldb_workqueue.txt:**
-```
-# Visualize work queue state
-command script import script/debug/lldb_formatters.py
+**lldb_workqueue.txt:** Work queue visualization
 
-# Print work queue summary
-p kernel.work_submit_head
-p kernel.work_live_head
-p kernel.work_ready_head
-p kernel.timer_head
+**Features:**
+- Current kernel time
+- All work queues with queue walking
+- Timer heap state with next deadline
+- VirtIO device presence and capabilities
+- CSPRNG state
+- Work transition history (KDEBUG builds)
+
+**Usage:**
+```bash
+lldb build/x64/kernel.elf -s script/debug/lldb_workqueue.txt
+# Or after attaching:
+command source script/debug/lldb_workqueue.txt
 ```
 
 ---
 
-### Phase 3: Runtime Debug Enhancements ⚠️ PARTIALLY DONE
+### Phase 3: Runtime Debug Enhancements ✅ DONE
 
 **Goal:** Better panic output and conditional debugging.
 
-#### 3.1 Enhanced Panic Handler (kernel/kbase.c) ❌ TODO
+#### 3.1 Enhanced Panic Handler (kernel/kbase.c) ✅ DONE
 
 Replace `kabort()` with enhanced `kpanic()` that dumps state before halting:
 
@@ -333,7 +319,7 @@ KDEBUG_ASSERT(work_queue_is_valid(&kernel.work_live_head),
 KDEBUG_VALIDATE(validate_page_tables);
 ```
 
-#### 3.3 Work Queue Debugging (kernel/kernel.c) ❌ TODO
+#### 3.3 Work Queue Debugging (kernel/kernel.c) ✅ DONE
 
 Add debug instrumentation (compiled out in release):
 
@@ -763,19 +749,31 @@ make debug-lldb PLATFORM=x64
 
 ## Success Metrics
 
+**Phase 1 (Build System):**
 - [x] Can build with `-O1 -g3` via `DEBUG=1`
-- [ ] Can launch LLDB with `make debug-lldb PLATFORM=x64`
 - [x] Can analyze binary with `make debug-analyze`
 - [x] Can generate symbols with `make debug-symbols`
+- [ ] Can launch LLDB with `make debug-lldb PLATFORM=x64` (workaround: manual LLDB + scripts)
+- [x] QEMU guest error logging enabled in debug mode
+
+**Phase 2 (Debug Scripts):**
 - [x] Can resolve crash addresses with `addr2line.sh`
-- [ ] `kpanic()` dumps registers, stack, and debug info (when `KDEBUG` enabled)
-- [ ] LLDB pretty-prints `kernel_t` and `kwork_t`
+- [x] LLDB pretty-prints all kernel structures via `lldb_formatters.py`
+- [x] LLDB crash dump script (`lldb_crashdump.txt`)
+- [x] LLDB work queue visualization (`lldb_workqueue.txt`)
+
+**Phase 3 (Runtime):**
+- [x] `kpanic()` dumps registers, stack, and debug info (when `KDEBUG` enabled)
 - [x] Debug checks compiled out in release builds (verified with llvm-readelf)
+- [x] Work queue history dumps in panic output (when `KDEBUG` enabled)
+
+**Phase 4 (Platform-Specific - TODO):**
 - [ ] Memory validation on all platforms (not just x86)
 - [ ] Platform-specific LLDB scripts for all architectures
+
+**Phase 5 (Documentation - TODO):**
 - [ ] Platform-specific memory map documentation in `platform/*/doc/`
-- [ ] Work queue history dumps in panic output (when `KDEBUG` enabled)
-- [x] QEMU guest error logging enabled in debug mode
+- [ ] Comprehensive debugging guide (`doc/debugging.md`)
 
 ---
 
@@ -798,5 +796,9 @@ make debug-lldb PLATFORM=x64
 
 ## Revision History
 
-- 2025-11-01: Initial plan - focusing on quick wins, zero overhead, LLDB workflow
-- 2025-11-01: Completed Phase 1.1, partial 1.2 (debug-analyze, debug-symbols), Phase 2.1-2.3 (debug scripts), Phase 3.2 (KDEBUG macros). Modified dump_symbols.sh to use raw llvm-nm output (removed awk strtonum for macOS compatibility).
+- 2025-11-01: Initial plan - quick wins, zero overhead, LLDB workflow
+- 2025-11-01: **Completed Phases 1 (mostly), 2 (fully), 3 (fully)**
+  - Phase 1: DEBUG=1 build mode, debug-analyze/debug-symbols targets (missing: debug-lldb)
+  - Phase 2: Symbol scripts, LLDB pretty-printers, crash/workqueue analysis scripts
+  - Phase 3: Enhanced kpanic(), KDEBUG macros, work queue history
+  - Remaining: Phase 4 (platform-specific debug tools), Phase 5 (documentation)
