@@ -1,4 +1,5 @@
-* doc/virtio-net-blk.md
+* Reliability
+* Rename platform_impl.h to platform_types.h, types-only
 * ksubmit timeout support
 * recv configure drop vs overwrite
 * scatter-gather io (net/blk)
@@ -10,3 +11,9 @@
 * Share 32-bit / 64-bit code?
 * -accel hvf/kvm
 * compiler-rt, arm32 runtime.c
+
+* Memory debugging
+  Memory dumps
+  Memory checksums
+  lldb/gdb scripts
+  Flags g3 01 etc
