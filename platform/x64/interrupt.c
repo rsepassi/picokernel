@@ -54,7 +54,7 @@ extern void isr_stub_31(void);
 // Timer interrupt (vector 32)
 extern void isr_stub_32(void);
 
-// IRQ interrupts (vectors 33-47 for PCI IRQs)
+// IRQ interrupts (vectors 33-55 for device IRQs)
 extern void isr_stub_33(void);
 extern void isr_stub_34(void);
 extern void isr_stub_35(void);
@@ -70,6 +70,14 @@ extern void isr_stub_44(void);
 extern void isr_stub_45(void);
 extern void isr_stub_46(void);
 extern void isr_stub_47(void);
+extern void isr_stub_48(void);
+extern void isr_stub_49(void);
+extern void isr_stub_50(void);
+extern void isr_stub_51(void);
+extern void isr_stub_52(void);
+extern void isr_stub_53(void);
+extern void isr_stub_54(void);
+extern void isr_stub_55(void);
 
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
@@ -192,13 +200,15 @@ void interrupt_init(platform_t *platform) {
   // Install timer interrupt handler (vector 32)
   idt_set_gate(platform, 32, (uint64_t)isr_stub_32, 0x08, 0x8E);
 
-  // Install IRQ interrupt handlers (vectors 33-47)
-  void (*irq_handlers[15])(void) = {
+  // Install IRQ interrupt handlers (vectors 33-55)
+  void (*irq_handlers[23])(void) = {
       isr_stub_33, isr_stub_34, isr_stub_35, isr_stub_36, isr_stub_37,
       isr_stub_38, isr_stub_39, isr_stub_40, isr_stub_41, isr_stub_42,
-      isr_stub_43, isr_stub_44, isr_stub_45, isr_stub_46, isr_stub_47};
+      isr_stub_43, isr_stub_44, isr_stub_45, isr_stub_46, isr_stub_47,
+      isr_stub_48, isr_stub_49, isr_stub_50, isr_stub_51, isr_stub_52,
+      isr_stub_53, isr_stub_54, isr_stub_55};
 
-  for (int i = 0; i < 15; i++) {
+  for (int i = 0; i < 23; i++) {
     idt_set_gate(platform, 33 + i, (uint64_t)irq_handlers[i], 0x08, 0x8E);
   }
 

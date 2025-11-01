@@ -25,45 +25,57 @@ _start:
     // Identity map first 4 MiB (covers kernel at 1 MiB + stack)
     // Also map high MMIO region for LAPIC, IOAPIC, etc.
 
-    // Clear page table area (4096 * 5 bytes starting at 0x1000)
-    // PML4 at 0x1000, PDPT at 0x2000, PD0 at 0x3000, PD3 at 0x4000, PD_MMIO at 0x5000
-    mov $0x1000, %edi
+    // Clear page table area (5 * 4096 bytes starting at 0x9000)
+    // PML4 at 0x9000, PDPT at 0xA000, PD0 at 0xB000, PD3 at 0xC000, PD_MMIO at 0xD000
+    // Using 0x9000+ avoids conflicts with BIOS data area (0x0000-0x7FFF)
+    mov $0x9000, %edi
     mov $0x5000, %ecx
     xor %eax, %eax
     rep stosb
 
-    // Set up PML4 (Page Map Level 4) at 0x1000
-    mov $0x1000, %edi
-    mov $0x2003, %eax           // Address of PDPT | Present | Writable
+    // Set up PML4 (Page Map Level 4) at 0x9000
+    mov $0x9000, %edi
+    mov $0xA003, %eax           // Address of PDPT | Present | Writable
     mov %eax, (%edi)
 
-    // Set up PDPT (Page Directory Pointer Table) at 0x2000
-    mov $0x2000, %edi
-    mov $0x3003, %eax           // PDPT[0] -> PD at 0x3000 (for 0-1GB)
+    // Set up PDPT (Page Directory Pointer Table) at 0xA000
+    mov $0xA000, %edi
+    mov $0xB003, %eax           // PDPT[0] -> PD at 0xB000 (for 0-1GB)
     mov %eax, (%edi)
     add $24, %edi               // PDPT[3] (3 * 8 bytes)
-    mov $0x4003, %eax           // PDPT[3] -> PD at 0x4000 (for 3-4GB, MMIO region)
+    mov $0xC003, %eax           // PDPT[3] -> PD at 0xC000 (for 3-4GB, MMIO region)
     mov %eax, (%edi)
 
-    // Set up PD (Page Directory) at 0x3000 for first 1GB
+    // Set up PD (Page Directory) at 0xB000 for first 1GB
     // Identity map first 4 MiB using two 2 MiB pages
-    mov $0x3000, %edi
+    mov $0xB000, %edi
     mov $0x0083, %eax           // Address 0 | Present | Writable | Huge page
     mov %eax, (%edi)
     add $8, %edi
     mov $0x200083, %eax         // Address 2 MiB | Present | Writable | Huge page
     mov %eax, (%edi)
 
-    // Set up PD at 0x4000 for MMIO region (3-4GB range, PDPT[3])
+    // Set up PD at 0xC000 for MMIO region (3-4GB range, PDPT[3])
     // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
-    // Map 0xFE000000-0xFF000000 (16 MiB) to cover VirtIO MMIO, PCI BARs, IOAPIC, LAPIC
-    // This is PD entries 496-503 (8 entries, each covering 2 MiB)
-    mov $0x4000, %edi
-    add $3968, %edi             // PD[496] = 496 * 8 = 3968
-    mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT
+    // Map PCI MMIO range 0xC0000000-0xD0000000 (256 MiB) for PCI BARs
+    // Map high MMIO range 0xFE000000-0xFF000000 (16 MiB) for LAPIC/IOAPIC
 
-    // Map 8 consecutive 2 MiB pages
-    mov $8, %ecx
+    // First, map PCI BAR region: 0xC0000000-0xD0000000 (128 x 2MB = 256MB)
+    mov $0xC000, %edi           // PD base, entry 0
+    mov $0xC000009B, %eax       // 0xC0000000 | Present | Writable | Huge page | PCD | PWT
+    mov $128, %ecx              // Map 128 x 2 MiB pages = 256 MiB
+.Lmap_pci_loop:
+    mov %eax, (%edi)
+    add $8, %edi                // Next PD entry
+    add $0x200000, %eax         // Next 2 MiB physical address
+    loop .Lmap_pci_loop
+
+    // Second, map high MMIO region: 0xFE000000-0xFF000000 (8 x 2MB = 16MB)
+    // This is PD entries 496-503 (496 * 8 = 3968 bytes offset)
+    mov $0xC000, %edi
+    add $3968, %edi             // PD[496]
+    mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT
+    mov $8, %ecx                // Map 8 x 2 MiB pages = 16 MiB
 .Lmap_mmio_loop:
     mov %eax, (%edi)
     add $8, %edi                // Next PD entry
@@ -71,7 +83,7 @@ _start:
     loop .Lmap_mmio_loop
 
     // Load CR3 with PML4 address
-    mov $0x1000, %eax
+    mov $0x9000, %eax
     mov %eax, %cr3
 
     // Enable PAE (Physical Address Extension) in CR4
@@ -145,8 +157,8 @@ gdt_end:
 
 .align 16
 gdt_descriptor:
-    .word gdt_end - gdt_start - 1
-    .long gdt_start
+    .word gdt_end - gdt_start - 1  // Limit (2 bytes)
+    .quad gdt_start                 // Base address (8 bytes) - must be 64-bit for long mode
 
 // Stack space (64 KiB)
 .section .bss

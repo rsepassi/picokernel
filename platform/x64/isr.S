@@ -241,6 +241,14 @@ ISR_IRQ 44
 ISR_IRQ 45
 ISR_IRQ 46
 ISR_IRQ 47
+ISR_IRQ 48
+ISR_IRQ 49
+ISR_IRQ 50
+ISR_IRQ 51
+ISR_IRQ 52
+ISR_IRQ 53
+ISR_IRQ 54
+ISR_IRQ 55
 
 // Spurious interrupt stub (vector 255)
 // Minimal handler - spurious interrupts don't need EOI or processing

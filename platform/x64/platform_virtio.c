@@ -2,6 +2,7 @@
 // Discovers and initializes VirtIO devices using generic transport layer
 
 #include "interrupt.h"
+#include "kbase.h"
 #include "kernel.h"
 #include "pci.h"
 #include "platform_impl.h"
@@ -143,22 +144,25 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
       continue; // BAR not implemented
     }
 
+    // Align address to BAR size (BARs must be naturally aligned)
+    uint64_t aligned_addr = KALIGN(platform->pci_next_bar_addr, (uint64_t)size);
+
     // Check if 64-bit BAR
     uint32_t bar_type = (bar_val >> 1) & 0x3;
     if (bar_type == 0x2) {
-      // 64-bit BAR - assign address
+      // 64-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
+                                  (uint32_t)aligned_addr);
       platform_pci_config_write32(
           platform, bus, slot, func, bar_offset + 4,
-          (uint32_t)(platform->pci_next_bar_addr >> 32));
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL; // Align to 4KB
+          (uint32_t)(aligned_addr >> 32));
+      platform->pci_next_bar_addr = aligned_addr + size;
       i++; // Skip next BAR (high 32 bits)
     } else {
-      // 32-bit BAR
+      // 32-bit BAR - assign aligned address
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
-      platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
+                                  (uint32_t)aligned_addr);
+      platform->pci_next_bar_addr = aligned_addr + size;
     }
   }
 
@@ -811,13 +815,12 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 void mmio_scan_devices(platform_t *platform) {
 // QEMU microvm VirtIO MMIO region layout
 // QEMU places devices starting at 0xFEB02A00 with 0x200 byte spacing
-// With ACPI enabled, QEMU assigns IRQs starting at 16 (not 5)
 // IRQs are assigned in device creation order, but MMIO addresses are reversed
 #define VIRTIO_MMIO_BASE 0xFEB00000ULL
 #define VIRTIO_MMIO_DEVICE_START 0x2A00 // First device offset
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
 #define VIRTIO_MMIO_MAX_DEVICES 8
-#define VIRTIO_MMIO_IRQ_BASE 5       // microvm default IRQ base
+#define VIRTIO_MMIO_IRQ_BASE 5       // IRQ base
 #define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
 
   printk("Probing for VirtIO MMIO devices...\n");

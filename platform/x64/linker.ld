@@ -18,14 +18,20 @@ SECTIONS
         *(.text*)
     }
 
+    /* Align rodata to page boundary for proper LOAD segment */
+    . = ALIGN(4096);
     .rodata : {
         *(.rodata*)
     }
 
+    /* Align data section to prevent gaps */
+    . = ALIGN(16);
     .data : {
         *(.data*)
     }
 
+    /* Align BSS section properly */
+    . = ALIGN(4096);
     .bss : {
         __bss_start = .;
         *(.bss*)
