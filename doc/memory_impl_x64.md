@@ -113,57 +113,65 @@ The boot process follows the **PVH boot protocol** as specified in doc/memory.md
 
 ## 2. Memory Discovery
 
-### File: `/Users/ryan/code/vmos/platform/x64/platform_mem.c`
+### File: `/Users/ryan/code/vmos/platform/x64/platform_boot_context.c` and `platform_mem.c`
 
-Memory discovery uses **PVH E820 memory map** as specified in doc/memory.md (lines 721-850).
+Memory discovery uses **PVH E820 memory map** as specified in doc/memory.md. The boot context parsing (PVH) is extracted into `platform_boot_context_parse()` for consistency across platforms.
 
 #### Implementation Flow:
 
-1. **PVH Validation** - Lines 43-69 (`validate_pvh_info`)
+1. **Boot Context Parsing** - `platform_boot_context_parse(platform_t *platform, void *boot_context)`
+
+   The x64 platform uses PVH boot protocol. The boot_context pointer is a `struct hvm_start_info *`.
+
    ```c
-   if (pvh_info->magic != HVM_START_MAGIC_VALUE) {
-       printk("[MEM] ERROR: Invalid PVH magic: 0x%x\n", pvh_info->magic);
-       return -1;
-   }
+   int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+       struct hvm_start_info *pvh_info = (struct hvm_start_info *)boot_context;
 
-   if (pvh_info->memmap_paddr == 0 || pvh_info->memmap_entries == 0) {
-       printk("[MEM] ERROR: PVH memory map not provided\n");
-       return -1;
-   }
-   ```
-
-   **Strengths**:
-   - Validates magic number (0x336ec578)
-   - Checks memory map presence
-   - Clear error messages
-
-2. **E820 Parsing** - Lines 72-123 (`parse_e820_map`)
-   ```c
-   struct hvm_memmap_table_entry *memmap =
-       (struct hvm_memmap_table_entry *)(uintptr_t)pvh_info->memmap_paddr;
-
-   for (uint32_t i = 0; i < pvh_info->memmap_entries; i++) {
-       uint64_t base = memmap[i].addr;
-       uint64_t size = memmap[i].size;
-       uint32_t type = memmap[i].type;
-
-       if (type == E820_RAM) {
-           ram_regions[*num_ram_regions].base = base;
-           ram_regions[*num_ram_regions].size = size;
-           (*num_ram_regions)++;
+       // Validate PVH magic
+       if (pvh_info->magic != HVM_START_MAGIC_VALUE) {
+           printk("[BOOT] ERROR: Invalid PVH magic: 0x%x\n", pvh_info->magic);
+           return -1;
        }
+
+       if (pvh_info->memmap_paddr == 0 || pvh_info->memmap_entries == 0) {
+           printk("[BOOT] ERROR: PVH memory map not provided\n");
+           return -1;
+       }
+
+       // Save PVH info pointer in platform
+       platform->pvh_info = pvh_info;
+
+       // Parse E820 memory map
+       struct hvm_memmap_table_entry *memmap =
+           (struct hvm_memmap_table_entry *)(uintptr_t)pvh_info->memmap_paddr;
+
+       platform->num_mem_regions = 0;
+       for (uint32_t i = 0; i < pvh_info->memmap_entries; i++) {
+           uint64_t base = memmap[i].addr;
+           uint64_t size = memmap[i].size;
+           uint32_t type = memmap[i].type;
+
+           if (type == E820_RAM) {
+               platform->mem_regions[platform->num_mem_regions].base = base;
+               platform->mem_regions[platform->num_mem_regions].size = size;
+               platform->num_mem_regions++;
+           }
+       }
+
+       return 0;
    }
    ```
 
    **Excellent implementation**:
-   - ✅ Single-pass parsing (lines 78-116)
-   - ✅ Collects all E820_RAM regions
+   - ✅ Single-pass E820 parsing
+   - ✅ Collects all E820_RAM regions and stores directly in `platform->mem_regions[]`
    - ✅ Handles multiple discontiguous regions
    - ✅ Detailed logging for debugging
    - ✅ Respects KCONFIG_MAX_MEM_REGIONS limit
-   - ✅ Type names for readability (lines 23-40)
+   - ✅ Validates magic number
+   - ✅ Direct population of platform_t (no intermediate structure)
 
-3. **Reserved Region Tracking** - Lines 125-176 (`print_reserved_regions`)
+2. **Reserved Region Tracking** - `platform_mem.c` (`print_reserved_regions`, `build_free_regions`)
 
    **Regions tracked**:
    - Page tables: 0x100000 - 0x105000 (20 KiB, hardcoded location)
@@ -178,10 +186,10 @@ Memory discovery uses **PVH E820 memory map** as specified in doc/memory.md (lin
    - ✅ Clear debug output
 
    **Concerns**:
-   - ⚠️ Page table location hardcoded (#define at lines 18-20)
+   - ⚠️ Page table location hardcoded (#define)
    - Should ideally use linker symbols or discover from boot
 
-4. **Free Region Building** - Lines 178-254, 257-325 (`subtract_reserved_region`, `build_free_regions`)
+3. **Free Region Building** - `platform_mem.c` (`subtract_reserved_region`, `build_free_regions`)
 
    **Algorithm**: Exactly as specified in doc/memory.md (lines 196-223)
    ```c
@@ -229,15 +237,16 @@ mem_region_list_t platform_mem_regions(platform_t *platform) {
 **Strengths**:
 - ✅ Follows PVH protocol exactly
 - ✅ Single-pass E820 parsing
+- ✅ Direct population of `platform->mem_regions[]` in `platform_boot_context_parse()`
 - ✅ Uses linker symbols for kernel/stack
 - ✅ Tracks all reserved regions including boot structures
 - ✅ Robust region subtraction algorithm
 - ✅ Excellent logging and error handling
 - ✅ Supports variable memory sizes (QEMU -m flag)
+- ✅ Consistent API with ARM64/RV64 platforms
 
 **Weaknesses**:
 - ⚠️ Page table location hardcoded (minor issue, well-contained)
-- ⚠️ Could cache PVH structures to avoid pointer dereference after init
 
 **Grade: A** (Excellent implementation, minor improvement possible)
 
@@ -619,14 +628,16 @@ mem_region_list_t platform_mem_regions(platform_t *platform) {
 
 1. **Boot Protocol** (lines 721-859)
    - ✅ Uses PVH boot (modern, clean)
+   - ✅ Implements `platform_boot_context_parse()` for consistency
    - ✅ Parses PVH start info structure
    - ✅ Validates magic number
    - ✅ Extracts E820 memory map
 
-2. **Single-Pass Parsing** (lines 23-61, 751-753)
-   - ✅ `parse_e820_map()` does single traversal
+2. **Single-Pass Parsing** (doc/memory.md section 2)
+   - ✅ `platform_boot_context_parse()` does single traversal
    - ✅ Extracts all RAM regions in one pass
-   - ✅ Stores comprehensive info
+   - ✅ Stores directly in `platform->mem_regions[]`
+   - ✅ Saves PVH pointer in `platform->pvh_info`
    - ⚠️ Does not extract ACPI RSDP, modules (not needed yet)
 
 3. **Memory Discovery** (lines 106, 899-927)
@@ -682,19 +693,21 @@ mem_region_list_t platform_mem_regions(platform_t *platform) {
 
 #### ❌ Missing Features (Not Yet Implemented):
 
-1. **ACPI RSDP Extraction** (lines 833-835)
-   - E820 parsing doesn't extract pvh_info->rsdp_paddr
+1. **ACPI RSDP Extraction** (doc/memory.md lines 833-835)
+   - Boot context parsing doesn't extract pvh_info->rsdp_paddr
    - **Status**: Not needed yet (ACPI init uses separate path)
 
-2. **Module List** (lines 837-838)
-   - E820 parsing doesn't extract modules
+2. **Module List** (doc/memory.md lines 837-838)
+   - Boot context parsing doesn't extract modules
    - **Status**: Not needed (VMOS doesn't use multiboot modules)
 
-3. **Dynamic Page Table Allocation** (lines 905-913)
+3. **Dynamic Page Table Allocation** (doc/memory.md lines 905-913)
    - Could use linker symbols or BSS
    - **Status**: Not critical, current approach works
 
-### Alignment Grade: A- (Excellent with minor deviations)
+### Alignment Grade: A (Excellent with minor deviations)
+
+**Note:** The x64 implementation now uses `platform_boot_context_parse(platform_t *platform, void *boot_context)` for consistency with ARM64 and RV64. For x64, the boot_context is a PVH start info structure, while ARM64/RV64 use FDT. This provides a consistent cross-platform API while supporting different boot protocols.
 
 ---
 
@@ -778,7 +791,7 @@ None identified.
    - Allows reclaiming boot memory
 
 2. **ACPI RSDP Extraction**
-   - Extract pvh_info->rsdp_paddr during E820 parsing
+   - Extract pvh_info->rsdp_paddr during boot context parsing
    - Pass to ACPI subsystem (currently uses separate scan)
 
 3. **On-Demand MMIO Mapping**
@@ -957,8 +970,9 @@ The implementation serves as an excellent reference for the other platforms (ARM
 |------|-------|---------|
 | `platform/x64/boot.S` | 209 | PVH boot entry, page table setup, long mode transition |
 | `platform/x64/platform_init.c` | 133 | Platform initialization, calls memory init |
+| `platform/x64/platform_boot_context.c` | - | Boot context parsing (PVH E820 memory map) |
 | `platform/x64/platform_mem.h` | 12 | Memory management internal API |
-| `platform/x64/platform_mem.c` | 400 | PVH parsing, E820 discovery, free region building |
+| `platform/x64/platform_mem.c` | 400 | Reserved region tracking, free region building |
 | `platform/x64/platform_mem_debug.c` | 516 | Memory validation and debugging |
 | `platform/x64/platform_impl.h` | 168 | Platform structure with memory fields |
 | `platform/x64/pvh.h` | 42 | PVH boot protocol structures |

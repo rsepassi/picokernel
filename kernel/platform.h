@@ -69,25 +69,15 @@ typedef struct {
   uint32_t irq;
 } virtio_mmio_device_t;
 
-// Single-pass FDT parsing result structure
-// Populated by platform_fdt_parse_once() with ALL discovered info
-typedef struct {
-  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS];
-  int num_mem_regions;
-  uintptr_t uart_base;      // UART MMIO base from FDT
-  uintptr_t gic_dist_base;  // GIC distributor base (ARM64)
-  uintptr_t gic_cpu_base;   // GIC CPU interface base (ARM64)
-  uintptr_t pci_ecam_base;  // PCI ECAM base (if found)
-  size_t pci_ecam_size;     // PCI ECAM size (if found)
-} platform_fdt_info_t;
-
 // FDT parsing functions
 void platform_fdt_dump(platform_t *platform, void *fdt);
 
-// Parse FDT once and extract ALL needed information
+// Parse boot context (FDT, PVH, etc.) and populate platform_t
+// Each platform implements this to extract memory regions and device info
+// boot_context: FDT pointer on ARM/RISC-V, PVH start info on x64
 // CRITICAL: Call this EXACTLY ONCE during platform initialization
 // Returns: 0 on success, negative on error
-int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info);
+int platform_boot_context_parse(platform_t *platform, void *boot_context);
 
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)

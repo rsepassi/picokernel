@@ -109,7 +109,7 @@ static void subtract_reserved_region(mem_region_t *regions, int *count,
 }
 
 // Setup MMU with identity mapping
-static void setup_mmu(platform_fdt_info_t *fdt_info) {
+static void setup_mmu(platform_t *platform) {
   printk("Setting up ARM64 MMU (64KB pages, 48-bit address space)...\n");
 
   // Clear all page tables
@@ -172,9 +172,9 @@ static void setup_mmu(platform_fdt_info_t *fdt_info) {
 
   // L3 RAM tables: Map discovered RAM regions as normal memory
   // Map all discovered RAM regions
-  for (int r = 0; r < fdt_info->num_mem_regions; r++) {
-    uintptr_t ram_base = fdt_info->mem_regions[r].base;
-    size_t ram_size = fdt_info->mem_regions[r].size;
+  for (int r = 0; r < platform->num_mem_regions; r++) {
+    uintptr_t ram_base = platform->mem_regions[r].base;
+    size_t ram_size = platform->mem_regions[r].size;
 
     printk("  Mapping RAM region ");
     printk_dec(r);
@@ -247,13 +247,12 @@ static void setup_mmu(platform_fdt_info_t *fdt_info) {
 }
 
 // Build free memory region list
-static void build_free_regions(platform_t *platform, platform_fdt_info_t *fdt_info) {
+// initial_num_regions: number of discovered RAM regions (before subtraction)
+static void build_free_regions(platform_t *platform, int initial_num_regions) {
   printk("\nBuilding free memory region list...\n");
 
-  // Start with all discovered RAM regions
-  platform->num_mem_regions = fdt_info->num_mem_regions;
-  for (int i = 0; i < fdt_info->num_mem_regions; i++) {
-    platform->mem_regions[i] = fdt_info->mem_regions[i];
+  // Print initial discovered RAM regions
+  for (int i = 0; i < initial_num_regions; i++) {
     printk("  Initial region ");
     printk_dec(i);
     printk(": 0x");
@@ -380,63 +379,19 @@ void platform_mem_init(platform_t *platform, void *fdt) {
 
   printk("Parsing FDT...\n");
   // Parse FDT to discover all memory regions and device addresses
-  platform_fdt_info_t fdt_info;
-  if (platform_fdt_parse_once(fdt, &fdt_info) != 0) {
-    printk("ERROR: Failed to parse device tree\n");
+  if (platform_boot_context_parse(platform, fdt) != 0) {
+    printk("ERROR: Failed to parse boot context\n");
     return;
   }
 
-  printk("FDT parse complete\n");
-
-  printk("Discovered from FDT:\n");
-  printk("  RAM regions: ");
-  printk_dec(fdt_info.num_mem_regions);
-  printk("\n");
-  for (int i = 0; i < fdt_info.num_mem_regions; i++) {
-    printk("    Region ");
-    printk_dec(i);
-    printk(": 0x");
-    printk_hex64(fdt_info.mem_regions[i].base);
-    printk(" - 0x");
-    printk_hex64(fdt_info.mem_regions[i].base + fdt_info.mem_regions[i].size);
-    printk(" (");
-    printk_dec(fdt_info.mem_regions[i].size / 1024 / 1024);
-    printk(" MB)\n");
-  }
-
-  if (fdt_info.uart_base != 0) {
-    printk("  UART: 0x");
-    printk_hex64(fdt_info.uart_base);
-    printk("\n");
-  }
-
-  if (fdt_info.gic_dist_base != 0) {
-    printk("  GIC Distributor: 0x");
-    printk_hex64(fdt_info.gic_dist_base);
-    printk("\n");
-  }
-
-  if (fdt_info.gic_cpu_base != 0) {
-    printk("  GIC CPU Interface: 0x");
-    printk_hex64(fdt_info.gic_cpu_base);
-    printk("\n");
-  }
-
-  if (fdt_info.pci_ecam_base != 0) {
-    printk("  PCI ECAM: 0x");
-    printk_hex64(fdt_info.pci_ecam_base);
-    printk(" (size: 0x");
-    printk_hex64(fdt_info.pci_ecam_size);
-    printk(")\n");
-  }
-
-  printk("\n");
+  // Save initial region count before subtraction
+  int initial_num_regions = platform->num_mem_regions;
 
   // Setup MMU with identity mapping
-  setup_mmu(&fdt_info);
+  setup_mmu(platform);
 
-  // Build free memory region list
-  build_free_regions(platform, &fdt_info);
+  // Build free memory region list (subtracts reserved regions in-place)
+  build_free_regions(platform, initial_num_regions);
 
   // Debug: Verify MMU configuration
   platform_mem_debug_mmu();

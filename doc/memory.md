@@ -23,41 +23,42 @@ All memory regions, RAM size, UART location, interrupt controller addresses, PCI
 
 ### 2. PARSE ONCE, USE MANY TIMES
 
-**Parse device tree (FDT) or multiboot info EXACTLY ONCE** during platform initialization. Create a single traversal function that populates a comprehensive structure with ALL needed information:
+**Parse boot context (FDT, PVH, etc.) EXACTLY ONCE** during platform initialization. Each platform implements a function that parses its boot context and populates the platform structure directly:
 
 ```c
-// Example for FDT-based platforms (ARM64, RV64)
-typedef struct {
-    mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS];
-    int num_mem_regions;
-    uintptr_t uart_base;
-    uintptr_t interrupt_controller_base;
-    uintptr_t pci_ecam_base;
-    // ... all other addresses discovered from FDT
-} platform_fdt_info_t;
+// Platform contract (defined in platform.h)
+int platform_boot_context_parse(platform_t *platform, void *boot_context);
 
-int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info);
+// Each platform implements this function to parse its boot-time information:
+// - ARM64/RV64: boot_context is FDT (Flattened Device Tree)
+// - x64: boot_context is PVH start info pointer
 
-// Example for multiboot-based platforms (x64)
-typedef struct {
-    mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS];
-    int num_mem_regions;
-    uintptr_t mboot_info_base;
-    size_t mboot_info_size;
-    // ... all other info from multiboot
-} platform_multiboot_info_t;
+// The function populates platform_t directly with discovered information:
+// - Memory regions (platform->mem_regions[], platform->num_mem_regions)
+// - Device addresses (if platform needs to persist them)
+// - Other boot-time configuration
 
-int platform_multiboot_parse_once(uint32_t magic, multiboot_info_t *mboot,
-                                   platform_multiboot_info_t *info);
+// Example implementation for FDT-based platforms:
+int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+    void *fdt = boot_context;
+
+    // Single traversal extracts ALL needed information
+    // Populate platform->mem_regions[] directly
+    // Store device addresses in platform_t if needed for later use
+    // (or use stack-local variables if only needed for init logging)
+
+    return 0;
+}
 ```
 
-**DO NOT** repeatedly traverse the FDT or multiboot structure for different pieces of information. Extract everything in one pass and store it in a well-structured format.
+**DO NOT** repeatedly traverse the boot context for different pieces of information. Extract everything in one pass and decide per-platform what to persist in `platform_t` versus what to use temporarily during initialization.
 
 **Why this matters**:
 - Efficiency: Parsing is expensive, do it once
 - Correctness: Single source of truth, no inconsistencies
 - Maintainability: All discovery logic in one place
-- Safety: FDT/multiboot data may be in memory we want to reclaim later
+- Safety: Boot context data may be in memory we want to reclaim later
+- Flexibility: Each platform decides what to persist based on its needs
 
 ## Current Memory Layout (QEMU ARM64 virt)
 

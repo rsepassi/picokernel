@@ -123,28 +123,27 @@ SECTIONS
 
 ### 2.1 Device Tree Parsing
 
-**File:** `/Users/ryan/code/vmos/platform/shared/devicetree.c` (lines 378-572)
+**File:** `/Users/ryan/code/vmos/platform/rv64/platform_boot_context.c`
 
 The FDT parsing follows the "parse once" principle from the memory plan:
 
 ```c
-// Single-pass FDT parsing - populates comprehensive platform info structure
-typedef struct {
-  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS];
-  int num_mem_regions;
-  uintptr_t uart_base;      // UART MMIO base from FDT
-  uintptr_t gic_dist_base;  // GIC distributor base (ARM64)
-  uintptr_t gic_cpu_base;   // GIC CPU interface base (ARM64)
-  uintptr_t pci_ecam_base;  // PCI ECAM base (if found)
-  size_t pci_ecam_size;     // PCI ECAM size (if found)
-} platform_fdt_info_t;
+// Single-pass FDT parsing - populates platform_t directly
+int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+  void *fdt = boot_context;
 
-int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
   // Verify FDT magic
   if (magic != FDT_MAGIC) return -1;
 
-  // Initialize info structure
-  info->num_mem_regions = 0;
+  // Initialize platform memory regions
+  platform->num_mem_regions = 0;
+
+  // Stack-local storage for device addresses (used for debug logging)
+  uintptr_t uart_base = 0;
+  uintptr_t plic_base = 0;
+  uintptr_t clint_base = 0;
+  uintptr_t pci_ecam_base = 0;
+  size_t pci_ecam_size = 0;
 
   // Single pass through FDT structure
   while (p < struct_end) {
@@ -166,9 +165,9 @@ int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
     else if (token == FDT_END_NODE) {
       // Save memory region if this was a memory@ node
       if (in_memory_node && current_reg_addr != 0) {
-        info->mem_regions[info->num_mem_regions].base = current_reg_addr;
-        info->mem_regions[info->num_mem_regions].size = current_reg_size;
-        info->num_mem_regions++;
+        platform->mem_regions[platform->num_mem_regions].base = current_reg_addr;
+        platform->mem_regions[platform->num_mem_regions].size = current_reg_size;
+        platform->num_mem_regions++;
       }
     }
   }
@@ -178,10 +177,11 @@ int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
 
 **Key Observations:**
 
-1. **Single Pass:** FDT is traversed EXACTLY ONCE, extracting all needed information (lines 443-561)
-2. **Memory Region Discovery:** All `memory@` nodes are parsed and stored (lines 460-464, 530-535)
+1. **Single Pass:** FDT is traversed EXACTLY ONCE, extracting all needed information
+2. **Memory Region Discovery:** All `memory@` nodes are parsed and stored directly in `platform->mem_regions[]`
 3. **No Hardcoded Addresses:** All memory regions discovered from FDT dynamically ✅
 4. **Multiple Regions Supported:** Up to `KCONFIG_MAX_MEM_REGIONS` (16) discontiguous regions can be stored
+5. **Direct Population:** No intermediate structure, data flows directly into platform_t
 
 **Typical QEMU virt FDT Memory Region:**
 
@@ -213,7 +213,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // Initialize timer and read timebase frequency from FDT
   timer_init(platform, fdt);
 
-  // Initialize memory management (MMU setup, memory discovery, free regions)
+  // Initialize memory management (MMU setup, boot context parsing, free regions)
   platform_mem_init(platform, fdt);
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
@@ -368,11 +368,11 @@ uint64_t ram_size = 0x08000000;  // 128 MB (typical QEMU default)
 
 **Impact:** If QEMU is run with `-m 256M` or `-m 512M`, only the first 128 MB will be mapped. This violates the "no hardcoded addresses" principle from the plan.
 
-**Recommended Fix:** Use discovered RAM region from FDT instead:
+**Recommended Fix:** Use discovered RAM region from platform_t instead:
 ```c
-// After platform_fdt_parse_once() returns:
-uint64_t ram_base = fdt_info.mem_regions[0].base;
-uint64_t ram_size = fdt_info.mem_regions[0].size;
+// After platform_boot_context_parse() populates platform_t:
+uint64_t ram_base = platform->mem_regions[0].base;
+uint64_t ram_size = platform->mem_regions[0].size;
 ```
 
 ### 3.2 satp Register
@@ -569,20 +569,19 @@ int platform_mem_init(platform_t *platform, void *fdt) {
 
   printk("\n=== Memory Management Initialization ===\n");
 
-  // Parse FDT once to get all memory regions and device addresses
-  platform_fdt_info_t fdt_info;
-  int ret = platform_fdt_parse_once(fdt, &fdt_info);
+  // Parse boot context (FDT) - populates platform->mem_regions[] directly
+  int ret = platform_boot_context_parse(platform, fdt);
   if (ret != 0) {
     printk("ERROR: Failed to parse FDT\n");
     return ret;
   }
 
-  // Print discovered memory regions from FDT
-  for (int i = 0; i < fdt_info.num_mem_regions; i++) {
+  // Print discovered memory regions from platform_t
+  for (int i = 0; i < platform->num_mem_regions; i++) {
     printk("  Region %d: base=0x%lx size=0x%lx (%lu MB)\n",
-           i, fdt_info.mem_regions[i].base,
-           fdt_info.mem_regions[i].size,
-           fdt_info.mem_regions[i].size / (1024 * 1024));
+           i, platform->mem_regions[i].base,
+           platform->mem_regions[i].size,
+           platform->mem_regions[i].size / (1024 * 1024));
   }
 
   // Set up MMU with Sv39 page tables
@@ -603,13 +602,9 @@ int platform_mem_init(platform_t *platform, void *fdt) {
   }
 
   // Build free region list
-  // Start with all memory regions from FDT
-  platform->num_mem_regions = 0;
-  for (int i = 0; i < fdt_info.num_mem_regions &&
-                  i < KCONFIG_MAX_MEM_REGIONS; i++) {
-    platform->mem_regions[platform->num_mem_regions] = fdt_info.mem_regions[i];
-    platform->num_mem_regions++;
-  }
+  // platform->mem_regions[] already populated by platform_boot_context_parse()
+  // containing initial RAM regions discovered from FDT
+  int initial_num_regions = platform->num_mem_regions;
 
   // Subtract each reserved region
   for (int i = 0; i < num_reserved; i++) {
@@ -636,7 +631,7 @@ int platform_mem_init(platform_t *platform, void *fdt) {
 
 **Key Observations:**
 
-1. **FDT Parsing First:** Calls `platform_fdt_parse_once()` to get memory regions (lines 278-284)
+1. **Boot Context Parsing First:** Calls `platform_boot_context_parse()` to populate `platform->mem_regions[]` directly
 2. **MMU Setup Next:** Sets up Sv39 page tables (line 305)
 3. **Reserved Tracking:** Calculates all reserved regions (line 313)
 4. **Region Subtraction:** Subtracts each reserved region from available memory (lines 338-341)
@@ -751,7 +746,7 @@ mem_region_list_t platform_mem_regions(platform_t *platform);
 
 | Step | Plan Requirement | Implementation Status |
 |------|------------------|----------------------|
-| **1. Memory Discovery** | Parse FDT once for all memory@ nodes | ✅ **Done** - `platform_fdt_parse_once()` |
+| **1. Memory Discovery** | Parse FDT once for all memory@ nodes | ✅ **Done** - `platform_boot_context_parse()` |
 | **2. MMU Configuration** | Set up Sv39, identity map, 2MB pages | ✅ **Done** - Sv39 with 2MB megapages |
 | **3. Reserved Tracking** | Track DTB, kernel, stack, page tables | ✅ **Done** - All four tracked via symbols/pointers |
 | **4. Free Region List** | Subtract reserved from total RAM | ✅ **Done** - Correct subtraction algorithm |
@@ -811,20 +806,20 @@ The MMU setup hardcodes both RAM base and size, violating the "no hardcoded addr
 
 **Why This Happened:**
 
-The MMU setup (`mmu_enable_sv39()`) is called at line 305, AFTER FDT parsing at line 280. However, the function doesn't use the parsed FDT info - it uses hardcoded values instead.
+The MMU setup (`mmu_enable_sv39()`) is called AFTER boot context parsing. However, the function doesn't use the discovered memory regions - it uses hardcoded values instead.
 
 **Recommended Fix:**
 
-Change `mmu_enable_sv39()` to accept discovered memory regions:
+Change `mmu_enable_sv39()` to accept platform_t with discovered memory regions:
 
 ```c
-static int mmu_enable_sv39(platform_fdt_info_t *fdt_info) {
+static int mmu_enable_sv39(platform_t *platform) {
   // ... existing code ...
 
-  // Map RAM region from discovered FDT info
-  if (fdt_info->num_mem_regions > 0) {
-    uint64_t ram_base = fdt_info->mem_regions[0].base;
-    uint64_t ram_size = fdt_info->mem_regions[0].size;
+  // Map RAM region from discovered boot context info
+  if (platform->num_mem_regions > 0) {
+    uint64_t ram_base = platform->mem_regions[0].base;
+    uint64_t ram_size = platform->mem_regions[0].size;
 
     // Calculate number of 2 MB pages needed
     uint64_t num_pages = (ram_size + 0x1FFFFF) / 0x200000;
@@ -839,11 +834,11 @@ static int mmu_enable_sv39(platform_fdt_info_t *fdt_info) {
 }
 ```
 
-Then update the call at line 305:
+Then update the call:
 
 ```c
 // Set up MMU with Sv39 page tables
-ret = mmu_enable_sv39(&fdt_info);
+ret = mmu_enable_sv39(platform);
 ```
 
 **Severity:** 🔴 **Critical** - Breaks functionality with non-default memory sizes
@@ -920,7 +915,7 @@ The stack is part of the `.bss` section and will be included in the kernel's BSS
 ```c
 // Stack region (from linker symbols)
 // Note: Stack is within BSS, so technically part of kernel region
-// We track it separately for visibility in debug output
+// We reserve it separately for visibility in debug output
 ```
 
 **Severity:** 🟢 **Very Low** - Documentation improvement only
@@ -959,15 +954,15 @@ Fix hardcoded RAM size in MMU setup:
 
 ```c
 // In platform_mem.c, change mmu_enable_sv39() signature:
-static int mmu_enable_sv39(platform_fdt_info_t *fdt_info) {
+static int mmu_enable_sv39(platform_t *platform) {
   // Use discovered RAM regions instead of hardcoded values
-  uint64_t ram_base = fdt_info->mem_regions[0].base;
-  uint64_t ram_size = fdt_info->mem_regions[0].size;
+  uint64_t ram_base = platform->mem_regions[0].base;
+  uint64_t ram_size = platform->mem_regions[0].size;
   // ... rest of function
 }
 
 // Update call site:
-ret = mmu_enable_sv39(&fdt_info);
+ret = mmu_enable_sv39(platform);
 ```
 
 **Priority 2 - Testing:**
@@ -1006,7 +1001,7 @@ The RV64 implementation is **slightly better** than ARM64 in some ways:
 **RV64 vs x64 Implementation:**
 
 - **Simpler Boot:** RV64 boot.S is cleaner than x64's PVH boot sequence
-- **Same FDT Parsing:** Both use platform_fdt_parse_once()
+- **Same Boot Context Parsing:** RV64 uses FDT via `platform_boot_context_parse()`, x64 uses PVH
 - **Same Region Tracking:** Identical reserved region and free list algorithms
 
 ---
@@ -1024,7 +1019,7 @@ The RV64 implementation is **slightly better** than ARM64 in some ways:
 
 | File | Lines | Description |
 |------|-------|-------------|
-| `platform/shared/devicetree.c` | 378-572 | `platform_fdt_parse_once()` - single-pass FDT parsing |
+| `platform/rv64/platform_boot_context.c` | - | `platform_boot_context_parse()` - single-pass FDT parsing |
 | `platform/rv64/platform_init.c` | 20-59 | Platform initialization, calls `platform_mem_init()` |
 | `platform/rv64/platform_mem.c` | 271-366 | `platform_mem_init()` - main memory initialization |
 

@@ -275,30 +275,11 @@ int platform_mem_init(platform_t *platform, void *fdt) {
 
   printk("\n=== Memory Management Initialization ===\n");
 
-  // Parse FDT once to get all memory regions and device addresses
-  platform_fdt_info_t fdt_info;
-  int ret = platform_fdt_parse_once(fdt, &fdt_info);
+  // Parse FDT boot context and populate platform->mem_regions
+  int ret = platform_boot_context_parse(platform, fdt);
   if (ret != 0) {
-    printk("ERROR: Failed to parse FDT\n");
+    printk("ERROR: Failed to parse boot context\n");
     return ret;
-  }
-
-  printk("FDT parsing complete:\n");
-  printk("  Memory regions: ");
-  printk_dec(fdt_info.num_mem_regions);
-  printk("\n");
-
-  // Print discovered memory regions from FDT
-  for (int i = 0; i < fdt_info.num_mem_regions; i++) {
-    printk("  Region ");
-    printk_dec(i);
-    printk(": base=0x");
-    printk_hex64(fdt_info.mem_regions[i].base);
-    printk(" size=0x");
-    printk_hex64(fdt_info.mem_regions[i].size);
-    printk(" (");
-    printk_dec(fdt_info.mem_regions[i].size / (1024 * 1024));
-    printk(" MB)\n");
   }
 
   // Set up MMU with Sv39 page tables
@@ -326,15 +307,9 @@ int platform_mem_init(platform_t *platform, void *fdt) {
   }
 
   // Build free region list
-  // Start with all memory regions from FDT
-  platform->num_mem_regions = 0;
-  for (int i = 0; i < fdt_info.num_mem_regions &&
-                  i < KCONFIG_MAX_MEM_REGIONS; i++) {
-    platform->mem_regions[platform->num_mem_regions] = fdt_info.mem_regions[i];
-    platform->num_mem_regions++;
-  }
-
-  // Subtract each reserved region
+  // platform->mem_regions already contains all memory regions from FDT
+  // (populated by platform_boot_context_parse)
+  // Now subtract each reserved region
   for (int i = 0; i < num_reserved; i++) {
     subtract_reserved(platform->mem_regions, &platform->num_mem_regions,
                      reserved[i].base, reserved[i].size);

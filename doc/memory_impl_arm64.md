@@ -189,46 +189,50 @@ Idx Name          Size     VMA              Type
 
 ### 2.1 Device Tree Parsing
 
-**File:** `platform/shared/devicetree.c`
+**File:** `platform/arm64/platform_boot_context.c`
 
 The implementation provides a **single-pass FDT parsing function** as specified in doc/memory.md:
 
 ```c
-// Parse FDT once and extract ALL needed information
+// Parse boot context (FDT) and populate platform_t directly
 // CRITICAL: Call this EXACTLY ONCE during platform initialization
-int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
-    // Initialize info structure
-    info->num_mem_regions = 0;
-    info->uart_base = 0;
-    info->gic_dist_base = 0;
-    info->gic_cpu_base = 0;
-    info->pci_ecam_base = 0;
-    info->pci_ecam_size = 0;
+int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+    void *fdt = boot_context;
+
+    // Initialize platform memory regions
+    platform->num_mem_regions = 0;
+
+    // Stack-local storage for device addresses (used for debug logging only)
+    uintptr_t uart_base = 0;
+    uintptr_t gic_dist_base = 0;
+    uintptr_t gic_cpu_base = 0;
+    uintptr_t pci_ecam_base = 0;
+    size_t pci_ecam_size = 0;
 
     // Single traversal - extract ALL information
     while (p < struct_end && loop_count < MAX_LOOPS) {
-        // Parse memory@ nodes
+        // Parse memory@ nodes - populate platform directly
         if (in_memory_node && current_reg_addr != 0) {
-            info->mem_regions[info->num_mem_regions].base = current_reg_addr;
-            info->mem_regions[info->num_mem_regions].size = current_reg_size;
-            info->num_mem_regions++;
+            platform->mem_regions[platform->num_mem_regions].base = current_reg_addr;
+            platform->mem_regions[platform->num_mem_regions].size = current_reg_size;
+            platform->num_mem_regions++;
         }
 
-        // Parse UART (pl011)
+        // Parse UART (pl011) - save to stack local for logging
         if (in_uart_node && current_reg_addr != 0) {
-            info->uart_base = current_reg_addr;
+            uart_base = current_reg_addr;
         }
 
-        // Parse GIC (gic-400, cortex-a15-gic, etc.)
+        // Parse GIC (gic-400, cortex-a15-gic, etc.) - save to stack local
         if (in_gic_node && current_reg_addr != 0) {
-            info->gic_dist_base = current_reg_addr;
-            info->gic_cpu_base = current_reg_addr2;  // Second reg entry
+            gic_dist_base = current_reg_addr;
+            gic_cpu_base = current_reg_addr2;  // Second reg entry
         }
 
-        // Parse PCI ECAM (pci-host-ecam-generic)
+        // Parse PCI ECAM (pci-host-ecam-generic) - save to stack local
         if (in_pci_node && current_reg_addr != 0) {
-            info->pci_ecam_base = current_reg_addr;
-            info->pci_ecam_size = current_reg_size;
+            pci_ecam_base = current_reg_addr;
+            pci_ecam_size = current_reg_size;
         }
     }
 
@@ -239,19 +243,20 @@ int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
 **Analysis:**
 
 ✅ **Single-pass parsing:** Extracts ALL information in one FDT traversal (as required)
-✅ **Memory regions:** Discovers all `memory@` nodes dynamically
-✅ **Device addresses:** Discovers UART, GIC, PCI ECAM from FDT
+✅ **Memory regions:** Discovers all `memory@` nodes dynamically, populates `platform->mem_regions[]` directly
+✅ **Device addresses:** Discovers UART, GIC, PCI ECAM from FDT (stored in stack locals for logging)
 ✅ **Compatible strings:** Matches multiple GIC variants (gic-400, cortex-a15-gic, cortex-a9-gic, gic-v2)
 ✅ **Multiple regions:** Supports up to `KCONFIG_MAX_MEM_REGIONS` (16) discontiguous memory regions
+✅ **Direct population:** No intermediate structure, data flows directly into platform_t
 
 **Alignment with doc/memory.md:**
-> "Parse device tree (FDT) or multiboot info EXACTLY ONCE during platform initialization. Create a single traversal function that populates a comprehensive structure with ALL needed information"
+> "Parse device tree (FDT) or boot context EXACTLY ONCE during platform initialization. Populate platform_t directly with discovered memory regions."
 
 ✅ **FULLY COMPLIANT**
 
 ### 2.2 Memory Region Discovery
 
-**File:** `platform/arm64/platform_mem.c` (lines 345-405)
+**File:** `platform/arm64/platform_mem.c`
 
 ```c
 void platform_mem_init(platform_t *platform, void *fdt) {
@@ -271,26 +276,25 @@ void platform_mem_init(platform_t *platform, void *fdt) {
         platform->fdt_size = (platform->fdt_size + 0xFFFF) & ~0xFFFF;
     }
 
-    // Parse FDT to discover all memory regions and device addresses
-    platform_fdt_info_t fdt_info;
-    if (platform_fdt_parse_once(fdt, &fdt_info) != 0) {
+    // Parse boot context (FDT) - populates platform->mem_regions[] directly
+    if (platform_boot_context_parse(platform, fdt) != 0) {
         printk("ERROR: Failed to parse device tree\n");
         return;
     }
 
     printk("Discovered from FDT:\n");
     printk("  RAM regions: ");
-    printk_dec(fdt_info.num_mem_regions);
+    printk_dec(platform->num_mem_regions);
     printk("\n");
-    for (int i = 0; i < fdt_info.num_mem_regions; i++) {
+    for (int i = 0; i < platform->num_mem_regions; i++) {
         printk("    Region ");
         printk_dec(i);
         printk(": 0x");
-        printk_hex64(fdt_info.mem_regions[i].base);
+        printk_hex64(platform->mem_regions[i].base);
         printk(" - 0x");
-        printk_hex64(fdt_info.mem_regions[i].base + fdt_info.mem_regions[i].size);
+        printk_hex64(platform->mem_regions[i].base + platform->mem_regions[i].size);
         printk(" (");
-        printk_dec(fdt_info.mem_regions[i].size / 1024 / 1024);
+        printk_dec(platform->mem_regions[i].size / 1024 / 1024);
         printk(" MB)\n");
     }
 }
@@ -301,7 +305,8 @@ void platform_mem_init(platform_t *platform, void *fdt) {
 ✅ **Dynamic discovery:** Reads FDT base from function parameter (passed from boot code)
 ✅ **FDT size parsing:** Reads size from FDT header, not hardcoded
 ✅ **Alignment:** Rounds FDT size up to 64KB boundary (for page table granule)
-✅ **Multiple regions:** Iterates through all discovered memory regions
+✅ **Direct population:** `platform_boot_context_parse()` populates `platform->mem_regions[]` directly
+✅ **Multiple regions:** Iterates through all discovered memory regions from platform_t
 ✅ **Logging:** Provides detailed debug output for each discovered region
 
 **Test with QEMU (typical output):**
@@ -322,7 +327,7 @@ Discovered from FDT:
 The MMU setup is **comprehensive and correct**:
 
 ```c
-static void setup_mmu(platform_fdt_info_t *fdt_info) {
+static void setup_mmu(platform_t *platform) {
     printk("Setting up ARM64 MMU (64KB pages, 48-bit address space)...\n");
 
     // Clear all page tables
@@ -490,9 +495,9 @@ for (int i = 0; i < 1024; i++) {
 }
 
 // L3 RAM tables: Map discovered RAM regions as normal memory
-for (int r = 0; r < fdt_info->num_mem_regions; r++) {
-    uintptr_t ram_base = fdt_info->mem_regions[r].base;
-    size_t ram_size = fdt_info->mem_regions[r].size;
+for (int r = 0; r < platform->num_mem_regions; r++) {
+    uintptr_t ram_base = platform->mem_regions[r].base;
+    size_t ram_size = platform->mem_regions[r].size;
 
     uintptr_t addr = ram_base;
     while (addr < ram_base + ram_size) {
@@ -525,15 +530,15 @@ for (int r = 0; r < fdt_info->num_mem_regions; r++) {
 
 **Note on hardcoded MMIO regions:**
 
-⚠️ **PARTIAL ISSUE:** The MMIO regions (0x08000000-0x0FFFFFFF) are hardcoded in the mapping setup, even though FDT parsing discovers `gic_dist_base`, `gic_cpu_base`, and `uart_base`.
+⚠️ **PARTIAL ISSUE:** The MMIO regions (0x08000000-0x0FFFFFFF) are hardcoded in the mapping setup, even though FDT parsing discovers device addresses.
 
 **Why this is acceptable:**
 1. MMIO device mapping needs to happen **before** devices are initialized
 2. The FDT parsing discovers exact device addresses for **driver initialization**, not MMU setup
 3. The MMU maps a broad MMIO region to ensure all devices are accessible
-4. Individual device drivers use the FDT-discovered addresses within the mapped region
+4. Individual device drivers use the discovered addresses within the mapped region
 
-However, for **PCI ECAM** at 0x4010000000, this should be mapped dynamically based on `fdt_info.pci_ecam_base` (not currently implemented).
+However, for **PCI ECAM** at 0x4010000000, this should be mapped dynamically based on discovered PCI ECAM address (not currently implemented).
 
 ---
 
@@ -919,10 +924,9 @@ clear_bss_done:
 **Problem:**
 - Violates "NO HARDCODED ADDRESSES" principle
 - FDT parsing correctly discovers GIC addresses but doesn't use them
-- `platform_fdt_info_t` contains `gic_dist_base` and `gic_cpu_base` but they're ignored
 
 **Fix:**
-1. Pass `platform_fdt_info_t` to `interrupt_init()` or store in `platform_t`
+1. Store discovered addresses in `platform_t` during boot context parsing
 2. Use discovered addresses instead of hardcoded defines:
 ```c
 // In platform_t:
@@ -1002,8 +1006,9 @@ for (int i = 0; i < 1024; i++) {
 Add L1 entry for high memory region (above 4GB):
 ```c
 // L1 entry for 512GB-1TB range (covers 0x4010000000)
-if (fdt_info->pci_ecam_base != 0) {
-    uint32_t l1_idx = (fdt_info->pci_ecam_base >> 39) & 0x1FFF;
+// Note: pci_ecam_base would need to be stored in platform_t
+if (platform->pci_ecam_base != 0) {
+    uint32_t l1_idx = (platform->pci_ecam_base >> 39) & 0x1FFF;
     // Map PCI ECAM region...
 }
 ```
@@ -1249,14 +1254,12 @@ struct platform_t {
     uintptr_t gic_cpu_base;
 };
 
-// platform_init.c - populate from FDT:
-void platform_init(platform_t *platform, void *fdt, void *kernel) {
-    platform_fdt_info_t fdt_info;
-    platform_fdt_parse_once(fdt, &fdt_info);
-
-    platform->gic_dist_base = fdt_info.gic_dist_base;
-    platform->gic_cpu_base = fdt_info.gic_cpu_base;
-
+// platform_boot_context.c - populate during parsing:
+int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+    // Parse FDT and store device addresses in platform_t
+    // instead of just using stack locals
+    platform->gic_dist_base = discovered_gic_dist_base;
+    platform->gic_cpu_base = discovered_gic_cpu_base;
     // ...
 }
 
