@@ -45,12 +45,14 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   // Initialize platform memory regions
   platform->num_mem_regions = 0;
 
-  // Stack-local storage for device addresses (used for debug logging only)
+  // Initialize device addresses to zero
+  platform->gic_dist_base = 0;
+  platform->gic_cpu_base = 0;
+  platform->pci_ecam_base = 0;
+  platform->pci_ecam_size = 0;
+
+  // Stack-local storage for UART address (used for debug logging only)
   uintptr_t uart_base = 0;
-  uintptr_t gic_dist_base = 0;
-  uintptr_t gic_cpu_base = 0;
-  uintptr_t pci_ecam_base = 0;
-  size_t pci_ecam_size = 0;
 
   printk("platform_boot_context_parse: getting offsets\n");
 
@@ -184,15 +186,15 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
       }
 
       if (in_gic_node && current_reg_addr != 0) {
-        gic_dist_base = current_reg_addr;
+        platform->gic_dist_base = current_reg_addr;
         if (current_reg_addr2 != 0) {
-          gic_cpu_base = current_reg_addr2;
+          platform->gic_cpu_base = current_reg_addr2;
         }
       }
 
       if (in_pci_node && current_reg_addr != 0) {
-        pci_ecam_base = current_reg_addr;
-        pci_ecam_size = current_reg_size;
+        platform->pci_ecam_base = current_reg_addr;
+        platform->pci_ecam_size = current_reg_size;
       }
 
     } else if (token == FDT_NOP) {
@@ -236,23 +238,23 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     printk("\n");
   }
 
-  if (gic_dist_base != 0) {
+  if (platform->gic_dist_base != 0) {
     printk("  GIC Distributor: 0x");
-    printk_hex64(gic_dist_base);
+    printk_hex64(platform->gic_dist_base);
     printk("\n");
   }
 
-  if (gic_cpu_base != 0) {
+  if (platform->gic_cpu_base != 0) {
     printk("  GIC CPU Interface: 0x");
-    printk_hex64(gic_cpu_base);
+    printk_hex64(platform->gic_cpu_base);
     printk("\n");
   }
 
-  if (pci_ecam_base != 0) {
+  if (platform->pci_ecam_base != 0) {
     printk("  PCI ECAM: 0x");
-    printk_hex64(pci_ecam_base);
+    printk_hex64(platform->pci_ecam_base);
     printk(" (size: 0x");
-    printk_hex64(pci_ecam_size);
+    printk_hex64(platform->pci_ecam_size);
     printk(")\n");
   }
 

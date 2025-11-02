@@ -85,6 +85,14 @@ struct platform_t {
   uintptr_t fdt_base;   // Device tree base (to reserve)
   size_t fdt_size;      // Device tree size (from header)
   uintptr_t kernel_end; // End of kernel (from linker symbol _end)
+
+  // Interrupt controller addresses (discovered from FDT)
+  uintptr_t gic_dist_base; // GIC Distributor base address
+  uintptr_t gic_cpu_base;  // GIC CPU Interface base address
+
+  // PCI ECAM address (discovered from FDT, if USE_PCI=1)
+  uintptr_t pci_ecam_base; // PCI ECAM base address
+  size_t pci_ecam_size;    // PCI ECAM size
 };
 typedef struct platform_t platform_t;
 

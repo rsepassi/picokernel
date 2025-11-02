@@ -50,6 +50,11 @@ static uint64_t page_table_l3_ram[8][8192]
 static uint64_t page_table_l3_mmio[2][8192]
     __attribute__((aligned(65536))); // 2 L3 tables for MMIO
 
+// Additional page tables for PCI ECAM in high memory (above 4GB)
+static uint64_t page_table_l2_pci[8192] __attribute__((aligned(65536)));
+static uint64_t page_table_l3_pci[2][8192]
+    __attribute__((aligned(65536))); // 2 L3 tables for PCI ECAM (128 MB)
+
 // Helper: Check if two memory ranges overlap
 static int ranges_overlap(uintptr_t base1, size_t size1, uintptr_t base2,
                           size_t size2) {
@@ -123,6 +128,7 @@ static void setup_mmu(platform_t *platform) {
     page_table_l1[i] = 0;
     page_table_l2_ram[i] = 0;
     page_table_l2_mmio[i] = 0;
+    page_table_l2_pci[i] = 0;
   }
   for (int t = 0; t < 8; t++) {
     for (int i = 0; i < 8192; i++) {
@@ -132,6 +138,7 @@ static void setup_mmu(platform_t *platform) {
   for (int t = 0; t < 2; t++) {
     for (int i = 0; i < 8192; i++) {
       page_table_l3_mmio[t][i] = 0;
+      page_table_l3_pci[t][i] = 0;
     }
   }
 
@@ -214,6 +221,54 @@ static void setup_mmu(platform_t *platform) {
     }
   }
 
+  // Map PCI ECAM region if discovered from FDT
+  if (platform->pci_ecam_base != 0 && platform->pci_ecam_size != 0) {
+    printk("  Mapping PCI ECAM: 0x");
+    printk_hex64(platform->pci_ecam_base);
+    printk(" - 0x");
+    printk_hex64(platform->pci_ecam_base + platform->pci_ecam_size);
+    printk(" (");
+    printk_dec(platform->pci_ecam_size / 1024 / 1024);
+    printk(" MB)\n");
+
+    // PCI ECAM is typically at 0x4010000000 (256 GB offset)
+    // Calculate L1 index: bits [47:39] = (0x4010000000 >> 39) & 0x1FFF
+    uint32_t l1_idx = (platform->pci_ecam_base >> 39) & 0x1FFF;
+
+    // Set up L1 entry to point to L2 PCI table
+    page_table_l1[l1_idx] = ((uint64_t)page_table_l2_pci) | PTE_L1_TABLE;
+
+    // Calculate L2 index for PCI ECAM base within the 512 GB region
+    // Each L2 entry covers 64 MB
+    uint32_t l2_base_idx = (platform->pci_ecam_base >> 26) & 0x1FFF;
+
+    // Set up L2 entries to point to L3 PCI tables
+    // Map up to 128 MB (2 L3 tables)
+    page_table_l2_pci[l2_base_idx] = ((uint64_t)page_table_l3_pci[0]) | PTE_L2_TABLE;
+    page_table_l2_pci[l2_base_idx + 1] = ((uint64_t)page_table_l3_pci[1]) | PTE_L2_TABLE;
+
+    // Map PCI ECAM as device memory (64KB pages)
+    uintptr_t addr = platform->pci_ecam_base;
+    uintptr_t end = platform->pci_ecam_base + platform->pci_ecam_size;
+
+    // Cap at 128 MB (our L3 table allocation)
+    if (end > platform->pci_ecam_base + (128 * 1024 * 1024)) {
+      end = platform->pci_ecam_base + (128 * 1024 * 1024);
+    }
+
+    while (addr < end) {
+      // Calculate L2 and L3 indices within the mapped region
+      uint32_t l2_idx = ((addr >> 26) & 0x1FFF) - l2_base_idx;
+      uint32_t l3_idx = (addr >> 16) & 0x1FFF;
+
+      if (l2_idx < 2) { // We have 2 L3 tables
+        page_table_l3_pci[l2_idx][l3_idx] = addr | PTE_L3_PAGE_DEVICE;
+      }
+
+      addr += 0x10000; // Next 64KB page
+    }
+  }
+
   // Configure MAIR_EL1 (Memory Attribute Indirection Register)
   // Index 0: Normal memory (Inner/Outer Write-Back, Read/Write-Allocate,
   // Non-transient) Index 1: Device memory (Device-nGnRnE: non-Gathering,
@@ -290,6 +345,8 @@ static void build_free_regions(platform_t *platform, int initial_num_regions) {
   }
 
   // Reserve kernel region (_start to _end)
+  // This includes .text, .rodata, .data, and .bss sections
+  // Note: Stack and page tables are in .bss, so they're already included
   uintptr_t kernel_base = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
   size_t kernel_size = kernel_end - kernel_base;
@@ -299,38 +356,9 @@ static void build_free_regions(platform_t *platform, int initial_num_regions) {
   printk_hex64(kernel_end);
   printk(" (");
   printk_dec(kernel_size / 1024);
-  printk(" KB)\n");
+  printk(" KB, includes stack and page tables in .bss)\n");
   subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
                            kernel_base, kernel_size);
-
-  // Reserve stack region
-  uintptr_t stack_base = (uintptr_t)stack_bottom;
-  uintptr_t stack_top_addr = (uintptr_t)stack_top;
-  size_t stack_size = stack_top_addr - stack_base;
-  printk("  Reserving stack: 0x");
-  printk_hex64(stack_base);
-  printk(" - 0x");
-  printk_hex64(stack_top_addr);
-  printk(" (");
-  printk_dec(stack_size / 1024);
-  printk(" KB)\n");
-  subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
-                           stack_base, stack_size);
-
-  // Reserve page table region
-  uintptr_t pt_base = (uintptr_t)page_table_l1;
-  size_t pt_size = sizeof(page_table_l1) + sizeof(page_table_l2_ram) +
-                   sizeof(page_table_l2_mmio) + sizeof(page_table_l3_ram) +
-                   sizeof(page_table_l3_mmio);
-  printk("  Reserving page tables: 0x");
-  printk_hex64(pt_base);
-  printk(" - 0x");
-  printk_hex64(pt_base + pt_size);
-  printk(" (");
-  printk_dec(pt_size / 1024);
-  printk(" KB)\n");
-  subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
-                           pt_base, pt_size);
 
   // Print final free regions
   printk("\nFree memory regions:\n");
