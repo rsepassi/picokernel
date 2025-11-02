@@ -1,20 +1,14 @@
+* Memory mapping
 * Reliability
+* Memory debugging
+* smp 2; setup thread-local (kernel, platform, ...)
+* -accel hvf/kvm
+* Hosted
+
 * Ensure all symbols are prefixed with k platform etc
-* Rename platform_impl.h to platform_types.h, types-only
 * ksubmit timeout support
 * recv configure drop vs overwrite
 * scatter-gather io (net/blk)
 * NET_IP_ALIGN
-* mmio addresses from device tree (vs hardcoded)
-* smp 2; setup thread-local (kernel, platform, ...)
 * mimalloc-style memory allocator
-* Should PCI code be shared?
-* Share 32-bit / 64-bit code?
-* -accel hvf/kvm
 * compiler-rt, arm32 runtime.c
-
-* Memory debugging
-  Memory dumps
-  Memory checksums
-  lldb/gdb scripts
-  Flags g3 01 etc
