@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "platform_impl.h"
+#include "platform.h"
 #include <stdint.h>
 
 // timer_callback_t is defined in platform_impl.h

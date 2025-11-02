@@ -9,6 +9,7 @@
 // Include VirtIO headers for complete type definitions
 // This is needed to embed VirtIO structures in platform_t
 #include "irq_ring.h"
+#include "pvh.h"
 #include "virtio/virtio.h"
 #include "virtio/virtio_blk.h"
 #include "virtio/virtio_mmio.h"
@@ -133,6 +134,11 @@ typedef struct platform_t {
   // IRQ ring buffer for device interrupts
   kirq_ring_t irq_ring;
   uint32_t last_overflow_count; // Last observed overflow count for logging
+
+  // Memory management (PVH boot)
+  struct hvm_start_info *pvh_info; // PVH start info structure
+  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  int num_mem_regions; // Number of free regions
 } platform_t;
 
 // x64 RNG request platform-specific fields (VirtIO)

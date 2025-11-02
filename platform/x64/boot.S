@@ -18,7 +18,8 @@ _start:
     // Clear interrupts
     cli
 
-    // Save multiboot info pointer (in EBX) to ESI
+    // Save PVH start info pointer (in EBX) to ESI
+    // PVH boot protocol passes struct hvm_start_info* in EBX
     mov %ebx, %esi
 
     // Set up page tables for long mode
@@ -170,7 +171,9 @@ long_mode_start:
     xor %rax, %rax              // Zero value
     rep stosb                   // memset(bss_start, 0, bss_size)
 
-    // Restore saved info pointer and pass to main (x64 calling convention: first arg in RDI)
+    // Restore PVH start info pointer and pass to kmain
+    // x64 calling convention: first argument in RDI
+    // kmain(struct hvm_start_info *pvh_info)
     mov %rsi, %rdi
 
     // Branch to C entry point

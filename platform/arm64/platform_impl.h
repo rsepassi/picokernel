@@ -78,6 +78,13 @@ struct platform_t {
 
   // Back-pointer to kernel
   void *kernel;
+
+  // Memory management (discovered at init)
+  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  int num_mem_regions;                                // Number of free regions
+  uintptr_t fdt_base;   // Device tree base (to reserve)
+  size_t fdt_size;      // Device tree size (from header)
+  uintptr_t kernel_end; // End of kernel (from linker symbol _end)
 };
 typedef struct platform_t platform_t;
 

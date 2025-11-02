@@ -374,3 +374,199 @@ int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
 
   return fdt_count_virtio_devices(fdt, devices, max_devices);
 }
+
+// Parse FDT once and extract ALL needed information
+// CRITICAL: Call this EXACTLY ONCE during platform initialization
+int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info) {
+  printk("platform_fdt_parse_once: enter\n");
+
+  if (!fdt || !info) {
+    printk("platform_fdt_parse_once: NULL parameter\n");
+    return -1;
+  }
+
+  printk("platform_fdt_parse_once: reading header\n");
+  struct fdt_header *header = (struct fdt_header *)fdt;
+
+  printk("platform_fdt_parse_once: checking magic\n");
+  // Verify magic number
+  uint32_t magic = kbe32toh(header->magic);
+  if (magic != FDT_MAGIC) {
+    printk("Error: Invalid FDT magic: 0x");
+    printk_hex32(magic);
+    printk("\n");
+    return -1;
+  }
+
+  printk("platform_fdt_parse_once: init info\n");
+  // Initialize info structure
+  info->num_mem_regions = 0;
+  info->uart_base = 0;
+  info->gic_dist_base = 0;
+  info->gic_cpu_base = 0;
+  info->pci_ecam_base = 0;
+  info->pci_ecam_size = 0;
+
+  printk("platform_fdt_parse_once: getting offsets\n");
+
+  uint32_t off_struct = kbe32toh(header->off_dt_struct);
+  uint32_t off_strings = kbe32toh(header->off_dt_strings);
+  uint32_t size_struct = kbe32toh(header->size_dt_struct);
+
+  const uint8_t *struct_start = (const uint8_t *)fdt + off_struct;
+  const uint8_t *struct_end = struct_start + size_struct;
+  const char *strings = (const char *)fdt + off_strings;
+
+  const uint8_t *p = struct_start;
+
+  // Track current node type
+  int in_memory_node = 0;
+  int in_uart_node = 0;
+  int in_gic_node = 0;
+  int in_pci_node = 0;
+
+  // Temporary storage for current node
+  uint64_t current_reg_addr = 0;
+  uint64_t current_reg_size = 0;
+  uint64_t current_reg_addr2 = 0;  // For GIC CPU interface
+
+  printk("platform_fdt_parse_once: starting parse loop\n");
+  printk("  struct_start=0x");
+  printk_hex64((uint64_t)struct_start);
+  printk(" struct_end=0x");
+  printk_hex64((uint64_t)struct_end);
+  printk("\n");
+
+  int loop_count = 0;
+  const int MAX_LOOPS = 10000;
+
+  while (p < struct_end && loop_count < MAX_LOOPS) {
+    loop_count++;
+    const uint32_t *ptr = KALIGN_CAST(const uint32_t *, p);
+    uint32_t token = kbe32toh(*ptr++);
+
+    if (token == FDT_BEGIN_NODE) {
+      // Reset state for new node
+      in_memory_node = 0;
+      in_uart_node = 0;
+      in_gic_node = 0;
+      in_pci_node = 0;
+      current_reg_addr = 0;
+      current_reg_size = 0;
+      current_reg_addr2 = 0;
+
+      // Check node name for memory@ prefix
+      const char *name = KALIGN_CAST(const char *, ptr);
+      if (name[0] == 'm' && name[1] == 'e' && name[2] == 'm' &&
+          name[3] == 'o' && name[4] == 'r' && name[5] == 'y' &&
+          name[6] == '@') {
+        in_memory_node = 1;
+      }
+
+      // Skip node name
+      while (*name)
+        name++;
+      name++;
+      ptr = KALIGN_CAST(const uint32_t *,
+                        (const uint8_t *)(((uintptr_t)name + 3) & ~3));
+
+    } else if (token == FDT_PROP) {
+      uint32_t len = kbe32toh(*ptr++);
+      uint32_t nameoff = kbe32toh(*ptr++);
+      const uint8_t *value = (const uint8_t *)ptr;
+      const char *prop_name = strings + nameoff;
+
+      // Check compatible strings
+      if (str_equal(prop_name, "compatible") && len > 0) {
+        const char *compat = (const char *)value;
+
+        // Check for UART (pl011 or similar)
+        if (str_equal(compat, "arm,pl011") || str_equal(compat, "arm,primecell")) {
+          in_uart_node = 1;
+        }
+
+        // Check for GIC (various versions)
+        if (str_equal(compat, "arm,gic-400") || str_equal(compat, "arm,cortex-a15-gic") ||
+            str_equal(compat, "arm,cortex-a9-gic") || str_equal(compat, "arm,gic-v2")) {
+          in_gic_node = 1;
+        }
+
+        // Check for PCI ECAM
+        if (str_equal(compat, "pci-host-ecam-generic")) {
+          in_pci_node = 1;
+        }
+      }
+
+      // Collect reg property
+      if (str_equal(prop_name, "reg") && len >= 16) {
+        uint32_t addr_high =
+            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+        uint32_t addr_low =
+            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
+        uint32_t size_high =
+            (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
+        uint32_t size_low = (value[12] << 24) | (value[13] << 16) |
+                            (value[14] << 8) | value[15];
+
+        current_reg_addr = ((uint64_t)addr_high << 32) | addr_low;
+        current_reg_size = ((uint64_t)size_high << 32) | size_low;
+
+        // For GIC, we need the second register pair (CPU interface)
+        if (len >= 32) {
+          uint32_t addr2_high =
+              (value[16] << 24) | (value[17] << 16) | (value[18] << 8) | value[19];
+          uint32_t addr2_low =
+              (value[20] << 24) | (value[21] << 16) | (value[22] << 8) | value[23];
+
+          current_reg_addr2 = ((uint64_t)addr2_high << 32) | addr2_low;
+        }
+      }
+
+      ptr = KALIGN_CAST(const uint32_t *,
+                        (const uint8_t *)(((uintptr_t)value + len + 3) & ~3));
+
+    } else if (token == FDT_END_NODE) {
+      // Save collected info based on node type
+      if (in_memory_node && current_reg_addr != 0 &&
+          info->num_mem_regions < KCONFIG_MAX_MEM_REGIONS) {
+        info->mem_regions[info->num_mem_regions].base = current_reg_addr;
+        info->mem_regions[info->num_mem_regions].size = current_reg_size;
+        info->num_mem_regions++;
+      }
+
+      if (in_uart_node && current_reg_addr != 0) {
+        info->uart_base = current_reg_addr;
+      }
+
+      if (in_gic_node && current_reg_addr != 0) {
+        info->gic_dist_base = current_reg_addr;
+        if (current_reg_addr2 != 0) {
+          info->gic_cpu_base = current_reg_addr2;
+        }
+      }
+
+      if (in_pci_node && current_reg_addr != 0) {
+        info->pci_ecam_base = current_reg_addr;
+        info->pci_ecam_size = current_reg_size;
+      }
+
+    } else if (token == FDT_NOP) {
+      continue;
+
+    } else if (token == FDT_END) {
+      break;
+    }
+
+    p = KALIGN_CAST(const uint8_t *, ptr);
+  }
+
+  if (loop_count >= MAX_LOOPS) {
+    printk("platform_fdt_parse_once: WARNING: loop limit reached\n");
+  }
+
+  printk("platform_fdt_parse_once: parse loop complete (");
+  printk_dec(loop_count);
+  printk(" iterations)\n");
+
+  return 0;
+}

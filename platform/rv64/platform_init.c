@@ -12,6 +12,7 @@
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
 extern void mmio_scan_devices(platform_t *platform);
+extern int platform_mem_init(platform_t *platform, void *fdt);
 
 static void wfi_timer_callback(void) {}
 
@@ -39,6 +40,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 
   // Initialize timer and read timebase frequency from FDT
   timer_init(platform, fdt);
+
+  // Initialize memory management (MMU setup, memory discovery, free regions)
+  platform_mem_init(platform, fdt);
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
   // to avoid spurious interrupts during device enumeration

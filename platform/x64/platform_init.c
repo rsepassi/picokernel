@@ -1,4 +1,4 @@
-// x32 Platform Initialization
+// x64 Platform Initialization
 // Sets up interrupts, timer, and device enumeration
 
 #include "acpi.h"
@@ -14,6 +14,9 @@
 void pci_scan_devices(platform_t *platform);
 void mmio_scan_devices(platform_t *platform);
 
+// Memory initialization
+#include "platform_mem.h"
+
 // Track WFI wake status
 static volatile int g_wfi_done = 0;
 
@@ -22,8 +25,6 @@ static void wfi_timer_callback(void) { g_wfi_done = 1; }
 
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
-  (void)fdt; // x32 doesn't use FDT, but keep parameter for consistency
-
   platform->kernel = kernel;
   platform->virtio_rng_ptr = NULL;
   platform->virtio_blk_ptr = NULL;
@@ -38,7 +39,14 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   kirq_ring_init(&platform->irq_ring);
   platform->last_overflow_count = 0;
 
-  printk("Initializing x32 platform...\n");
+  printk("Initializing x64 platform...\n");
+
+  // Initialize memory management from PVH boot info
+  // fdt parameter is actually PVH start info pointer on x64
+  if (platform_mem_init(platform, fdt) < 0) {
+    printk("FATAL: Memory initialization failed\n");
+    platform_abort();
+  }
 
   // Print memory map early during initialization
   platform_mem_print_layout();

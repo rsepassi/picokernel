@@ -2,7 +2,7 @@
 // Uses the CPU's Local APIC timer for one-shot and periodic timers
 
 #include "timer.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 #include <stddef.h>
 #include <stdint.h>

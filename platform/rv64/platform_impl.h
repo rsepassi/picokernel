@@ -15,6 +15,8 @@
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
 
+// Note: mem_region_t is defined in platform.h before this file is included
+
 // Forward declarations
 struct kernel;
 typedef struct kernel kernel_t;
@@ -78,6 +80,10 @@ struct platform_t {
 
   // Back-pointer to kernel
   void *kernel;
+
+  // Memory management (populated during platform_init)
+  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Available memory regions
+  int num_mem_regions;                                // Number of regions
 };
 typedef struct platform_t platform_t;
 

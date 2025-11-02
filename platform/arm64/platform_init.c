@@ -11,6 +11,7 @@
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
 extern void mmio_scan_devices(platform_t *platform);
+extern void platform_mem_init(platform_t *platform, void *fdt);
 
 static void wfi_timer_callback(void) {}
 
@@ -29,6 +30,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->last_overflow_count = 0;
 
   printk("Initializing ARM64 platform...\n");
+
+  // Initialize memory management and MMU (must be done early)
+  platform_mem_init(platform, fdt);
 
   // Initialize exception vectors and GIC
   interrupt_init(platform);

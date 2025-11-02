@@ -3,7 +3,7 @@
 
 #include "ioapic.h"
 #include "acpi.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 
 // Default IOAPIC address (can be overridden by ACPI MADT)

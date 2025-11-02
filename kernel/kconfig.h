@@ -13,8 +13,12 @@
 // Both MMIO and PCI transports are always compiled in.
 // Device discovery at runtime determines which transport is used.
 
+// Memory management settings
+#ifndef KCONFIG_MAX_MEM_REGIONS
+#define KCONFIG_MAX_MEM_REGIONS 16
+#endif
+
 // Future: Add other kernel-wide configuration here
-// - Memory management settings
 // - Scheduler configuration
 // - Debug flags
 // - Feature toggles

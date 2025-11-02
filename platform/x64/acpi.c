@@ -1,10 +1,10 @@
-// ACPI (Advanced Configuration and Power Interface) implementation for x32
+// ACPI (Advanced Configuration and Power Interface) implementation for x64
 // Provides device discovery by parsing ACPI tables
-// x32 version uses 32-bit pointers (RSDT only, no XSDT)
+// x64 version uses 64-bit pointers and XSDT
 
 #include "acpi.h"
 #include "io.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 #include <stddef.h>
 #include <stdint.h>

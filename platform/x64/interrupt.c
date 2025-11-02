@@ -3,7 +3,7 @@
 
 #include "interrupt.h"
 #include "ioapic.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 #include <stdint.h>
 

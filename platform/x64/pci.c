@@ -3,7 +3,7 @@
 
 #include "pci.h"
 #include "io.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 
 // PCI configuration space I/O ports

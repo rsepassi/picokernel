@@ -12,6 +12,13 @@
 typedef struct kernel kernel_t;
 typedef struct kwork kwork_t;
 
+// Memory region descriptor (needed by platform_impl.h)
+#include "kconfig.h"
+typedef struct {
+  uintptr_t base; // Base physical address
+  size_t size;    // Size in bytes
+} mem_region_t;
+
 // Each platform implements platform_impl.h with platform-specific types
 #include "platform_impl.h"
 
@@ -62,14 +69,46 @@ typedef struct {
   uint32_t irq;
 } virtio_mmio_device_t;
 
+// Single-pass FDT parsing result structure
+// Populated by platform_fdt_parse_once() with ALL discovered info
+typedef struct {
+  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS];
+  int num_mem_regions;
+  uintptr_t uart_base;      // UART MMIO base from FDT
+  uintptr_t gic_dist_base;  // GIC distributor base (ARM64)
+  uintptr_t gic_cpu_base;   // GIC CPU interface base (ARM64)
+  uintptr_t pci_ecam_base;  // PCI ECAM base (if found)
+  size_t pci_ecam_size;     // PCI ECAM size (if found)
+} platform_fdt_info_t;
+
 // FDT parsing functions
 void platform_fdt_dump(platform_t *platform, void *fdt);
+
+// Parse FDT once and extract ALL needed information
+// CRITICAL: Call this EXACTLY ONCE during platform initialization
+// Returns: 0 on success, negative on error
+int platform_fdt_parse_once(void *fdt, platform_fdt_info_t *info);
 
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)
 int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
                                   virtio_mmio_device_t *devices,
                                   int max_devices);
+
+// ===========================================================================
+// SECTION 1A: Memory Management - Memory region discovery and management
+// ===========================================================================
+
+// Memory region list (returned by platform_mem_regions)
+typedef struct {
+  mem_region_t *regions; // Pointer to platform-managed array
+  int count;             // Number of regions
+} mem_region_list_t;
+
+// Get list of available (free) memory regions
+// Called after platform_init() completes
+// Returns: list of free memory regions suitable for allocation
+mem_region_list_t platform_mem_regions(platform_t *platform);
 
 // ===========================================================================
 // SECTION 2: PCI - PCI configuration space access

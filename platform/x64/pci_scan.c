@@ -2,7 +2,7 @@
 // Enumerate PCI devices and find VirtIO devices
 
 #include "pci.h"
-#include "platform_impl.h"
+#include "platform.h"
 #include "printk.h"
 #include "virtio_pci.h"
 
