@@ -56,8 +56,9 @@ extern uint8_t stack_top[];
 // Page tables (static allocation in BSS)
 // Using 2 MB megapages, we need:
 // - 1 L2 table (root)
-// - 1 L1 table for RAM region (0x80000000 - 0x88000000 = 128 MB)
+// - 1 L1 table for RAM region (size discovered from FDT at runtime)
 // - 1 L1 table for low memory MMIO (0x00000000 - 0x40000000)
+// Note: RAM base and size are discovered from FDT, not hardcoded
 static uint64_t pt_l2[512] __attribute__((aligned(4096)));
 static uint64_t pt_l1_ram[512] __attribute__((aligned(4096)));
 static uint64_t pt_l1_mmio[512] __attribute__((aligned(4096)));
@@ -76,7 +77,7 @@ static int mmu_is_enabled(void) {
 
 // Enable MMU with Sv39 paging
 // Returns: 0 on success, -1 on error
-static int mmu_enable_sv39(void) {
+static int mmu_enable_sv39(platform_t *platform) {
   // Check if already enabled
   if (mmu_is_enabled()) {
     printk("MMU already enabled, skipping setup\n");
@@ -92,10 +93,23 @@ static int mmu_enable_sv39(void) {
     pt_l1_mmio[i] = 0;
   }
 
-  // Map RAM region: 0x80000000 - 0x88000000 (128 MB) using 2 MB megapages
-  // This is GB 2 (entries start at index 2 in L2)
-  uint64_t ram_base = 0x80000000;
-  uint64_t ram_size = 0x08000000; // 128 MB (typical QEMU default)
+  // Map RAM region using discovered memory size from FDT
+  // Use first memory region (typically the main RAM region)
+  if (platform->num_mem_regions == 0) {
+    printk("ERROR: No memory regions discovered from FDT\n");
+    return -1;
+  }
+
+  uint64_t ram_base = platform->mem_regions[0].base;
+  uint64_t ram_size = platform->mem_regions[0].size;
+
+  printk("Mapping RAM region: base=0x");
+  printk_hex64(ram_base);
+  printk(" size=0x");
+  printk_hex64(ram_size);
+  printk(" (");
+  printk_dec(ram_size / (1024 * 1024));
+  printk(" MB)\n");
 
   // Calculate number of 2 MB pages needed
   uint64_t num_pages = (ram_size + 0x1FFFFF) / 0x200000; // Round up
@@ -106,8 +120,10 @@ static int mmu_enable_sv39(void) {
     pt_l1_ram[i] = (phys >> 12) << 10 | PTE_RAM;
   }
 
-  // L2[2] points to L1_ram (covers 0x80000000 - 0xBFFFFFFF = 1 GB)
-  pt_l2[2] = ((uint64_t)pt_l1_ram >> 12) << 10 | PTE_TABLE;
+  // Calculate L2 index from RAM base address
+  // Each L2 entry covers 1 GB (30 bits), so use bits [38:30] of address
+  uint64_t ram_l2_index = (ram_base >> 30) & 0x1FF;  // bits [38:30]
+  pt_l2[ram_l2_index] = ((uint64_t)pt_l1_ram >> 12) << 10 | PTE_TABLE;
 
   // Map low memory MMIO devices (0x00000000 - 0x40000000)
   // This includes: DTB, UART, VirtIO MMIO, etc.
@@ -283,7 +299,7 @@ int platform_mem_init(platform_t *platform, void *fdt) {
   }
 
   // Set up MMU with Sv39 page tables
-  ret = mmu_enable_sv39();
+  ret = mmu_enable_sv39(platform);
   if (ret != 0) {
     printk("WARNING: MMU setup failed, continuing without MMU\n");
     // Continue anyway - not critical for functionality
