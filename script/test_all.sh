@@ -9,7 +9,7 @@ echo ""
 FAILED=0
 PASSED=0
 
-for platform in arm64 arm32 x64 x32 rv64 rv32; do
+for platform in arm64 arm32 x64 rv64 rv32; do
     for use_pci in 0 1; do
         transport="MMIO"
         if [ "$use_pci" = "1" ]; then
@@ -31,8 +31,8 @@ for platform in arm64 arm32 x64 x32 rv64 rv32; do
 done
 
 echo "=== Test Summary ==="
-echo "Passed: $PASSED / 12"
-echo "Failed: $FAILED / 12"
+echo "Passed: $PASSED / 10"
+echo "Failed: $FAILED / 10"
 
 if [ "$FAILED" -gt 0 ]; then
     exit 1

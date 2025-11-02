@@ -48,11 +48,9 @@ declare -a dirs=(
     "kernel"
     "driver"
     "platform/shared"
-    "platform/x86"
     "platform/arm64"
     "platform/arm32"
     "platform/x64"
-    "platform/x32"
     "platform/rv64"
     "platform/rv32"
 )

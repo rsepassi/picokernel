@@ -59,7 +59,7 @@ LDFLAGS = --no-pie -static -nostdlib --gc-sections $(DEBUG_LDFLAGS) $(PLATFORM_L
 
 # Common variables
 INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR)
-PLATFORMS = rv32 rv64 x32 x64 arm32 arm64
+PLATFORMS = rv32 rv64 x64 arm32 arm64
 
 # Source files
 KERNEL_DIR = kernel

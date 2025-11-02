@@ -8,7 +8,6 @@ The project supports the following architectures using QEMU:
 
 ```
 x64
-x32
 rv32
 rv64
 arm32
