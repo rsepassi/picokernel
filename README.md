@@ -1,62 +1,93 @@
-# vmos - Virtual Machine OS
+# VMOS - a portable picokernel for async I/O
 
-A minimal OS kernel study project targeting virtual machines. The goal is to
-understand kernel initialization sequences and basic device driver development
-across multiple architectures.
+VMOS is an experimental minimal kernel that serves as a portable async runtime
+on bare metal. It's so tiny, so under-featured, so unsafe that it barely
+qualifies as a kernel - but that's the point.
 
-The project supports the following architectures using QEMU:
+## Philosophy
 
-```
-x64
-rv32
-rv64
-arm32
-arm64
-```
+Hardware doesn't manage itself via threads. It operates through state and
+events: submit work, go idle, respond to interrupts. VMOS aligns with this
+model rather than imposing traditional kernel abstractions. Everything is
+cooperative, non-blocking, and callback-driven. It's more like a piece of
+embedded system firmware than an operating system.
 
-All implementations run in kernel space (no MMU setup) and interact with a
-minimal set of virtual devices.
+## What It Has
 
-## Goals
+- Debug logging
+- Memory discovery and allocation
+- Time and timers
+- Event loop with async work queue
+- Multi-architecture support
+- Hardware RNG (virtio-rng)
+- Block storage (virtio-blk)
+- UDP/IP networking with ARP and ICMP (virtio-net)
 
-1. Boot and print "Hello World" to console
-1. Parse and display the device tree
-1. Set up timers and interrupt handling
-1. Use the hardware RNG
-1. Send and receive ethernet frames
-1. Write and read blocks from block device
-1. Implement a simple memory allocator
+## What It Doesn't Have
 
-## Virtual Hardware
+- Memory protection or privilege levels
+- Filesystems
+- Preemptive scheduling or context switches
+- TCP stack
+- Security model of any kind
 
-Each QEMU machine is configured with minimal devices:
-- 1 CPU
-- 128 MiB RAM
-- Timer/clock
-- RNG device
-- Serial console
-- Network device
-- Block device
+## Platforms
 
-## Building and Running
+VMOS runs on QEMU virtual machines across five architectures:
 
-Build for a specific architecture:
+- **arm64** - ARM 64-bit
+- **arm32** - ARM 32-bit
+- **x64** - Intel/AMD 64-bit
+- **rv64** - RISC-V 64-bit
+- **rv32** - RISC-V 32-bit
+
+All platforms use VirtIO devices (MMIO or PCI transport).
+
+## Quick Start
+
+Build and run for a specific platform:
 ```bash
-make PLATFORM=x64
+make run PLATFORM=arm64
 ```
 
-Build and run:
+Test a configuration:
 ```bash
-make run PLATFORM=x64
+make test PLATFORM=x64 USE_PCI=1
 ```
 
-## Project Structure
+## Implementation
 
-```
-vmos/
-├── platform/     # platform-specific code
-│   ├── x64/      # x64-specific code
-│   └── .../
-├── src/          # Shared kernel code
-└── doc/          # Documentation
-```
+Approximately 12,000 lines of freestanding C11 code with no dependencies
+outside the C11 freestanding headers and build/run tooling (`make`, `sh`,
+`clang`, `qemu-system-*`).
+
+| Directory          | C       | Headers | Assembly | Total   |
+|--------------------|---------|---------|----------|---------|
+| kernel/            |   1,503 |     536 |        0 |   2,039 |
+| driver/            |   1,151 |     414 |        0 |   1,565 |
+| platform/shared/   |   1,004 |      31 |        0 |   1,035 |
+| platform/arm64/    |   1,420 |     127 |      268 |   1,815 |
+| platform/arm32/    |     915 |     122 |      105 |   1,142 |
+| platform/x64/      |   2,950 |     406 |      330 |   3,686 |
+| platform/rv64/     |   1,319 |     150 |      110 |   1,579 |
+| platform/rv32/     |   1,065 |     146 |       85 |   1,296 |
+
+The core is a simple event loop that processes completions, expires timers,
+calculates the next timeout, and waits for interrupts. User code submits async
+work requests (timers, RNG, block I/O, network packets) by configuring work
+items with callbacks. The platform processes work asynchronously and invokes
+callbacks upon completion.
+
+## Documentation
+
+See `doc/` for detailed architecture documentation:
+- `doc/api.md` - Layered API architecture
+- `doc/async.md` - Async work queue design
+- `doc/virtio.md` - VirtIO implementation details
+- `doc/memory.md` - Memory management
+
+## Status
+
+Active development. Runs successfully across all five platforms with working
+device drivers and networking stack. Future directions include microcontroller
+support, hosted implementations, and multi-core capability.
