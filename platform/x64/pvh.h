@@ -26,16 +26,16 @@ struct hvm_start_info {
 
 // E820 memory map entry (pointed to by memmap_paddr)
 struct hvm_memmap_table_entry {
-  uint64_t addr;     // Base address
-  uint64_t size;     // Length of region
-  uint32_t type;     // E820 type (see below)
+  uint64_t addr; // Base address
+  uint64_t size; // Length of region
+  uint32_t type; // E820 type (see below)
   uint32_t reserved;
 } __attribute__((packed));
 
 // E820 memory types
-#define E820_RAM 1        // Available RAM
-#define E820_RESERVED 2   // Reserved (unavailable)
-#define E820_ACPI 3       // ACPI reclaimable
-#define E820_NVS 4        // ACPI NVS
-#define E820_UNUSABLE 5   // Unusable memory
-#define E820_PMEM 7       // Persistent memory (NVDIMM)
+#define E820_RAM 1      // Available RAM
+#define E820_RESERVED 2 // Reserved (unavailable)
+#define E820_ACPI 3     // ACPI reclaimable
+#define E820_NVS 4      // ACPI NVS
+#define E820_UNUSABLE 5 // Unusable memory
+#define E820_PMEM 7     // Persistent memory (NVDIMM)

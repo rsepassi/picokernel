@@ -121,8 +121,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
         const char *compat = (const char *)value;
 
         // Check for UART (various RISC-V UARTs)
-        if (str_equal(compat, "ns16550a") ||
-            str_equal(compat, "ns16550") ||
+        if (str_equal(compat, "ns16550a") || str_equal(compat, "ns16550") ||
             str_equal(compat, "sifive,uart0")) {
           in_uart_node = 1;
         }
@@ -147,12 +146,12 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
 
       // Collect reg property
       if (str_equal(prop_name, "reg") && len >= 16) {
-        uint32_t addr_high = (value[0] << 24) | (value[1] << 16) |
-                             (value[2] << 8) | value[3];
-        uint32_t addr_low = (value[4] << 24) | (value[5] << 16) |
-                            (value[6] << 8) | value[7];
-        uint32_t size_high = (value[8] << 24) | (value[9] << 16) |
-                             (value[10] << 8) | value[11];
+        uint32_t addr_high =
+            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
+        uint32_t addr_low =
+            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
+        uint32_t size_high =
+            (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
         uint32_t size_low = (value[12] << 24) | (value[13] << 16) |
                             (value[14] << 8) | value[15];
 

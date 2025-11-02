@@ -9,16 +9,17 @@
 
 // x86/x64 memory layout constants (QEMU)
 #define PAGE_TABLES_BASE 0x100000ULL
-#define PAGE_TABLES_SIZE 0x5000ULL  // 20 KiB (5 pages)
-#define KERNEL_BASE 0x200000ULL     // Kernel starts at 2 MiB
-#define RAM_SIZE 0x08000000ULL      // 128 MiB default
+#define PAGE_TABLES_SIZE 0x5000ULL // 20 KiB (5 pages)
+#define KERNEL_BASE 0x200000ULL    // Kernel starts at 2 MiB
+#define RAM_SIZE 0x08000000ULL     // 128 MiB default
 
 // MMIO addresses for x86/x64
 #define LAPIC_DEFAULT_BASE 0xFEE00000ULL
 #define IOAPIC_DEFAULT_BASE 0xFEC00000ULL
 
 // Memory region constants for platform_mem_print_layout()
-// These use linker symbols for accuracy, but provide defaults for hardcoded layout printing
+// These use linker symbols for accuracy, but provide defaults for hardcoded
+// layout printing
 #define MEM_REGION_PAGE_TABLES_BASE 0x100000ULL
 #define MEM_REGION_PAGE_TABLES_SIZE 0x5000ULL
 #define MEM_REGION_KERNEL_BASE 0x200000ULL
@@ -99,7 +100,8 @@ void platform_mem_validate_critical(void) {
   printk(" bytes)\n");
 
   // 3. Verify kernel base address (allow for .note.Xen section before .text)
-  // The linker script places kernel at 0x200000, but .text may start slightly after
+  // The linker script places kernel at 0x200000, but .text may start slightly
+  // after
   if (text_start < KERNEL_BASE || text_start > KERNEL_BASE + 0x1000) {
     printk("[MEM] ERROR: Kernel .text not near expected base 0x200000 (at 0x");
     printk_hex64(text_start);
@@ -170,7 +172,8 @@ void platform_mem_validate_critical(void) {
            "checksum script)\n");
   } else {
     uint32_t actual_text_crc = kmem_checksum_section(_text_start, _text_end);
-    uint32_t actual_rodata_crc = kmem_checksum_section(_rodata_start, _rodata_end);
+    uint32_t actual_rodata_crc =
+        kmem_checksum_section(_rodata_start, _rodata_end);
 
     printk("[MEM] .text checksum:   expected=0x");
     printk_hex32(expected_text_crc);
@@ -242,7 +245,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
   }
 
   // Check if VirtIO MMIO devices are present (if USE_PCI=0)
-  // VirtIO MMIO would typically be at known addresses, but x86 typically uses PCI
+  // VirtIO MMIO would typically be at known addresses, but x86 typically uses
+  // PCI
   printk("[MEM] VirtIO transport: ");
 #ifdef USE_PCI
   printk("PCI (ECAM or I/O port config space)\n");
@@ -276,7 +280,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
     printk("found (");
     printk_dec(platform->block_sector_size);
     printk(" byte sectors, ");
-    printk_dec((uint32_t)(platform->block_capacity >> 10)); // Convert to K sectors
+    printk_dec(
+        (uint32_t)(platform->block_capacity >> 10)); // Convert to K sectors
     printk("K sectors)\n");
   } else {
     printk("not found\n");
@@ -303,7 +308,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
 
   if (expected_text_crc != 0 || expected_rodata_crc != 0) {
     uint32_t actual_text_crc = kmem_checksum_section(_text_start, _text_end);
-    uint32_t actual_rodata_crc = kmem_checksum_section(_rodata_start, _rodata_end);
+    uint32_t actual_rodata_crc =
+        kmem_checksum_section(_rodata_start, _rodata_end);
 
     printk("[MEM] .text checksum:   expected=0x");
     printk_hex32(expected_text_crc);
@@ -313,7 +319,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".text section checksum mismatch after init - code corruption detected");
+      kpanic(".text section checksum mismatch after init - code corruption "
+             "detected");
       all_ok = false;
     }
 
@@ -325,7 +332,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".rodata section checksum mismatch after init - data corruption detected");
+      kpanic(".rodata section checksum mismatch after init - data corruption "
+             "detected");
       all_ok = false;
     }
   }

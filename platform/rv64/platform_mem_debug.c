@@ -8,11 +8,11 @@
 #ifdef KDEBUG
 
 // RISC-V 64 memory layout constants (QEMU virt machine)
-#define DTB_BASE 0x80000000ULL       // DTB passed via a1 register
-#define DTB_SIZE 0x00200000ULL       // 2 MiB reserved (typical)
-#define KERNEL_BASE 0x80200000ULL    // Kernel base after OpenSBI
-#define RAM_BASE 0x80000000ULL       // RAM starts here
-#define RAM_SIZE 0x08000000ULL       // 128 MiB default
+#define DTB_BASE 0x80000000ULL    // DTB passed via a1 register
+#define DTB_SIZE 0x00200000ULL    // 2 MiB reserved (typical)
+#define KERNEL_BASE 0x80200000ULL // Kernel base after OpenSBI
+#define RAM_BASE 0x80000000ULL    // RAM starts here
+#define RAM_SIZE 0x08000000ULL    // 128 MiB default
 
 // Linker-provided symbols
 extern uint8_t _text_start[], _text_end[];
@@ -287,7 +287,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".text section checksum mismatch after init - code corruption detected");
+      kpanic(".text section checksum mismatch after init - code corruption "
+             "detected");
       all_ok = false;
     }
 
@@ -299,7 +300,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".rodata section checksum mismatch after init - data corruption detected");
+      kpanic(".rodata section checksum mismatch after init - data corruption "
+             "detected");
       all_ok = false;
     }
   }

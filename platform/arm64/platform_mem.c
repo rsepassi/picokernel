@@ -18,21 +18,23 @@ extern uint8_t stack_bottom[];
 extern uint8_t stack_top[];
 
 // Page table entry flags for ARM64 with 64KB granule
-#define PTE_VALID (1UL << 0)   // Valid entry
-#define PTE_TABLE (1UL << 1)   // Table descriptor (upper levels)
-#define PTE_PAGE (1UL << 1)    // Page descriptor (level 3)
-#define PTE_AF (1UL << 10)     // Access flag
-#define PTE_NORMAL (0UL << 2)  // MAIR index 0 (Normal memory)
-#define PTE_DEVICE (1UL << 2)  // MAIR index 1 (Device memory)
+#define PTE_VALID (1UL << 0)    // Valid entry
+#define PTE_TABLE (1UL << 1)    // Table descriptor (upper levels)
+#define PTE_PAGE (1UL << 1)     // Page descriptor (level 3)
+#define PTE_AF (1UL << 10)      // Access flag
+#define PTE_NORMAL (0UL << 2)   // MAIR index 0 (Normal memory)
+#define PTE_DEVICE (1UL << 2)   // MAIR index 1 (Device memory)
 #define PTE_INNER_SH (3UL << 8) // Inner shareable
 #define PTE_OUTER_SH (2UL << 8) // Outer shareable
-#define PTE_NS (1UL << 5)      // Non-secure
+#define PTE_NS (1UL << 5)       // Non-secure
 
 // Page table descriptors
 #define PTE_L1_TABLE (PTE_VALID | PTE_TABLE)
 #define PTE_L2_TABLE (PTE_VALID | PTE_TABLE)
-#define PTE_L3_PAGE_NORMAL (PTE_VALID | PTE_PAGE | PTE_AF | PTE_NORMAL | PTE_INNER_SH)
-#define PTE_L3_PAGE_DEVICE (PTE_VALID | PTE_PAGE | PTE_AF | PTE_DEVICE | PTE_OUTER_SH)
+#define PTE_L3_PAGE_NORMAL                                                     \
+  (PTE_VALID | PTE_PAGE | PTE_AF | PTE_NORMAL | PTE_INNER_SH)
+#define PTE_L3_PAGE_DEVICE                                                     \
+  (PTE_VALID | PTE_PAGE | PTE_AF | PTE_DEVICE | PTE_OUTER_SH)
 
 // ARM64 with 64KB granule, 48-bit address space:
 // - L1 table: 8192 entries, each covers 512 GB
@@ -43,12 +45,14 @@ extern uint8_t stack_top[];
 static uint64_t page_table_l1[8192] __attribute__((aligned(65536)));
 static uint64_t page_table_l2_ram[8192] __attribute__((aligned(65536)));
 static uint64_t page_table_l2_mmio[8192] __attribute__((aligned(65536)));
-static uint64_t page_table_l3_ram[8][8192] __attribute__((aligned(65536)));    // 8 L3 tables for RAM
-static uint64_t page_table_l3_mmio[2][8192] __attribute__((aligned(65536)));   // 2 L3 tables for MMIO
+static uint64_t page_table_l3_ram[8][8192]
+    __attribute__((aligned(65536))); // 8 L3 tables for RAM
+static uint64_t page_table_l3_mmio[2][8192]
+    __attribute__((aligned(65536))); // 2 L3 tables for MMIO
 
 // Helper: Check if two memory ranges overlap
-static int ranges_overlap(uintptr_t base1, size_t size1,
-                          uintptr_t base2, size_t size2) {
+static int ranges_overlap(uintptr_t base1, size_t size1, uintptr_t base2,
+                          size_t size2) {
   uintptr_t end1 = base1 + size1;
   uintptr_t end2 = base2 + size2;
   return !(end1 <= base2 || end2 <= base1);
@@ -57,7 +61,8 @@ static int ranges_overlap(uintptr_t base1, size_t size1,
 // Helper: Subtract reserved region from available regions
 // May split a region into two parts if reserved region is in the middle
 static void subtract_reserved_region(mem_region_t *regions, int *count,
-                                     uintptr_t reserved_base, size_t reserved_size) {
+                                     uintptr_t reserved_base,
+                                     size_t reserved_size) {
   uintptr_t reserved_end = reserved_base + reserved_size;
 
   for (int i = 0; i < *count; i++) {
@@ -65,7 +70,8 @@ static void subtract_reserved_region(mem_region_t *regions, int *count,
     uintptr_t region_end = region_base + regions[i].size;
 
     // Skip if no overlap
-    if (!ranges_overlap(region_base, regions[i].size, reserved_base, reserved_size)) {
+    if (!ranges_overlap(region_base, regions[i].size, reserved_base,
+                        reserved_size)) {
       continue;
     }
 
@@ -143,14 +149,17 @@ static void setup_mmu(platform_t *platform) {
   // L2 index = address / 64MB
   // 0x08000000 / 0x4000000 = 2
   // 0x0C000000 / 0x4000000 = 3
-  page_table_l2_mmio[2] = ((uint64_t)page_table_l3_mmio[0]) | PTE_L2_TABLE;  // 0x08000000-0x0BFFFFFF
-  page_table_l2_mmio[3] = ((uint64_t)page_table_l3_mmio[1]) | PTE_L2_TABLE;  // 0x0C000000-0x0FFFFFFF
+  page_table_l2_mmio[2] =
+      ((uint64_t)page_table_l3_mmio[0]) | PTE_L2_TABLE; // 0x08000000-0x0BFFFFFF
+  page_table_l2_mmio[3] =
+      ((uint64_t)page_table_l3_mmio[1]) | PTE_L2_TABLE; // 0x0C000000-0x0FFFFFFF
 
   // Map RAM region (0x40000000-0x47FFFFFF, 128 MB) using L3 tables
   // 0x40000000 / 0x4000000 = 16
   // 0x44000000 / 0x4000000 = 17
   for (int i = 0; i < 8 && (16 + i) < 8192; i++) {
-    page_table_l2_mmio[16 + i] = ((uint64_t)page_table_l3_ram[i]) | PTE_L2_TABLE;
+    page_table_l2_mmio[16 + i] =
+        ((uint64_t)page_table_l3_ram[i]) | PTE_L2_TABLE;
   }
 
   // L3 MMIO tables: Map MMIO devices (64KB pages)
@@ -159,7 +168,7 @@ static void setup_mmu(platform_t *platform) {
   // VirtIO MMIO: 0x0A000000-0x0A200000 (2 MB)
 
   // Map 0x08000000-0x0BFFFFFF (64 MB) as device memory
-  for (int i = 0; i < 1024; i++) {  // 64 MB / 64 KB = 1024 pages
+  for (int i = 0; i < 1024; i++) { // 64 MB / 64 KB = 1024 pages
     uint64_t page_addr = 0x08000000ULL + (i * 0x10000ULL);
     page_table_l3_mmio[0][i] = page_addr | PTE_L3_PAGE_DEVICE;
   }
@@ -190,23 +199,25 @@ static void setup_mmu(platform_t *platform) {
     uintptr_t addr = ram_base;
     while (addr < ram_base + ram_size) {
       // Calculate L2 and L3 indices
-      uint32_t l2_idx = (addr >> 26) & 0x1FFF;  // Bits [38:26]
-      uint32_t l3_idx = (addr >> 16) & 0x1FFF;  // Bits [25:16]
+      uint32_t l2_idx = (addr >> 26) & 0x1FFF; // Bits [38:26]
+      uint32_t l3_idx = (addr >> 16) & 0x1FFF; // Bits [25:16]
 
-      // Determine which L3 table to use (0-7 for RAM region starting at 0x40000000)
-      int l3_table_num = l2_idx - 16;  // RAM starts at L2 index 16
+      // Determine which L3 table to use (0-7 for RAM region starting at
+      // 0x40000000)
+      int l3_table_num = l2_idx - 16; // RAM starts at L2 index 16
 
       if (l3_table_num >= 0 && l3_table_num < 8) {
         page_table_l3_ram[l3_table_num][l3_idx] = addr | PTE_L3_PAGE_NORMAL;
       }
 
-      addr += 0x10000;  // Next 64KB page
+      addr += 0x10000; // Next 64KB page
     }
   }
 
   // Configure MAIR_EL1 (Memory Attribute Indirection Register)
-  // Index 0: Normal memory (Inner/Outer Write-Back, Read/Write-Allocate, Non-transient)
-  // Index 1: Device memory (Device-nGnRnE: non-Gathering, non-Reordering, no Early Write Acknowledgement)
+  // Index 0: Normal memory (Inner/Outer Write-Back, Read/Write-Allocate,
+  // Non-transient) Index 1: Device memory (Device-nGnRnE: non-Gathering,
+  // non-Reordering, no Early Write Acknowledgement)
   uint64_t mair = 0x00000000000044ffULL;
   __asm__ volatile("msr mair_el1, %0" : : "r"(mair));
 
@@ -217,13 +228,14 @@ static void setup_mmu(platform_t *platform) {
   // - IRGN0 = 01 (Inner Write-Back Read-Allocate Write-Allocate Cacheable)
   // - ORGN0 = 01 (Outer Write-Back Read-Allocate Write-Allocate Cacheable)
   // - SH0 = 11 (Inner Shareable)
-  // - IPS = 000 (32-bit physical address space, but we'll use higher for safety)
-  uint64_t tcr = (1ULL << 14) |  // TG0 = 01 (64KB)
-                 (16ULL << 0) |   // T0SZ = 16 (48-bit VA)
-                 (1ULL << 8) |    // IRGN0 = 01
-                 (1ULL << 10) |   // ORGN0 = 01
-                 (3ULL << 12) |   // SH0 = 11
-                 (5ULL << 32);    // IPS = 101 (48-bit PA)
+  // - IPS = 000 (32-bit physical address space, but we'll use higher for
+  // safety)
+  uint64_t tcr = (1ULL << 14) | // TG0 = 01 (64KB)
+                 (16ULL << 0) | // T0SZ = 16 (48-bit VA)
+                 (1ULL << 8) |  // IRGN0 = 01
+                 (1ULL << 10) | // ORGN0 = 01
+                 (3ULL << 12) | // SH0 = 11
+                 (5ULL << 32);  // IPS = 101 (48-bit PA)
   __asm__ volatile("msr tcr_el1, %0" : : "r"(tcr));
 
   // Set TTBR0_EL1 (Translation Table Base Register)
@@ -237,9 +249,9 @@ static void setup_mmu(platform_t *platform) {
   // Enable MMU via SCTLR_EL1
   uint64_t sctlr;
   __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-  sctlr |= (1 << 0);   // M: Enable MMU
-  sctlr |= (1 << 2);   // C: Enable data cache
-  sctlr |= (1 << 12);  // I: Enable instruction cache
+  sctlr |= (1 << 0);  // M: Enable MMU
+  sctlr |= (1 << 2);  // C: Enable data cache
+  sctlr |= (1 << 12); // I: Enable instruction cache
   __asm__ volatile("msr sctlr_el1, %0" : : "r"(sctlr));
   __asm__ volatile("isb" ::: "memory");
 
@@ -449,10 +461,18 @@ void platform_mem_debug_mmu(void) {
   printk_dec((tcr >> 14) & 0x3);
   printk(" (");
   switch ((tcr >> 14) & 0x3) {
-    case 0: printk("4KB"); break;
-    case 1: printk("64KB"); break;
-    case 2: printk("16KB"); break;
-    default: printk("Reserved"); break;
+  case 0:
+    printk("4KB");
+    break;
+  case 1:
+    printk("64KB");
+    break;
+  case 2:
+    printk("16KB");
+    break;
+  default:
+    printk("Reserved");
+    break;
   }
   printk(" granule)\n");
 

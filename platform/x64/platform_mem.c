@@ -2,8 +2,8 @@
 // Implements memory discovery via PVH boot protocol and E820 memory map
 // Builds free region list after accounting for reserved areas
 
-#include "platform.h"
 #include "platform_mem.h"
+#include "platform.h"
 #include "printk.h"
 #include "pvh.h"
 #include <stddef.h>
@@ -19,12 +19,11 @@ extern uint8_t stack_top[];
 #define PAGE_TABLES_BASE 0x100000ULL
 #define PAGE_TABLES_SIZE 0x5000ULL // 20 KiB (5 pages: PML4, PDPT, 2x PD, PT)
 
-
 // Print reserved regions for debugging
 static void print_reserved_regions(uintptr_t kernel_start, uintptr_t kernel_end,
-                                    uintptr_t stack_start, uintptr_t stack_end,
-                                    uintptr_t pt_start, uintptr_t pt_end,
-                                    struct hvm_start_info *pvh_info) {
+                                   uintptr_t stack_start, uintptr_t stack_end,
+                                   uintptr_t pt_start, uintptr_t pt_end,
+                                   struct hvm_start_info *pvh_info) {
   printk("\n[MEM] === Reserved Regions ===\n");
 
   printk("[MEM]   Page Tables: 0x");
@@ -76,10 +75,10 @@ static void print_reserved_regions(uintptr_t kernel_start, uintptr_t kernel_end,
 // Subtract a reserved region from available regions (may split regions)
 // Returns: number of output regions
 static int subtract_reserved_region(const mem_region_t *input_regions,
-                                     int num_input, uintptr_t reserved_base,
-                                     uintptr_t reserved_end,
-                                     mem_region_t *output_regions,
-                                     int max_output) {
+                                    int num_input, uintptr_t reserved_base,
+                                    uintptr_t reserved_end,
+                                    mem_region_t *output_regions,
+                                    int max_output) {
   int num_output = 0;
 
   for (int i = 0; i < num_input; i++) {
@@ -153,9 +152,9 @@ static int subtract_reserved_region(const mem_region_t *input_regions,
 
 // Build free region list by subtracting all reserved areas from RAM regions
 static int build_free_regions(const mem_region_t *ram_regions,
-                               int num_ram_regions, mem_region_t *free_regions,
-                               int max_free_regions,
-                               struct hvm_start_info *pvh_info) {
+                              int num_ram_regions, mem_region_t *free_regions,
+                              int max_free_regions,
+                              struct hvm_start_info *pvh_info) {
   // Get reserved region boundaries
   uintptr_t kernel_start = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
@@ -166,7 +165,7 @@ static int build_free_regions(const mem_region_t *ram_regions,
 
   // Print reserved regions for debugging
   print_reserved_regions(kernel_start, kernel_end, stack_start, stack_end,
-                          pt_start, pt_end, pvh_info);
+                         pt_start, pt_end, pvh_info);
 
   // Use double buffering to avoid overwriting input during subtraction
   mem_region_t temp_regions_a[KCONFIG_MAX_MEM_REGIONS];
@@ -179,8 +178,9 @@ static int build_free_regions(const mem_region_t *ram_regions,
   }
 
   // Subtract page tables
-  num_regions = subtract_reserved_region(temp_regions_a, num_regions, pt_start,
-                                          pt_end, temp_regions_b, max_free_regions);
+  num_regions =
+      subtract_reserved_region(temp_regions_a, num_regions, pt_start, pt_end,
+                               temp_regions_b, max_free_regions);
 
   // Subtract kernel
   num_regions =
@@ -195,8 +195,9 @@ static int build_free_regions(const mem_region_t *ram_regions,
   // Subtract PVH start info structure
   uintptr_t pvh_start = (uintptr_t)pvh_info;
   uintptr_t pvh_end = pvh_start + sizeof(struct hvm_start_info);
-  num_regions = subtract_reserved_region(temp_regions_b, num_regions, pvh_start,
-                                          pvh_end, temp_regions_a, max_free_regions);
+  num_regions =
+      subtract_reserved_region(temp_regions_b, num_regions, pvh_start, pvh_end,
+                               temp_regions_a, max_free_regions);
 
   // Subtract E820 memory map
   if (pvh_info->memmap_paddr) {

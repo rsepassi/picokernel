@@ -34,12 +34,12 @@ extern uint8_t stack_top[];
 // L0 (leaf): 512 entries, each covers 4 KB
 
 // Page table entry flags
-#define PTE_V (1UL << 0)  // Valid
-#define PTE_R (1UL << 1)  // Readable
-#define PTE_W (1UL << 2)  // Writable
-#define PTE_X (1UL << 3)  // Executable
-#define PTE_A (1UL << 6)  // Accessed
-#define PTE_D (1UL << 7)  // Dirty
+#define PTE_V (1UL << 0) // Valid
+#define PTE_R (1UL << 1) // Readable
+#define PTE_W (1UL << 2) // Writable
+#define PTE_X (1UL << 3) // Executable
+#define PTE_A (1UL << 6) // Accessed
+#define PTE_D (1UL << 7) // Dirty
 
 // Page table pointer (non-leaf): V=1, R=W=X=0
 #define PTE_TABLE (PTE_V)
@@ -51,7 +51,7 @@ extern uint8_t stack_top[];
 #define PTE_MMIO (PTE_V | PTE_R | PTE_W | PTE_A | PTE_D)
 
 // satp register fields (for Sv39)
-#define SATP_MODE_SV39 (8UL << 60)  // Mode = Sv39
+#define SATP_MODE_SV39 (8UL << 60) // Mode = Sv39
 
 // Page tables (static allocation in BSS)
 // Using 2 MB megapages, we need:
@@ -95,10 +95,10 @@ static int mmu_enable_sv39(void) {
   // Map RAM region: 0x80000000 - 0x88000000 (128 MB) using 2 MB megapages
   // This is GB 2 (entries start at index 2 in L2)
   uint64_t ram_base = 0x80000000;
-  uint64_t ram_size = 0x08000000;  // 128 MB (typical QEMU default)
+  uint64_t ram_size = 0x08000000; // 128 MB (typical QEMU default)
 
   // Calculate number of 2 MB pages needed
-  uint64_t num_pages = (ram_size + 0x1FFFFF) / 0x200000;  // Round up
+  uint64_t num_pages = (ram_size + 0x1FFFFF) / 0x200000; // Round up
 
   for (uint64_t i = 0; i < num_pages && i < 512; i++) {
     uint64_t phys = ram_base + (i * 0x200000);
@@ -114,7 +114,7 @@ static int mmu_enable_sv39(void) {
   // Using 2 MB megapages for simplicity
   uint64_t mmio_base = 0x00000000;
   uint64_t mmio_size = 0x40000000;  // 1 GB
-  num_pages = mmio_size / 0x200000;  // 512 pages of 2 MB
+  num_pages = mmio_size / 0x200000; // 512 pages of 2 MB
 
   for (uint64_t i = 0; i < num_pages && i < 512; i++) {
     uint64_t phys = mmio_base + (i * 0x200000);
@@ -161,7 +161,7 @@ typedef struct {
 // Returns: number of reserved regions
 static int calculate_reserved_regions(void *fdt, reserved_region_t *regions,
                                       int max_regions) {
-  (void)max_regions;  // Reserved for future bounds checking
+  (void)max_regions; // Reserved for future bounds checking
   int count = 0;
 
   // DTB region (from FDT pointer and size from header)
@@ -228,7 +228,7 @@ static void subtract_reserved(mem_region_t *avail, int *num_avail,
         avail[j] = avail[j + 1];
       }
       (*num_avail)--;
-      i--;  // Recheck this index
+      i--; // Recheck this index
       continue;
     }
 
@@ -312,7 +312,7 @@ int platform_mem_init(platform_t *platform, void *fdt) {
   // Now subtract each reserved region
   for (int i = 0; i < num_reserved; i++) {
     subtract_reserved(platform->mem_regions, &platform->num_mem_regions,
-                     reserved[i].base, reserved[i].size);
+                      reserved[i].base, reserved[i].size);
   }
 
   // Print final free regions

@@ -83,7 +83,7 @@ struct platform_t {
 
   // Memory management (populated during platform_init)
   mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Available memory regions
-  int num_mem_regions;                                // Number of regions
+  int num_mem_regions;                               // Number of regions
 };
 typedef struct platform_t platform_t;
 

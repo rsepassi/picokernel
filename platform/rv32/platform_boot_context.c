@@ -6,7 +6,8 @@
 #include <stddef.h>
 
 // Parse boot context (device tree) to discover memory regions and devices
-// This is a stub implementation - full memory management not yet implemented for RV32
+// This is a stub implementation - full memory management not yet implemented
+// for RV32
 int platform_boot_context_parse(platform_t *platform, void *fdt) {
   (void)platform;
   (void)fdt;
@@ -16,5 +17,5 @@ int platform_boot_context_parse(platform_t *platform, void *fdt) {
   // - Parse reserved-memory nodes
   // - Populate platform->mem_regions and platform->num_mem_regions
 
-  return 0;  // Success (no-op for now)
+  return 0; // Success (no-op for now)
 }

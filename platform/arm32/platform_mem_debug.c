@@ -288,7 +288,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".text section checksum mismatch after init - code corruption detected");
+      kpanic(".text section checksum mismatch after init - code corruption "
+             "detected");
       all_ok = false;
     }
 
@@ -300,7 +301,8 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
       printk(" OK\n");
     } else {
       printk(" MISMATCH!\n");
-      kpanic(".rodata section checksum mismatch after init - data corruption detected");
+      kpanic(".rodata section checksum mismatch after init - data corruption "
+             "detected");
       all_ok = false;
     }
   }
