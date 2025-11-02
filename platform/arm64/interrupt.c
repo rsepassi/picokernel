@@ -92,7 +92,8 @@ void exception_handler(uint64_t type, uint64_t esr, uint64_t elr,
     if (g_current_platform == NULL || g_current_platform->gic_cpu_base == 0) {
       return; // GIC not initialized yet
     }
-    uint32_t irq = mmio_read32(g_current_platform->gic_cpu_base + GICC_IAR_OFF) & 0x3FF;
+    uint32_t irq =
+        mmio_read32(g_current_platform->gic_cpu_base + GICC_IAR_OFF) & 0x3FF;
 
     if (irq >= 1020) {
       // Spurious interrupt (1023) or special value
@@ -178,7 +179,8 @@ static void gic_init(platform_t *platform) {
   // Each 32-bit register contains targets for 4 interrupts (8 bits each)
   printk("Setting SPI targets to CPU 0...\n");
   for (uint32_t i = 32; i < num_lines; i += 4) {
-    mmio_write32(gicd_base + GICD_ITARGETSR_OFF + i, 0x01010101); // All 4 IRQs target CPU 0
+    mmio_write32(gicd_base + GICD_ITARGETSR_OFF + i,
+                 0x01010101); // All 4 IRQs target CPU 0
   }
 
   // Verify IRQ 79 target was set
@@ -198,7 +200,8 @@ static void gic_init(platform_t *platform) {
   mmio_write32(target_reg, target_val);
 
   // Enable timer interrupt
-  mmio_write32(gicd_base + GICD_ISENABLER_OFF + (TIMER_IRQ / 32) * 4, 1 << (TIMER_IRQ % 32));
+  mmio_write32(gicd_base + GICD_ISENABLER_OFF + (TIMER_IRQ / 32) * 4,
+               1 << (TIMER_IRQ % 32));
 
   // Enable distributor
   mmio_write32(gicd_base + GICD_CTLR_OFF, 1);
@@ -258,7 +261,8 @@ void platform_interrupt_disable(platform_t *platform) {
 
 // Configure interrupt trigger type (level/edge)
 // trigger: 0 = level-sensitive, 1 = edge-triggered
-static void irq_set_trigger(platform_t *platform, uint32_t irq_num, uint32_t trigger) {
+static void irq_set_trigger(platform_t *platform, uint32_t irq_num,
+                            uint32_t trigger) {
   if (irq_num >= MAX_IRQS || platform->gic_dist_base == 0) {
     return;
   }
@@ -311,7 +315,9 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
   }
 
   // Enable interrupt in GIC Distributor
-  mmio_write32(platform->gic_dist_base + GICD_ISENABLER_OFF + (irq_num / 32) * 4, 1 << (irq_num % 32));
+  mmio_write32(platform->gic_dist_base + GICD_ISENABLER_OFF +
+                   (irq_num / 32) * 4,
+               1 << (irq_num % 32));
 
   printk("IRQ ");
   printk_dec(irq_num);
@@ -342,7 +348,8 @@ void platform_irq_enable(platform_t *platform, uint32_t irq_num) {
 
 // Dump GIC configuration for a specific IRQ (for debugging)
 void irq_dump_config(platform_t *platform, uint32_t irq_num) {
-  if (irq_num >= MAX_IRQS || platform->gic_dist_base == 0 || platform->gic_cpu_base == 0) {
+  if (irq_num >= MAX_IRQS || platform->gic_dist_base == 0 ||
+      platform->gic_cpu_base == 0) {
     return;
   }
 

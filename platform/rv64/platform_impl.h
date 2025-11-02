@@ -40,6 +40,16 @@ struct platform_t {
   uint64_t timer_start;   // Start time counter value
   timer_callback_t timer_callback; // Timer callback function pointer
 
+  // Device addresses discovered from FDT
+  uint64_t uart_base;        // UART base address
+  uint64_t plic_base;        // PLIC base address
+  uint64_t clint_base;       // CLINT base address
+  uint64_t pci_ecam_base;    // PCI ECAM base address
+  uint64_t pci_ecam_size;    // PCI ECAM size
+  uint64_t pci_mmio_base;    // PCI MMIO range for BAR allocation
+  uint64_t pci_mmio_size;    // PCI MMIO range size
+  uint64_t virtio_mmio_base; // VirtIO MMIO device base
+
   // VirtIO device state
   virtio_pci_transport_t virtio_pci_transport_rng;   // PCI transport for RNG
   virtio_pci_transport_t virtio_pci_transport_blk;   // PCI transport for BLK
@@ -144,6 +154,9 @@ static inline void platform_mmio_write64(volatile uint64_t *addr,
   *addr = val;
   platform_mmio_barrier();
 }
+
+// Initialize UART with discovered base address from FDT
+void platform_uart_init(platform_t *platform);
 
 // Calculate PCI IRQ number from slot and pin
 // RISC-V QEMU virt: PCI interrupts use standard INTx swizzling

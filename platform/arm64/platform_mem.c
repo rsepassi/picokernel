@@ -10,6 +10,7 @@
 // Forward declarations
 void platform_mem_init(platform_t *platform, void *fdt);
 void platform_mem_debug_mmu(void);
+void platform_uart_init(platform_t *platform);
 
 // Linker-provided symbols
 extern uint8_t _start[];
@@ -170,9 +171,14 @@ static void setup_mmu(platform_t *platform) {
   }
 
   // L3 MMIO tables: Map MMIO devices (64KB pages)
-  // GIC: 0x08000000-0x08020000 (128 KB)
-  // UART: 0x09000000-0x09001000 (4 KB)
-  // VirtIO MMIO: 0x0A000000-0x0A200000 (2 MB)
+  // Note: These MMIO ranges are hardcoded for the QEMU virt machine layout.
+  // While the exact device addresses are discovered from FDT (and used by drivers),
+  // we map a broad MMIO region here to ensure all devices are accessible before
+  // device discovery completes. This is a common pattern in embedded systems.
+  // Typical devices in this range:
+  //   GIC: 0x08000000-0x08020000 (128 KB)
+  //   UART: 0x09000000-0x09001000 (4 KB)
+  //   VirtIO MMIO: 0x0A000000-0x0A200000 (2 MB)
 
   // Map 0x08000000-0x0BFFFFFF (64 MB) as device memory
   for (int i = 0; i < 1024; i++) { // 64 MB / 64 KB = 1024 pages
@@ -244,8 +250,10 @@ static void setup_mmu(platform_t *platform) {
 
     // Set up L2 entries to point to L3 PCI tables
     // Map up to 128 MB (2 L3 tables)
-    page_table_l2_pci[l2_base_idx] = ((uint64_t)page_table_l3_pci[0]) | PTE_L2_TABLE;
-    page_table_l2_pci[l2_base_idx + 1] = ((uint64_t)page_table_l3_pci[1]) | PTE_L2_TABLE;
+    page_table_l2_pci[l2_base_idx] =
+        ((uint64_t)page_table_l3_pci[0]) | PTE_L2_TABLE;
+    page_table_l2_pci[l2_base_idx + 1] =
+        ((uint64_t)page_table_l3_pci[1]) | PTE_L2_TABLE;
 
     // Map PCI ECAM as device memory (64KB pages)
     uintptr_t addr = platform->pci_ecam_base;
@@ -423,6 +431,9 @@ void platform_mem_init(platform_t *platform, void *fdt) {
     printk("ERROR: Failed to parse boot context\n");
     return;
   }
+
+  // Update UART base address from FDT discovery
+  platform_uart_init(platform);
 
   // Save initial region count before subtraction
   int initial_num_regions = platform->num_mem_regions;

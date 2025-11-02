@@ -184,13 +184,13 @@ void timer_init(platform_t *platform) {
   // Mask off lower 12 bits (page offset) and upper bits
   platform->lapic_base = apic_base_msr & 0xFFFFFFFFFF000ULL;
 
-  // Validate LAPIC base address
+  // Validate LAPIC base address (required - no fallback)
   if (platform->lapic_base == 0 || platform->lapic_base < 0x1000) {
-    printk("ERROR: Invalid LAPIC base address: ");
+    printk("FATAL: Invalid LAPIC base address from MSR: ");
     printk_hex64(platform->lapic_base);
     printk("\n");
-    printk("LAPIC may not be supported on this system\n");
-    return;
+    printk("LAPIC must be supported and properly configured\n");
+    platform_abort();
   }
 
   printk("LAPIC base address: ");

@@ -6,9 +6,6 @@
 #include "platform.h"
 #include "printk.h"
 
-// Default IOAPIC address (can be overridden by ACPI MADT)
-#define IOAPIC_DEFAULT_BASE 0xFEC00000
-
 // IOAPIC indirect register access (memory-mapped)
 #define IOREGSEL_OFFSET 0x00 // Register select
 #define IOWIN_OFFSET 0x10    // Register window (data)
@@ -99,11 +96,10 @@ static int find_ioapic_in_madt(platform_t *platform) {
 
 // Initialize IOAPIC
 void ioapic_init(platform_t *platform) {
-  // Find IOAPIC in ACPI MADT
+  // Find IOAPIC in ACPI MADT (required - no default fallback)
   if (find_ioapic_in_madt(platform) < 0) {
-    platform->ioapic.base_addr = IOAPIC_DEFAULT_BASE;
-    platform->ioapic.gsi_base = 0;
-    platform->ioapic.id = 0;
+    printk("FATAL: Failed to find IOAPIC in ACPI MADT\n");
+    platform_abort();
   }
 
   // Read version and max entries
@@ -116,7 +112,9 @@ void ioapic_init(platform_t *platform) {
     ioapic_write_redtbl(&platform->ioapic, i, entry);
   }
 
-  printk("IOAPIC initialized\n");
+  printk("IOAPIC initialized at 0x");
+  printk_hex32(platform->ioapic.base_addr);
+  printk("\n");
 }
 
 // Route an IRQ to a vector (edge-triggered for MMIO devices)

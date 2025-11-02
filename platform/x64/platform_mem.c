@@ -14,10 +14,8 @@ extern uint8_t _start[];
 extern uint8_t _end[];
 extern uint8_t stack_bottom[];
 extern uint8_t stack_top[];
-
-// Page table location (set up by boot.S)
-#define PAGE_TABLES_BASE 0x100000ULL
-#define PAGE_TABLES_SIZE 0x5000ULL // 20 KiB (5 pages: PML4, PDPT, 2x PD, PT)
+extern uint8_t _page_tables_start[];
+extern uint8_t _page_tables_end[];
 
 // Print reserved regions for debugging
 static void print_reserved_regions(uintptr_t kernel_start, uintptr_t kernel_end,
@@ -155,13 +153,13 @@ static int build_free_regions(const mem_region_t *ram_regions,
                               int num_ram_regions, mem_region_t *free_regions,
                               int max_free_regions,
                               struct hvm_start_info *pvh_info) {
-  // Get reserved region boundaries
+  // Get reserved region boundaries (using linker symbols)
   uintptr_t kernel_start = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
   uintptr_t stack_start = (uintptr_t)stack_bottom;
   uintptr_t stack_end = (uintptr_t)stack_top;
-  uintptr_t pt_start = PAGE_TABLES_BASE;
-  uintptr_t pt_end = PAGE_TABLES_BASE + PAGE_TABLES_SIZE;
+  uintptr_t pt_start = (uintptr_t)_page_tables_start;
+  uintptr_t pt_end = (uintptr_t)_page_tables_end;
 
   // Print reserved regions for debugging
   print_reserved_regions(kernel_start, kernel_end, stack_start, stack_end,

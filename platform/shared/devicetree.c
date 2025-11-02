@@ -47,8 +47,7 @@ static void print_prop_data(const uint8_t *data, uint32_t len) {
     for (uint32_t i = 0; i < len; i += 4) {
       if (i > 0)
         printk_putc(' ');
-      uint32_t cell = (data[i] << 24) | (data[i + 1] << 16) |
-                      (data[i + 2] << 8) | data[i + 3];
+      uint32_t cell = kload_be32(data + i);
       printk_hex32(cell);
     }
     printk_putc('>');
@@ -289,7 +288,7 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
     } else if (token == FDT_PROP) {
       uint32_t len = kbe32toh(*ptr++);
       uint32_t nameoff = kbe32toh(*ptr++);
-      const uint8_t *value = (const uint8_t *)ptr;
+      const volatile uint8_t *value = (const volatile uint8_t *)ptr;
       const char *prop_name = strings + nameoff;
 
       // Check if this is a virtio,mmio node
@@ -301,26 +300,15 @@ static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
 
       // Collect reg property (regardless of compatible - we'll check later)
       if (str_equal(prop_name, "reg") && len >= 16) {
-        uint32_t addr_high =
-            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-        uint32_t addr_low =
-            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
-        uint32_t size_high =
-            (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
-        uint32_t size_low = (value[12] << 24) | (value[13] << 16) |
-                            (value[14] << 8) | value[15];
-
-        current_reg_addr = ((uint64_t)addr_high << 32) | addr_low;
-        current_reg_size = ((uint64_t)size_high << 32) | size_low;
+        current_reg_addr = kload_be64(value);
+        current_reg_size = kload_be64(value + 8);
       }
 
       // Collect interrupts property (regardless of compatible - we'll check
       // later)
       if (str_equal(prop_name, "interrupts") && len >= 12) {
-        uint32_t irq_type =
-            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-        uint32_t irq_num =
-            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
+        uint32_t irq_type = kload_be32(value);
+        uint32_t irq_num = kload_be32(value + 4);
 
         if (irq_type == 0) { // SPI
           current_irq = 32 + irq_num;

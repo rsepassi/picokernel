@@ -1,15 +1,23 @@
 // Shared PCI Configuration Space Access Implementation (ECAM)
 // Uses ECAM (Enhanced Configuration Access Mechanism) - memory-mapped PCI
-// Platform must define PLATFORM_PCI_ECAM_BASE
+// Platform must populate pci_ecam_base in platform_t from FDT
 
 #include "pci.h"
 #include <stdint.h>
 
 // Calculate ECAM address for PCI configuration space access
 // ECAM layout: [bus:8][device:5][function:3][offset:12]
-static inline volatile void *pci_ecam_address(uint8_t bus, uint8_t slot,
-                                              uint8_t func, uint8_t offset) {
-  uint64_t addr = PLATFORM_PCI_ECAM_BASE | ((uint64_t)bus << 20) |
+static inline volatile void *pci_ecam_address(platform_t *platform, uint8_t bus,
+                                              uint8_t slot, uint8_t func,
+                                              uint8_t offset) {
+  // Use discovered ECAM base from platform_t
+  // If not discovered, fall back to PLATFORM_PCI_ECAM_BASE (compile-time default)
+  uint64_t ecam_base = platform->pci_ecam_base;
+  if (ecam_base == 0) {
+    ecam_base = PLATFORM_PCI_ECAM_BASE;
+  }
+
+  uint64_t addr = ecam_base | ((uint64_t)bus << 20) |
                   ((uint64_t)slot << 15) | ((uint64_t)func << 12) |
                   (uint64_t)offset;
   return (volatile void *)addr;
@@ -18,9 +26,8 @@ static inline volatile void *pci_ecam_address(uint8_t bus, uint8_t slot,
 // Read 8-bit value from PCI config space
 uint8_t platform_pci_config_read8(platform_t *platform, uint8_t bus,
                                   uint8_t slot, uint8_t func, uint8_t offset) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint8_t *addr =
-      (volatile uint8_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint8_t *)pci_ecam_address(platform, bus, slot, func, offset);
   return platform_mmio_read8(addr);
 }
 
@@ -28,9 +35,8 @@ uint8_t platform_pci_config_read8(platform_t *platform, uint8_t bus,
 uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
                                     uint8_t slot, uint8_t func,
                                     uint8_t offset) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint16_t *addr =
-      (volatile uint16_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint16_t *)pci_ecam_address(platform, bus, slot, func, offset);
   return platform_mmio_read16(addr);
 }
 
@@ -38,18 +44,16 @@ uint16_t platform_pci_config_read16(platform_t *platform, uint8_t bus,
 uint32_t platform_pci_config_read32(platform_t *platform, uint8_t bus,
                                     uint8_t slot, uint8_t func,
                                     uint8_t offset) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint32_t *addr =
-      (volatile uint32_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint32_t *)pci_ecam_address(platform, bus, slot, func, offset);
   return platform_mmio_read32(addr);
 }
 
 // Write 8-bit value to PCI config space
 void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
                                 uint8_t func, uint8_t offset, uint8_t value) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint8_t *addr =
-      (volatile uint8_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint8_t *)pci_ecam_address(platform, bus, slot, func, offset);
   platform_mmio_write8(addr, value);
 }
 
@@ -57,9 +61,8 @@ void platform_pci_config_write8(platform_t *platform, uint8_t bus, uint8_t slot,
 void platform_pci_config_write16(platform_t *platform, uint8_t bus,
                                  uint8_t slot, uint8_t func, uint8_t offset,
                                  uint16_t value) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint16_t *addr =
-      (volatile uint16_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint16_t *)pci_ecam_address(platform, bus, slot, func, offset);
   platform_mmio_write16(addr, value);
 }
 
@@ -67,9 +70,8 @@ void platform_pci_config_write16(platform_t *platform, uint8_t bus,
 void platform_pci_config_write32(platform_t *platform, uint8_t bus,
                                  uint8_t slot, uint8_t func, uint8_t offset,
                                  uint32_t value) {
-  (void)platform; // Platform not needed for ECAM access
   volatile uint32_t *addr =
-      (volatile uint32_t *)pci_ecam_address(bus, slot, func, offset);
+      (volatile uint32_t *)pci_ecam_address(platform, bus, slot, func, offset);
   platform_mmio_write32(addr, value);
 }
 

@@ -26,10 +26,6 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->has_net_device = false;
   platform->last_overflow_count = 0;
 
-  // Initialize PCI BAR allocator
-  // RISC-V QEMU virt PCI MMIO region starts at 0x40000000
-  platform->pci_next_bar_addr = 0x40000000;
-
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
 
@@ -42,7 +38,16 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   timer_init(platform, fdt);
 
   // Initialize memory management (MMU setup, memory discovery, free regions)
+  // This also parses the FDT and populates device addresses including pci_mmio_base
   platform_mem_init(platform, fdt);
+
+  // Initialize PCI BAR allocator from FDT-discovered MMIO range
+  // If not found in FDT, use default QEMU virt address
+  if (platform->pci_mmio_base != 0) {
+    platform->pci_next_bar_addr = platform->pci_mmio_base;
+  } else {
+    platform->pci_next_bar_addr = 0x40000000;  // Fallback default
+  }
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
   // to avoid spurious interrupts during device enumeration

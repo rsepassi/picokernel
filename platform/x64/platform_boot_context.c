@@ -132,6 +132,9 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   printk(", version: ");
   printk_dec(pvh_info->version);
   printk(")\n");
+  printk("[BOOT] PVH rsdp_paddr: 0x");
+  printk_hex64(pvh_info->rsdp_paddr);
+  printk("\n");
 
   // Parse E820 memory map and populate platform->mem_regions[]
   if (parse_e820_map(pvh_info, platform) < 0) {

@@ -10,15 +10,16 @@
 // RISC-V 64 memory layout constants (QEMU virt machine)
 #define DTB_BASE 0x80000000ULL    // DTB passed via a1 register
 #define DTB_SIZE 0x00200000ULL    // 2 MiB reserved (typical)
-#define KERNEL_BASE 0x80200000ULL // Kernel base after OpenSBI
 #define RAM_BASE 0x80000000ULL    // RAM starts here
-#define RAM_SIZE 0x08000000ULL    // 128 MiB default
+#define RAM_SIZE 0x08000000ULL    // 128 MiB default (for display purposes)
 
 // Linker-provided symbols
+extern uint8_t _start[];
 extern uint8_t _text_start[], _text_end[];
 extern uint8_t _rodata_start[], _rodata_end[];
 extern uint8_t _data_start[], _data_end[];
 extern uint8_t _bss_start[], _bss_end[];
+extern uint8_t __bss_start[], __bss_end[];
 extern uint8_t _end[];
 extern uint8_t stack_bottom[], stack_top[];
 
@@ -82,8 +83,13 @@ void platform_mem_validate_critical(void) {
   printk(" bytes)\n");
 
   // 3. Verify kernel base address
-  if (text_start != KERNEL_BASE) {
-    printk("[MEM] ERROR: Kernel not at expected base 0x80200000\n");
+  uintptr_t kernel_base = (uintptr_t)_start;
+  if (text_start != kernel_base) {
+    printk("[MEM] ERROR: Kernel .text not at expected base 0x");
+    printk_hex64(kernel_base);
+    printk(" (at 0x");
+    printk_hex64(text_start);
+    printk(")\n");
     kpanic("Kernel base address corruption detected");
     all_ok = false;
   }
@@ -202,6 +208,7 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
   }
 
   // 2. Validate MMIO regions are accessible (basic probe)
+  // Note: These are fixed addresses for QEMU virt machine, not from linker
   volatile uint32_t *uart_base = (volatile uint32_t *)0x10000000UL;
   volatile uint32_t *plic_base = (volatile uint32_t *)0x0c000000UL;
   volatile uint32_t *virtio_base = (volatile uint32_t *)0x10001000UL;
@@ -316,9 +323,57 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt) {
 // Print RV64 memory layout
 void platform_mem_print_layout(void) {
   printk("\n[MEM] === RISC-V 64 Memory Map (QEMU virt) ===\n");
-  printk("  DTB region:          0x80000000 - 0x801FFFFF (2 MiB reserved)\n");
-  printk("  Kernel base:         0x80200000 (text, rodata, data, bss)\n");
-  printk("  RAM:                 0x80000000 - 0x88000000 (128 MiB default)\n");
+
+  // DTB region (from constants)
+  printk("  DTB region:          0x");
+  printk_hex64(DTB_BASE);
+  printk(" - 0x");
+  printk_hex64(DTB_BASE + DTB_SIZE - 1);
+  printk(" (");
+  printk_dec((uint32_t)(DTB_SIZE / (1024 * 1024)));
+  printk(" MiB reserved)\n");
+
+  // Kernel sections (from linker symbols)
+  uintptr_t text_start = (uintptr_t)_text_start;
+  uintptr_t text_end = (uintptr_t)_text_end;
+  uintptr_t rodata_start = (uintptr_t)_rodata_start;
+  uintptr_t rodata_end = (uintptr_t)_rodata_end;
+  uintptr_t bss_start = (uintptr_t)_bss_start;
+  uintptr_t kernel_end = (uintptr_t)_end;
+
+  printk("  Kernel .text:        0x");
+  printk_hex64(text_start);
+  printk(" - 0x");
+  printk_hex64(text_end);
+  printk(" (");
+  printk_dec((text_end - text_start) / 1024);
+  printk(" KiB)\n");
+
+  printk("  Kernel .rodata:      0x");
+  printk_hex64(rodata_start);
+  printk(" - 0x");
+  printk_hex64(rodata_end);
+  printk(" (");
+  printk_dec((rodata_end - rodata_start) / 1024);
+  printk(" KiB)\n");
+
+  printk("  Kernel .bss+stack:   0x");
+  printk_hex64(bss_start);
+  printk(" - 0x");
+  printk_hex64(kernel_end);
+  printk(" (");
+  printk_dec((kernel_end - bss_start) / 1024);
+  printk(" KiB)\n");
+
+  printk("  Free RAM:            0x");
+  printk_hex64(kernel_end);
+  printk(" - 0x");
+  printk_hex64(RAM_BASE + RAM_SIZE);
+  printk(" (~");
+  printk_dec((RAM_BASE + RAM_SIZE - kernel_end) / (1024 * 1024));
+  printk(" MiB)\n");
+
+  // MMIO regions (fixed addresses for QEMU virt machine)
   printk("  CLINT (Timer):       0x02000000 - 0x0200FFFF\n");
   printk("  PLIC (Interrupt):    0x0C000000 - 0x0FFFFFFF\n");
   printk("  UART (NS16550):      0x10000000 - 0x10000FFF\n");

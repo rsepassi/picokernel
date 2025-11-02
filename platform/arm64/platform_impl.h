@@ -90,9 +90,13 @@ struct platform_t {
   uintptr_t gic_dist_base; // GIC Distributor base address
   uintptr_t gic_cpu_base;  // GIC CPU Interface base address
 
+  // UART address (discovered from FDT)
+  uintptr_t uart_base; // UART base address
+
   // PCI ECAM address (discovered from FDT, if USE_PCI=1)
   uintptr_t pci_ecam_base; // PCI ECAM base address
   size_t pci_ecam_size;    // PCI ECAM size
+  uint64_t virtio_mmio_base; // VirtIO MMIO device base
 };
 typedef struct platform_t platform_t;
 
@@ -120,6 +124,13 @@ typedef struct {
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor chain head index
 } knet_send_req_platform_t;
+
+// ============================================================================
+// Platform-specific functions
+// ============================================================================
+
+// Initialize UART with address from FDT (called after FDT parsing)
+void platform_uart_init(platform_t *platform);
 
 // ============================================================================
 // Platform-specific hooks for shared platform code

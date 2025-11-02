@@ -8,36 +8,49 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Place kernel at 2MB into RAM to leave space for DTB */
+    /* Place kernel at 2MB into RAM to leave space for DTB.
+     * This is the only hardcoded address - required to avoid DTB collision.
+     * DTB region: 0x40000000 - 0x401FFFFF (2 MiB reserved)
+     * Kernel base: 0x40200000 (all other addresses are relative to this base). */
     . = 0x40200000;
 
-    _text_start = .;
     .text : {
+        _text_start = .;
         *(.text.boot)
         *(.text*)
+        _text_end = .;
     }
-    _text_end = .;
 
-    _rodata_start = .;
+    /* Align rodata to cache line boundary */
+    . = ALIGN(64);
     .rodata : {
+        _rodata_start = .;
         *(.rodata*)
+        _rodata_end = .;
     }
-    _rodata_end = .;
 
-    _data_start = .;
+    /* Align data section to cache line boundary */
+    . = ALIGN(64);
     .data : {
+        _data_start = .;
         *(.data*)
+        _data_end = .;
     }
-    _data_end = .;
 
-    _bss_start = .;
+    /* Align BSS section to cache line boundary */
+    . = ALIGN(64);
     .bss : {
         __bss_start = .;
+        _bss_start = .;
         *(.bss*)
         *(COMMON)
+
+        /* Stack symbols defined in boot.S but declared here for reference */
+        /* stack_bottom and stack_top are in the .bss section (boot.S) */
+
         __bss_end = .;
+        _bss_end = .;
     }
-    _bss_end = .;
 
     /* End of kernel */
     . = ALIGN(16);

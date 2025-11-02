@@ -55,13 +55,13 @@ extern uint8_t stack_top[];
 
 // Page tables (static allocation in BSS)
 // Using 2 MB megapages, we need:
-// - 1 L2 table (root)
-// - 1 L1 table for RAM region (size discovered from FDT at runtime)
-// - 1 L1 table for low memory MMIO (0x00000000 - 0x40000000)
+// - 1 L2 table (root): 512 entries, each covers 1 GB
+// - 512 L1 tables: one per L2 entry, full Sv39 address space coverage (512 GB)
+// Total allocation: 512 × 4 KB = 2 MB for complete address space support
+// This allows mapping multiple non-contiguous memory regions at any valid address
 // Note: RAM base and size are discovered from FDT, not hardcoded
 static uint64_t pt_l2[512] __attribute__((aligned(4096)));
-static uint64_t pt_l1_ram[512] __attribute__((aligned(4096)));
-static uint64_t pt_l1_mmio[512] __attribute__((aligned(4096)));
+static uint64_t pt_l1[512][512] __attribute__((aligned(4096)));  // 2 MB total
 
 // ============================================================================
 // MMU Configuration
@@ -89,57 +89,95 @@ static int mmu_enable_sv39(platform_t *platform) {
   // Zero out page tables
   for (int i = 0; i < 512; i++) {
     pt_l2[i] = 0;
-    pt_l1_ram[i] = 0;
-    pt_l1_mmio[i] = 0;
+    for (int j = 0; j < 512; j++) {
+      pt_l1[i][j] = 0;
+    }
   }
 
-  // Map RAM region using discovered memory size from FDT
-  // Use first memory region (typically the main RAM region)
+  // Map all RAM regions using discovered memory from FDT
+  // Support multiple non-contiguous regions across full Sv39 address space
   if (platform->num_mem_regions == 0) {
     printk("ERROR: No memory regions discovered from FDT\n");
     return -1;
   }
 
-  uint64_t ram_base = platform->mem_regions[0].base;
-  uint64_t ram_size = platform->mem_regions[0].size;
+  printk("Mapping ");
+  printk_dec(platform->num_mem_regions);
+  printk(" memory region(s):\n");
 
-  printk("Mapping RAM region: base=0x");
-  printk_hex64(ram_base);
-  printk(" size=0x");
-  printk_hex64(ram_size);
-  printk(" (");
-  printk_dec(ram_size / (1024 * 1024));
-  printk(" MB)\n");
+  // Map each discovered memory region
+  for (int r = 0; r < platform->num_mem_regions; r++) {
+    uint64_t ram_base = platform->mem_regions[r].base;
+    uint64_t ram_size = platform->mem_regions[r].size;
 
-  // Calculate number of 2 MB pages needed
-  uint64_t num_pages = (ram_size + 0x1FFFFF) / 0x200000; // Round up
+    printk("  Region ");
+    printk_dec(r);
+    printk(": base=0x");
+    printk_hex64(ram_base);
+    printk(" size=0x");
+    printk_hex64(ram_size);
+    printk(" (");
+    printk_dec(ram_size / (1024 * 1024));
+    printk(" MB)\n");
 
-  for (uint64_t i = 0; i < num_pages && i < 512; i++) {
-    uint64_t phys = ram_base + (i * 0x200000);
-    // Create leaf entry in L1 table (R/W/X set = megapage)
-    pt_l1_ram[i] = (phys >> 12) << 10 | PTE_RAM;
+    // Calculate which L2 entries this region spans
+    // Each L2 entry covers 1 GB (30 bits), use bits [38:30] of address
+    uint64_t start_l2_idx = (ram_base >> 30) & 0x1FF;
+    uint64_t end_addr = ram_base + ram_size - 1;
+    uint64_t end_l2_idx = (end_addr >> 30) & 0x1FF;
+
+    printk("    L2 entries: [");
+    printk_dec(start_l2_idx);
+    printk(" - ");
+    printk_dec(end_l2_idx);
+    printk("]\n");
+
+    // Map each 1 GB chunk that this region spans
+    for (uint64_t l2_idx = start_l2_idx; l2_idx <= end_l2_idx; l2_idx++) {
+      // Setup L2 entry to point to pt_l1[l2_idx] if not already set
+      if (pt_l2[l2_idx] == 0) {
+        pt_l2[l2_idx] = ((uint64_t)pt_l1[l2_idx] >> 12) << 10 | PTE_TABLE;
+      }
+
+      // Calculate the portion of memory that falls in this 1 GB slot
+      uint64_t slot_start = l2_idx << 30;              // Start of this 1 GB
+      uint64_t slot_end = slot_start + 0x40000000 - 1; // End of this 1 GB
+
+      // Find overlap between region and this slot
+      uint64_t map_start = (ram_base > slot_start) ? ram_base : slot_start;
+      uint64_t map_end = (end_addr < slot_end) ? end_addr : slot_end;
+
+      // Calculate L1 entry range for this portion
+      uint64_t start_l1_idx = (map_start & 0x3FFFFFFF) / 0x200000; // Within 1 GB
+      uint64_t end_l1_idx = (map_end & 0x3FFFFFFF) / 0x200000;
+
+      // Populate L1 entries with 2 MB megapages
+      for (uint64_t l1_idx = start_l1_idx; l1_idx <= end_l1_idx; l1_idx++) {
+        uint64_t phys = (l2_idx << 30) + (l1_idx * 0x200000);
+        pt_l1[l2_idx][l1_idx] = (phys >> 12) << 10 | PTE_RAM;
+      }
+    }
   }
-
-  // Calculate L2 index from RAM base address
-  // Each L2 entry covers 1 GB (30 bits), so use bits [38:30] of address
-  uint64_t ram_l2_index = (ram_base >> 30) & 0x1FF;  // bits [38:30]
-  pt_l2[ram_l2_index] = ((uint64_t)pt_l1_ram >> 12) << 10 | PTE_TABLE;
 
   // Map low memory MMIO devices (0x00000000 - 0x40000000)
   // This includes: DTB, UART, VirtIO MMIO, etc.
   // Using 2 MB megapages for simplicity
+  // Note: MMIO region size is platform-specific. On RISC-V QEMU virt,
+  // MMIO devices are typically in the range 0x00000000-0x40000000 (1 GB).
+  // This is larger than strictly necessary but provides coverage for all
+  // typical MMIO devices without needing device-specific mapping.
   uint64_t mmio_base = 0x00000000;
-  uint64_t mmio_size = 0x40000000;  // 1 GB
-  num_pages = mmio_size / 0x200000; // 512 pages of 2 MB
+  uint64_t mmio_size = 0x40000000;  // 1 GB (covers all typical MMIO regions)
+  uint64_t num_pages = mmio_size / 0x200000; // 512 pages of 2 MB
 
   for (uint64_t i = 0; i < num_pages && i < 512; i++) {
     uint64_t phys = mmio_base + (i * 0x200000);
     // Create leaf entry in L1 table (R/W set, no X = MMIO)
-    pt_l1_mmio[i] = (phys >> 12) << 10 | PTE_MMIO;
+    pt_l1[0][i] = (phys >> 12) << 10 | PTE_MMIO;
   }
 
-  // L2[0] points to L1_mmio (covers 0x00000000 - 0x3FFFFFFF = 1 GB)
-  pt_l2[0] = ((uint64_t)pt_l1_mmio >> 12) << 10 | PTE_TABLE;
+  // L2[0] points to pt_l1[0] (covers 0x00000000 - 0x3FFFFFFF = 1 GB)
+  pt_l2[0] = ((uint64_t)pt_l1[0] >> 12) << 10 | PTE_TABLE;
 
   // Build satp value
   uint64_t pt_root_ppn = (uint64_t)pt_l2 >> 12;
@@ -201,6 +239,9 @@ static int calculate_reserved_regions(void *fdt, reserved_region_t *regions,
   count++;
 
   // Stack region (from linker symbols)
+  // Note: Stack is allocated within the BSS section, so it's technically
+  // part of the kernel region. We track it separately here for visibility
+  // in debug output and to ensure proper accounting of reserved memory.
   uintptr_t stack_start = (uintptr_t)stack_bottom;
   uintptr_t stack_end = (uintptr_t)stack_top;
 
@@ -210,8 +251,9 @@ static int calculate_reserved_regions(void *fdt, reserved_region_t *regions,
   count++;
 
   // Page tables region (static arrays in BSS)
+  // Includes: pt_l2 (4 KB) + pt_l1 (2 MB)
   uintptr_t pt_start = (uintptr_t)pt_l2;
-  uintptr_t pt_end = (uintptr_t)pt_l1_mmio + sizeof(pt_l1_mmio);
+  uintptr_t pt_end = (uintptr_t)pt_l1 + sizeof(pt_l1);
 
   regions[count].base = pt_start;
   regions[count].size = pt_end - pt_start;
@@ -297,6 +339,9 @@ int platform_mem_init(platform_t *platform, void *fdt) {
     printk("ERROR: Failed to parse boot context\n");
     return ret;
   }
+
+  // Initialize UART with discovered address from FDT
+  platform_uart_init(platform);
 
   // Set up MMU with Sv39 page tables
   ret = mmu_enable_sv39(platform);

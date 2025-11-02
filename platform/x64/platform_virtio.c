@@ -5,6 +5,7 @@
 #include "kbase.h"
 #include "kernel.h"
 #include "pci.h"
+#include "platform_config.h"
 #include "platform_impl.h"
 #include "printk.h"
 #include "virtio/virtio.h"
@@ -108,11 +109,10 @@ void mmio_scan_devices(platform_t *platform);
 
 // Helper to validate BAR address is in valid MMIO range
 static bool is_valid_bar_address(uint64_t addr) {
-  // Valid x64 MMIO ranges (avoid RAM and reserved areas):
-  // 0xC0000000-0xFEBFFFFF: PCI MMIO window (typical for QEMU)
-  // Reject addresses below 0xC0000000 (likely RAM)
-  // Reject addresses in high MMIO reserved ranges (0xFEC00000+: IOAPIC/LAPIC)
-  if (addr >= 0xC0000000ULL && addr < 0xFEC00000ULL) {
+  // Valid x64 PCI MMIO range from platform_config.h
+  // Reject addresses below PCI_MMIO_BASE (likely RAM)
+  // Reject addresses at or above PCI_MMIO_END (high MMIO: IOAPIC/LAPIC/VirtIO MMIO)
+  if (addr >= PCI_MMIO_BASE && addr < PCI_MMIO_END) {
     return true; // Valid PCI MMIO range
   }
   return false;
@@ -881,12 +881,11 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 }
 
 // Probe for VirtIO MMIO devices at known addresses
-// QEMU microvm places VirtIO MMIO devices at 0xFEB00000
+// QEMU microvm places VirtIO MMIO devices at VIRTIO_MMIO_BASE (from platform_config.h)
 void mmio_scan_devices(platform_t *platform) {
 // QEMU microvm VirtIO MMIO region layout
-// QEMU places devices starting at 0xFEB02A00 with 0x200 byte spacing
+// QEMU places devices starting at base + 0x2A00 with 0x200 byte spacing
 // IRQs are assigned in device creation order, but MMIO addresses are reversed
-#define VIRTIO_MMIO_BASE 0xFEB00000ULL
 #define VIRTIO_MMIO_DEVICE_START 0x2A00 // First device offset
 #define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
 #define VIRTIO_MMIO_MAX_DEVICES 8

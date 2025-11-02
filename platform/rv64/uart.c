@@ -4,8 +4,9 @@
 #include "platform.h"
 #include <stdint.h>
 
-// NS16550A UART base address for RISC-V virt machine
-#define UART_BASE 0x10000000UL
+// UART base address (initialized from platform_t during boot)
+// Default is QEMU virt address for early boot before FDT parsing
+static volatile uintptr_t g_uart_base = 0x10000000UL;
 
 // UART register offsets
 #define UART_RBR 0x00 // Receive Buffer Register (read)
@@ -23,13 +24,20 @@
 #define UART_LSR_DR (1 << 0)   // Data Ready
 
 static inline void uart_write_reg(unsigned int offset, unsigned char value) {
-  volatile unsigned char *reg = (volatile unsigned char *)(UART_BASE + offset);
+  volatile unsigned char *reg = (volatile unsigned char *)(g_uart_base + offset);
   *reg = value;
 }
 
 static inline unsigned char uart_read_reg(unsigned int offset) {
-  volatile unsigned char *reg = (volatile unsigned char *)(UART_BASE + offset);
+  volatile unsigned char *reg = (volatile unsigned char *)(g_uart_base + offset);
   return *reg;
+}
+
+// Initialize UART with discovered base address from platform_t
+void platform_uart_init(platform_t *platform) {
+  if (platform && platform->uart_base != 0) {
+    g_uart_base = platform->uart_base;
+  }
 }
 
 void platform_uart_putc(char c) {

@@ -23,16 +23,20 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval);
 // This pointer is set once during interrupt_init() and used for IRQ dispatch.
 static platform_t *g_current_platform = NULL;
 
-// PLIC (Platform-Level Interrupt Controller) base addresses for QEMU virt
+// PLIC (Platform-Level Interrupt Controller) base address
+// Initialized from platform_t during interrupt_init()
+// Default is QEMU virt address
+static uint64_t g_plic_base = 0x0C000000ULL;
+
+// PLIC register offsets from base
 // RISC-V PLIC has separate contexts for M-mode and S-mode
 // Context 0 = M-mode hart 0, Context 1 = S-mode hart 0
 // Since we run in S-mode, we must use context 1 registers
-#define PLIC_BASE 0x0C000000ULL
-#define PLIC_PRIORITY_BASE (PLIC_BASE + 0x000000)
-#define PLIC_PENDING_BASE (PLIC_BASE + 0x001000)
-#define PLIC_ENABLE_BASE (PLIC_BASE + 0x002080)    // Context 1 (S-mode hart 0)
-#define PLIC_THRESHOLD_BASE (PLIC_BASE + 0x201000) // Context 1 (S-mode hart 0)
-#define PLIC_CLAIM_BASE (PLIC_BASE + 0x201004)     // Context 1 (S-mode hart 0)
+#define PLIC_PRIORITY_OFFSET 0x000000
+#define PLIC_PENDING_OFFSET 0x001000
+#define PLIC_ENABLE_OFFSET 0x002080    // Context 1 (S-mode hart 0)
+#define PLIC_THRESHOLD_OFFSET 0x201000 // Context 1 (S-mode hart 0)
+#define PLIC_CLAIM_OFFSET 0x201004     // Context 1 (S-mode hart 0)
 
 // Memory-mapped register access helpers
 static inline void mmio_write32(uint64_t addr, uint32_t value) {
@@ -105,7 +109,7 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval) {
     } else if (int_code == 9) {
       // Supervisor external interrupt (from PLIC)
       // Claim the interrupt from PLIC
-      uint32_t irq = mmio_read32(PLIC_CLAIM_BASE);
+      uint32_t irq = mmio_read32(g_plic_base + PLIC_CLAIM_OFFSET);
 
       if (irq > 0 && irq < MAX_IRQS) {
         // Dispatch to registered handler
@@ -115,7 +119,7 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval) {
       // Complete the interrupt by writing back the IRQ number
       // PLIC will re-trigger if more interrupts are pending
       if (irq > 0) {
-        mmio_write32(PLIC_CLAIM_BASE, irq);
+        mmio_write32(g_plic_base + PLIC_CLAIM_OFFSET, irq);
       }
     } else {
       printk("Unhandled interrupt: ");
@@ -150,13 +154,18 @@ void trap_handler(uint64_t scause, uint64_t sepc, uint64_t stval) {
 
 // Initialize PLIC (Platform-Level Interrupt Controller)
 static void plic_init(platform_t *platform) {
+  // Update PLIC base address from platform if available
+  if (platform->plic_base != 0) {
+    g_plic_base = platform->plic_base;
+  }
+
   // Set all interrupt priorities to 1 (non-zero to enable)
   for (uint32_t i = 1; i < MAX_IRQS; i++) {
-    mmio_write32(PLIC_PRIORITY_BASE + (i * 4), 1);
+    mmio_write32(g_plic_base + PLIC_PRIORITY_OFFSET + (i * 4), 1);
   }
 
   // Set priority threshold to 0 (accept all priorities)
-  mmio_write32(PLIC_THRESHOLD_BASE, 0);
+  mmio_write32(g_plic_base + PLIC_THRESHOLD_OFFSET, 0);
 
   // Initialize IRQ table
   for (uint32_t i = 0; i < MAX_IRQS; i++) {
@@ -165,7 +174,7 @@ static void plic_init(platform_t *platform) {
   }
 
   printk("PLIC initialized at 0x");
-  printk_hex64(PLIC_BASE);
+  printk_hex64(g_plic_base);
   printk("\n");
 }
 
@@ -227,9 +236,9 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
   // Each 32-bit register controls 32 interrupts (1 bit per interrupt)
   uint32_t reg_offset = (irq_num / 32) * 4;
   uint32_t bit = irq_num % 32;
-  uint32_t val = mmio_read32(PLIC_ENABLE_BASE + reg_offset);
+  uint32_t val = mmio_read32(g_plic_base + PLIC_ENABLE_OFFSET + reg_offset);
   val |= (1 << bit);
-  mmio_write32(PLIC_ENABLE_BASE + reg_offset, val);
+  mmio_write32(g_plic_base + PLIC_ENABLE_OFFSET + reg_offset, val);
 
   printk("IRQ ");
   printk_dec(irq_num);

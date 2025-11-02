@@ -6,6 +6,7 @@
 #include "io.h"
 #include "platform.h"
 #include "printk.h"
+#include "pvh.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -259,11 +260,17 @@ struct acpi_table_header *acpi_find_table(platform_t *platform,
 
 // Initialize ACPI subsystem
 void acpi_init(platform_t *platform) {
-  // Find RSDP
-  platform->rsdp = (struct acpi_rsdp *)acpi_find_rsdp();
+  // Find RSDP - check PVH boot info first, then fall back to fw_cfg
+  if (platform->pvh_info && platform->pvh_info->rsdp_paddr != 0) {
+    // Use RSDP address provided by PVH boot protocol
+    platform->rsdp = (struct acpi_rsdp *)(uintptr_t)platform->pvh_info->rsdp_paddr;
+  } else {
+    // Fall back to fw_cfg for legacy boot
+    platform->rsdp = (struct acpi_rsdp *)acpi_find_rsdp();
+  }
 
   if (platform->rsdp == NULL) {
-    printk("ACPI: RSDP not found\n");
+    printk("ACPI: RSDP not found (neither PVH nor fw_cfg provided it)\n");
     return;
   }
 

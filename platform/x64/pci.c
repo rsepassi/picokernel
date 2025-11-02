@@ -176,10 +176,12 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
   printk("\n");
 
   // MSI-X message format for x86/x64:
-  // Address: 0xFEE00000 | (destination_id << 12)
+  // Address: LAPIC_BASE | (destination_id << 12)
   // Data: delivery_mode | trigger_mode | vector
-  uint32_t msg_addr_low = 0xFEE00000 | ((uint32_t)apic_id << 12);
-  uint32_t msg_addr_high = 0;
+  // Use discovered LAPIC base from MSR (not hardcoded default)
+  uint32_t lapic_base_low = (uint32_t)(platform->lapic_base & 0xFFFFFFFF);
+  uint32_t msg_addr_low = lapic_base_low | ((uint32_t)apic_id << 12);
+  uint32_t msg_addr_high = (uint32_t)(platform->lapic_base >> 32);
   uint32_t msg_data = cpu_vector; // Fixed delivery mode, edge-triggered
 
   // Write MSI-X table entry (with memory barriers to ensure ordering)

@@ -45,12 +45,15 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   // Initialize platform memory regions
   platform->num_mem_regions = 0;
 
-  // Stack-local storage for device addresses (used for debug logging only)
-  uintptr_t uart_base = 0;
-  uintptr_t plic_base = 0;
-  uintptr_t clint_base = 0;
-  uintptr_t pci_ecam_base = 0;
-  size_t pci_ecam_size = 0;
+  // Initialize device address fields
+  platform->uart_base = 0;
+  platform->plic_base = 0;
+  platform->clint_base = 0;
+  platform->pci_ecam_base = 0;
+  platform->pci_ecam_size = 0;
+  platform->pci_mmio_base = 0;
+  platform->pci_mmio_size = 0;
+  platform->virtio_mmio_base = 0;
 
   printk("platform_boot_context_parse: getting offsets\n");
 
@@ -70,6 +73,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   int in_plic_node = 0;
   int in_clint_node = 0;
   int in_pci_node = 0;
+  int in_virtio_mmio_node = 0;
 
   // Temporary storage for current node
   uint64_t current_reg_addr = 0;
@@ -92,6 +96,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
       in_plic_node = 0;
       in_clint_node = 0;
       in_pci_node = 0;
+      in_virtio_mmio_node = 0;
       current_reg_addr = 0;
       current_reg_size = 0;
 
@@ -113,7 +118,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     } else if (token == FDT_PROP) {
       uint32_t len = kbe32toh(*ptr++);
       uint32_t nameoff = kbe32toh(*ptr++);
-      const uint8_t *value = (const uint8_t *)ptr;
+      const volatile uint8_t *value = (const volatile uint8_t *)ptr;
       const char *prop_name = strings + nameoff;
 
       // Check compatible strings
@@ -142,21 +147,49 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
         if (str_equal(compat, "pci-host-ecam-generic")) {
           in_pci_node = 1;
         }
+
+        // Check for VirtIO MMIO
+        if (str_equal(compat, "virtio,mmio")) {
+          in_virtio_mmio_node = 1;
+        }
+      }
+
+      // Parse PCI ranges property to get MMIO region for BAR allocation
+      if (in_pci_node && str_equal(prop_name, "ranges") && len >= 28) {
+        // PCI ranges format: (child-addr, parent-addr, size) tuples
+        // Each tuple is 7 cells (28 bytes):
+        //   3 cells (12 bytes): child address (flags + addr)
+        //   2 cells (8 bytes):  parent address
+        //   2 cells (8 bytes):  size
+        // We want 64-bit MMIO space (flags = 0x03000000 or 0x42000000)
+        for (uint32_t offset = 0; offset + 28 <= len; offset += 28) {
+          const volatile uint8_t *entry = value + offset;
+
+          // Read child address flags (first 4 bytes)
+          uint32_t flags = kload_be32(entry);
+
+          // Read parent address (bytes 12-19)
+          uint64_t parent_addr = kload_be64(entry + 12);
+
+          // Read size (bytes 20-27)
+          uint64_t size = kload_be64(entry + 20);
+
+          // Check if this is 64-bit MMIO space (0x03000000 = prefetchable,
+          // 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit non-prefetchable)
+          uint32_t space_code = flags & 0x03000000;
+          if (space_code == 0x03000000 || space_code == 0x02000000) {
+            // Found MMIO space - use this for BAR allocation
+            platform->pci_mmio_base = parent_addr;
+            platform->pci_mmio_size = size;
+            break;  // Use the first MMIO range we find
+          }
+        }
       }
 
       // Collect reg property
       if (str_equal(prop_name, "reg") && len >= 16) {
-        uint32_t addr_high =
-            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-        uint32_t addr_low =
-            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
-        uint32_t size_high =
-            (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
-        uint32_t size_low = (value[12] << 24) | (value[13] << 16) |
-                            (value[14] << 8) | value[15];
-
-        current_reg_addr = ((uint64_t)addr_high << 32) | addr_low;
-        current_reg_size = ((uint64_t)size_high << 32) | size_low;
+        current_reg_addr = kload_be64(value);
+        current_reg_size = kload_be64(value + 8);
       }
 
       ptr = KALIGN_CAST(const uint32_t *,
@@ -174,20 +207,26 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
       }
 
       if (in_uart_node && current_reg_addr != 0) {
-        uart_base = current_reg_addr;
+        platform->uart_base = current_reg_addr;
       }
 
       if (in_plic_node && current_reg_addr != 0) {
-        plic_base = current_reg_addr;
+        platform->plic_base = current_reg_addr;
       }
 
       if (in_clint_node && current_reg_addr != 0) {
-        clint_base = current_reg_addr;
+        platform->clint_base = current_reg_addr;
       }
 
       if (in_pci_node && current_reg_addr != 0) {
-        pci_ecam_base = current_reg_addr;
-        pci_ecam_size = current_reg_size;
+        platform->pci_ecam_base = current_reg_addr;
+        platform->pci_ecam_size = current_reg_size;
+      }
+
+      if (in_virtio_mmio_node && current_reg_addr != 0 &&
+          platform->virtio_mmio_base == 0) {
+        // Store the first VirtIO MMIO device base address
+        platform->virtio_mmio_base = current_reg_addr;
       }
 
     } else if (token == FDT_NOP) {
@@ -208,6 +247,54 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   printk_dec(loop_count);
   printk(" iterations)\n");
 
+  // Validate MMIO addresses are within fixed range (0x0 - 0x40000000)
+  #define MMIO_RANGE_END 0x40000000ULL
+
+  if (platform->uart_base != 0 && platform->uart_base >= MMIO_RANGE_END) {
+    printk("ERROR: UART address 0x");
+    printk_hex64(platform->uart_base);
+    printk(" outside fixed MMIO range (0x0-0x");
+    printk_hex64(MMIO_RANGE_END);
+    printk(")\n");
+    kpanic("UART address outside fixed MMIO range");
+  }
+
+  if (platform->plic_base != 0 && platform->plic_base >= MMIO_RANGE_END) {
+    printk("ERROR: PLIC address 0x");
+    printk_hex64(platform->plic_base);
+    printk(" outside fixed MMIO range (0x0-0x");
+    printk_hex64(MMIO_RANGE_END);
+    printk(")\n");
+    kpanic("PLIC address outside fixed MMIO range");
+  }
+
+  if (platform->clint_base != 0 && platform->clint_base >= MMIO_RANGE_END) {
+    printk("ERROR: CLINT address 0x");
+    printk_hex64(platform->clint_base);
+    printk(" outside fixed MMIO range (0x0-0x");
+    printk_hex64(MMIO_RANGE_END);
+    printk(")\n");
+    kpanic("CLINT address outside fixed MMIO range");
+  }
+
+  if (platform->pci_ecam_base != 0 && platform->pci_ecam_base >= MMIO_RANGE_END) {
+    printk("ERROR: PCI ECAM address 0x");
+    printk_hex64(platform->pci_ecam_base);
+    printk(" outside fixed MMIO range (0x0-0x");
+    printk_hex64(MMIO_RANGE_END);
+    printk(")\n");
+    kpanic("PCI ECAM address outside fixed MMIO range");
+  }
+
+  if (platform->virtio_mmio_base != 0 && platform->virtio_mmio_base >= MMIO_RANGE_END) {
+    printk("ERROR: VirtIO MMIO address 0x");
+    printk_hex64(platform->virtio_mmio_base);
+    printk(" outside fixed MMIO range (0x0-0x");
+    printk_hex64(MMIO_RANGE_END);
+    printk(")\n");
+    kpanic("VirtIO MMIO address outside fixed MMIO range");
+  }
+
   // Print discovered information
   printk("Discovered from FDT:\n");
   printk("  RAM regions: ");
@@ -225,30 +312,44 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     printk(" MB)\n");
   }
 
-  if (uart_base != 0) {
+  if (platform->uart_base != 0) {
     printk("  UART: 0x");
-    printk_hex64(uart_base);
+    printk_hex64(platform->uart_base);
     printk("\n");
   }
 
-  if (plic_base != 0) {
+  if (platform->plic_base != 0) {
     printk("  PLIC: 0x");
-    printk_hex64(plic_base);
+    printk_hex64(platform->plic_base);
     printk("\n");
   }
 
-  if (clint_base != 0) {
+  if (platform->clint_base != 0) {
     printk("  CLINT: 0x");
-    printk_hex64(clint_base);
+    printk_hex64(platform->clint_base);
     printk("\n");
   }
 
-  if (pci_ecam_base != 0) {
+  if (platform->pci_ecam_base != 0) {
     printk("  PCI ECAM: 0x");
-    printk_hex64(pci_ecam_base);
+    printk_hex64(platform->pci_ecam_base);
     printk(" (size: 0x");
-    printk_hex64(pci_ecam_size);
+    printk_hex64(platform->pci_ecam_size);
     printk(")\n");
+  }
+
+  if (platform->pci_mmio_base != 0) {
+    printk("  PCI MMIO: 0x");
+    printk_hex64(platform->pci_mmio_base);
+    printk(" (size: 0x");
+    printk_hex64(platform->pci_mmio_size);
+    printk(")\n");
+  }
+
+  if (platform->virtio_mmio_base != 0) {
+    printk("  VirtIO MMIO: 0x");
+    printk_hex64(platform->virtio_mmio_base);
+    printk("\n");
   }
 
   printk("\n");

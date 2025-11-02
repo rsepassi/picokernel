@@ -5,7 +5,6 @@
 #include "kconfig.h"
 #include "platform.h"
 #include "printk.h"
-#include <stdint.h>
 
 // Helper: Compare strings
 static int str_equal(const char *a, const char *b) {
@@ -115,7 +114,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     } else if (token == FDT_PROP) {
       uint32_t len = kbe32toh(*ptr++);
       uint32_t nameoff = kbe32toh(*ptr++);
-      const uint8_t *value = (const uint8_t *)ptr;
+      const volatile uint8_t *value = (const volatile uint8_t *)ptr;
       const char *prop_name = strings + nameoff;
 
       // Check compatible strings
@@ -144,26 +143,12 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
 
       // Collect reg property
       if (str_equal(prop_name, "reg") && len >= 16) {
-        uint32_t addr_high =
-            (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-        uint32_t addr_low =
-            (value[4] << 24) | (value[5] << 16) | (value[6] << 8) | value[7];
-        uint32_t size_high =
-            (value[8] << 24) | (value[9] << 16) | (value[10] << 8) | value[11];
-        uint32_t size_low = (value[12] << 24) | (value[13] << 16) |
-                            (value[14] << 8) | value[15];
-
-        current_reg_addr = ((uint64_t)addr_high << 32) | addr_low;
-        current_reg_size = ((uint64_t)size_high << 32) | size_low;
+        current_reg_addr = kload_be64(value);
+        current_reg_size = kload_be64(value + 8);
 
         // For GIC, we need the second register pair (CPU interface)
         if (len >= 32) {
-          uint32_t addr2_high = (value[16] << 24) | (value[17] << 16) |
-                                (value[18] << 8) | value[19];
-          uint32_t addr2_low = (value[20] << 24) | (value[21] << 16) |
-                               (value[22] << 8) | value[23];
-
-          current_reg_addr2 = ((uint64_t)addr2_high << 32) | addr2_low;
+          current_reg_addr2 = kload_be64(value + 16);
         }
       }
 
@@ -198,6 +183,8 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
       }
 
     } else if (token == FDT_NOP) {
+      // NOP token - just skip it
+      p = KALIGN_CAST(const uint8_t *, ptr);
       continue;
 
     } else if (token == FDT_END) {

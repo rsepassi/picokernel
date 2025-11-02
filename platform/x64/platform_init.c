@@ -5,6 +5,7 @@
 #include "interrupt.h"
 #include "mem_debug.h"
 #include "platform.h"
+#include "platform_config.h"
 #include "printk.h"
 #include "timer.h"
 #include "virtio/virtio_rng.h"
@@ -32,8 +33,8 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->has_block_device = false;
   platform->has_net_device = false;
 
-  // Initialize PCI BAR allocator (QEMU x86 q35: PCI MMIO at 0x80000000)
-  platform->pci_next_bar_addr = 0x80000000;
+  // Initialize PCI BAR allocator to match boot.S PCI MMIO mapping
+  platform->pci_next_bar_addr = PCI_MMIO_BASE;
 
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);

@@ -1,5 +1,7 @@
 // x64 Boot Assembly - PVH boot entry (32-bit mode)
 
+#include "platform_config.h"
+
 // PVH note
 .section .note.Xen, "a"
 .align 4
@@ -22,104 +24,106 @@ _start:
     // PVH boot protocol passes struct hvm_start_info* in EBX
     mov %ebx, %esi
 
-    // Set up page tables for long mode
-    // Identity map first 4 MiB (covers page tables at 0x9000 and kernel at 2 MiB)
-    // Also map high MMIO region for LAPIC, IOAPIC, etc.
+    // Check if paging is already enabled (defensive check)
+    mov %cr0, %eax
+    test $0x80000000, %eax      // Test PG bit (bit 31)
+    jnz paging_already_enabled  // If set, skip page table setup
 
-    // Clear page table area starting at 0x100000 (1 MiB)
-    // PML4 at 0x100000, PDPT at 0x101000, PD0 at 0x102000, PD3 at 0x103000, PT_kernel at 0x104000
-    // Avoids conflicts with: BIOS (0x0-0x7FFF), EBDA (0x80000-0x9FFFF), old 0xC000 confusion
-    // Total: 5 pages = 20 KiB
-    mov $0x100000, %edi
-    mov $0x5000, %ecx
+    // Set up page tables for long mode
+    // Identity map first 4GB with 2MB huge pages
+    // Supports full 48-bit address space (256TB) via PML4 structure
+
+    // Clear page table area (6 pages = 24 KiB)
+    mov $_page_tables_start, %edi
+    mov $_page_tables_end, %ecx
+    sub %edi, %ecx
     xor %eax, %eax
     rep stosb
 
-    // Set up PML4 (Page Map Level 4) at 0x100000
-    mov $0x100000, %edi
-    mov $0x101003, %eax         // Address of PDPT | Present | Writable
+    // Calculate base address from linker symbol
+    mov $_page_tables_start, %ebx
+
+    // Set up PML4[0] -> PDPT (covers first 512GB of 256TB address space)
+    mov %ebx, %edi              // PML4 at offset 0
+    mov %ebx, %eax
+    add $0x1000, %eax           // PDPT at offset 4096
+    or $0x03, %eax              // Present | Writable
     mov %eax, (%edi)
 
-    // Set up PDPT (Page Directory Pointer Table) at 0x101000
-    mov $0x101000, %edi
-    mov $0x102003, %eax         // PDPT[0] -> PD at 0x102000 (for 0-1GB)
-    mov %eax, (%edi)
-    add $24, %edi               // PDPT[3] (3 * 8 bytes)
-    mov $0x103003, %eax         // PDPT[3] -> PD at 0x103000 (for 3-4GB, MMIO region)
-    mov %eax, (%edi)
+    // Set up PDPT[0-3] -> PD0-PD3 (maps 0-4GB)
+    mov %ebx, %edi
+    add $0x1000, %edi           // PDPT at offset 4096
+    mov %ebx, %eax
+    add $0x2000, %eax           // PD0 at offset 8192
+    or $0x03, %eax
+    mov %eax, (%edi)            // PDPT[0] -> PD0 (0-1GB)
 
-    // Set up PD (Page Directory) at 0x102000 for first 1GB
-    // First 2 MiB: Use huge page for low memory (BIOS, page tables, etc.)
-    mov $0x102000, %edi
-    mov $0x0083, %eax           // Address 0 | Present | Writable | Huge page
-    mov %eax, (%edi)
-
-    // Second 2 MiB (0x200000-0x3FFFFF): Use 4KB pages for kernel
-    // This allows separate permissions for .text, .rodata, and .bss
     add $8, %edi
-    mov $0x104003, %eax         // PT at 0x104000 | Present | Writable (NOT huge page)
-    mov %eax, (%edi)
+    add $0x1000, %eax           // PD1 at offset 12288
+    mov %eax, (%edi)            // PDPT[1] -> PD1 (1-2GB)
 
-    // Set up PT (Page Table) at 0x104000 for kernel region (0x200000-0x3FFFFF)
-    // Map 512 x 4KB pages = 2 MiB total with appropriate permissions:
-    // - .text (0x200000-0x20CFFF): Read-only
-    // - .rodata (0x20D000-0x20EFFF): Read-only
-    // - .bss+stack (0x20F000+): Read-Write
-    mov $0x104000, %edi         // PT base
-    mov $0x200000, %eax         // Start at physical 0x200000
-    mov $512, %ecx              // 512 entries
+    add $8, %edi
+    add $0x1000, %eax           // PD2 at offset 16384
+    mov %eax, (%edi)            // PDPT[2] -> PD2 (2-3GB)
 
-.Lmap_kernel_pages:
-    mov %eax, %edx              // Copy physical address
-    and $~0xFFF, %edx           // Clear offset bits
+    add $8, %edi
+    add $0x1000, %eax           // PD3 at offset 20480
+    mov %eax, (%edi)            // PDPT[3] -> PD3 (3-4GB)
 
-    // Check if this page needs R/W (bss starts at 0x20F000)
-    cmp $0x20F000, %edx
-    jge .Lkernel_rw             // >= 0x20F000: .bss, needs R/W
-
-    // .text and .rodata: Read-only (Present only)
-    or $0x01, %edx              // Present
-    jmp .Lkernel_write_pte
-
-.Lkernel_rw:
-    // .bss and stack: Read-Write
-    or $0x03, %edx              // Present | Writable
-
-.Lkernel_write_pte:
+    // Fill PD0 (0-1GB): 512 × 2MB huge pages
+    mov %ebx, %edi
+    add $0x2000, %edi           // PD0 at offset 8192
+    xor %eax, %eax              // Start at physical address 0
+    mov $512, %ecx
+.Lmap_pd0:
+    mov %eax, %edx
+    or $0x83, %edx              // Present | Writable | Huge
     mov %edx, (%edi)
-    add $8, %edi                // Next PT entry
-    add $0x1000, %eax           // Next 4KB page
-    loop .Lmap_kernel_pages
+    add $8, %edi
+    add $0x200000, %eax         // Next 2MB
+    loop .Lmap_pd0
 
-    // Set up PD at 0x103000 for MMIO region (3-4GB range, PDPT[3])
-    // PDPT[3] covers 3GB-4GB (0xC0000000 - 0xFFFFFFFF)
-    // Map PCI MMIO range 0xC0000000-0xD0000000 (256 MiB) for PCI BARs
-    // Map high MMIO range 0xFE000000-0xFF000000 (16 MiB) for LAPIC/IOAPIC
+    // Fill PD1 (1-2GB): 512 × 2MB huge pages
+    mov %ebx, %edi
+    add $0x3000, %edi           // PD1 at offset 12288
+    mov $0x40000000, %eax       // Start at 1GB
+    mov $512, %ecx
+.Lmap_pd1:
+    mov %eax, %edx
+    or $0x83, %edx
+    mov %edx, (%edi)
+    add $8, %edi
+    add $0x200000, %eax
+    loop .Lmap_pd1
 
-    // First, map PCI BAR region: 0xC0000000-0xD0000000 (128 x 2MB = 256MB)
-    mov $0x103000, %edi         // PD base, entry 0
-    mov $0xC000009B, %eax       // 0xC0000000 | Present | Writable | Huge page | PCD | PWT
-    mov $128, %ecx              // Map 128 x 2 MiB pages = 256 MiB
-.Lmap_pci_loop:
-    mov %eax, (%edi)
-    add $8, %edi                // Next PD entry
-    add $0x200000, %eax         // Next 2 MiB physical address
-    loop .Lmap_pci_loop
+    // Fill PD2 (2-3GB): 512 × 2MB huge pages
+    mov %ebx, %edi
+    add $0x4000, %edi           // PD2 at offset 16384
+    mov $0x80000000, %eax       // Start at 2GB
+    mov $512, %ecx
+.Lmap_pd2:
+    mov %eax, %edx
+    or $0x83, %edx
+    mov %edx, (%edi)
+    add $8, %edi
+    add $0x200000, %eax
+    loop .Lmap_pd2
 
-    // Second, map high MMIO region: 0xFE000000-0xFF000000 (8 x 2MB = 16MB)
-    // This is PD entries 496-503 (496 * 8 = 3968 bytes offset)
-    mov $0x103000, %edi
-    add $3968, %edi             // PD[496]
-    mov $0xFE00009B, %eax       // 0xFE000000 | Present | Writable | Huge page | PCD | PWT
-    mov $8, %ecx                // Map 8 x 2 MiB pages = 16 MiB
-.Lmap_mmio_loop:
-    mov %eax, (%edi)
-    add $8, %edi                // Next PD entry
-    add $0x200000, %eax         // Next 2 MiB physical address
-    loop .Lmap_mmio_loop
+    // Fill PD3 (3-4GB): 512 × 2MB huge pages
+    mov %ebx, %edi
+    add $0x5000, %edi           // PD3 at offset 20480
+    mov $0xC0000000, %eax       // Start at 3GB
+    mov $512, %ecx
+.Lmap_pd3:
+    mov %eax, %edx
+    or $0x83, %edx
+    mov %edx, (%edi)
+    add $8, %edi
+    add $0x200000, %eax
+    loop .Lmap_pd3
 
-    // Load CR3 with PML4 address
-    mov $0x100000, %eax
+    // Load CR3 with PML4 address (from linker symbol)
+    mov $_page_tables_start, %eax
     mov %eax, %cr3
 
     // Enable PAE (Physical Address Extension) in CR4
@@ -141,6 +145,8 @@ _start:
     or $0x80000001, %eax        // Set PG bit (bit 31) and PE bit (bit 0)
     mov %eax, %cr0
 
+paging_already_enabled:
+    // Paging is now enabled (either we just enabled it, or it was already on)
     // Now we're in compatibility mode, need far jump to enter 64-bit mode
     ljmp $0x08, $long_mode_start
 
@@ -165,11 +171,20 @@ long_mode_start:
     cld
 
     // Zero BSS section (required for C runtime)
+    // Note: Page tables are in BSS but must not be zeroed (already set up)
+    // Only zero from __bss_start to _page_tables_start
     lea __bss_start(%rip), %rdi
-    lea __bss_end(%rip), %rcx
-    sub %rdi, %rcx              // Calculate BSS size
+    lea _page_tables_start(%rip), %rcx
+    sub %rdi, %rcx              // Calculate BSS size up to page tables
     xor %rax, %rax              // Zero value
-    rep stosb                   // memset(bss_start, 0, bss_size)
+    rep stosb                   // memset(bss_start, 0, size_before_page_tables)
+
+    // Zero BSS after page tables (from _page_tables_end to __bss_end)
+    lea _page_tables_end(%rip), %rdi
+    lea __bss_end(%rip), %rcx
+    sub %rdi, %rcx              // Calculate BSS size after page tables
+    xor %rax, %rax              // Zero value
+    rep stosb                   // memset(page_tables_end, 0, size_after_page_tables)
 
     // Restore PVH start info pointer and pass to kmain
     // x64 calling convention: first argument in RDI

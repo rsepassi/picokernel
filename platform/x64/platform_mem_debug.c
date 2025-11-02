@@ -3,53 +3,40 @@
 
 #include "mem_debug.h"
 #include "platform.h"
+#include "platform_config.h"
 #include "printk.h"
 
 #ifdef KDEBUG
 
-// x86/x64 memory layout constants (QEMU)
-#define PAGE_TABLES_BASE 0x100000ULL
-#define PAGE_TABLES_SIZE 0x5000ULL // 20 KiB (5 pages)
-#define KERNEL_BASE 0x200000ULL    // Kernel starts at 2 MiB
-#define RAM_SIZE 0x08000000ULL     // 128 MiB default
-
-// MMIO addresses for x86/x64
-#define LAPIC_DEFAULT_BASE 0xFEE00000ULL
-#define IOAPIC_DEFAULT_BASE 0xFEC00000ULL
-
-// Memory region constants for platform_mem_print_layout()
-// These use linker symbols for accuracy, but provide defaults for hardcoded
-// layout printing
-#define MEM_REGION_PAGE_TABLES_BASE 0x100000ULL
-#define MEM_REGION_PAGE_TABLES_SIZE 0x5000ULL
-#define MEM_REGION_KERNEL_BASE 0x200000ULL
-#define MEM_REGION_KERNEL_TEXT_END ((uintptr_t)_text_end)
-#define MEM_REGION_RODATA_BASE ((uintptr_t)_rodata_start)
-#define MEM_REGION_RODATA_END ((uintptr_t)_rodata_end)
-#define MEM_REGION_BSS_BASE ((uintptr_t)_bss_start)
-#define MEM_REGION_KERNEL_END ((uintptr_t)_end)
-
-// Linker-provided symbols (both naming conventions supported)
+// Linker-provided symbols
+extern uint8_t _kernel_start[];    // Start of entire kernel image (including PVH note)
 extern uint8_t _text_start[], _text_end[];
 extern uint8_t _rodata_start[], _rodata_end[];
 extern uint8_t _data_start[], _data_end[];
 extern uint8_t _bss_start[], _bss_end[];
 extern uint8_t __bss_start[], __bss_end[];
-extern uint8_t _end[];
+extern uint8_t _kernel_end[];      // End of kernel image
+extern uint8_t _end[];             // Alias for _kernel_end
 extern uint8_t stack_bottom[], stack_top[];
+extern uint8_t _page_tables_start[], _page_tables_end[];
+extern uint8_t _start[];           // Boot entry point
 
 // Validate critical memory regions (page tables, kernel sections)
 void platform_mem_validate_critical(void) {
   printk("\n[MEM] === x86/x64 Early Boot Validation ===\n");
   bool all_ok = true;
 
-  // 1. Validate Page Tables region
+  // 1. Validate Page Tables region (from linker symbols)
+  uintptr_t page_tables_start = (uintptr_t)_page_tables_start;
+  uintptr_t page_tables_end = (uintptr_t)_page_tables_end;
+  uint32_t page_tables_size = page_tables_end - page_tables_start;
+
   printk("[MEM] Page Tables: 0x");
-  printk_hex64(PAGE_TABLES_BASE);
+  printk_hex64(page_tables_start);
   printk(" - 0x");
-  printk_hex64(PAGE_TABLES_BASE + PAGE_TABLES_SIZE - 1);
+  printk_hex64(page_tables_end - 1);
   printk(" (");
-  printk_dec(PAGE_TABLES_SIZE);
+  printk_dec(page_tables_size);
   printk(" bytes)\n");
 
   // 2. Validate kernel sections using linker symbols
@@ -100,10 +87,12 @@ void platform_mem_validate_critical(void) {
   printk(" bytes)\n");
 
   // 3. Verify kernel base address (allow for .note.Xen section before .text)
-  // The linker script places kernel at 0x200000, but .text may start slightly
-  // after
-  if (text_start < KERNEL_BASE || text_start > KERNEL_BASE + 0x1000) {
-    printk("[MEM] ERROR: Kernel .text not near expected base 0x200000 (at 0x");
+  // The linker script places kernel at _start, but .text may start slightly after
+  uintptr_t kernel_base = (uintptr_t)_start;
+  if (text_start < kernel_base || text_start > kernel_base + 0x1000) {
+    printk("[MEM] ERROR: Kernel .text not near expected base 0x");
+    printk_hex64(kernel_base);
+    printk(" (at 0x");
     printk_hex64(text_start);
     printk(")\n");
     kpanic("Kernel base address corruption detected");
@@ -111,7 +100,7 @@ void platform_mem_validate_critical(void) {
   }
 
   // 4. Check sections don't overlap with page tables
-  if (kmem_ranges_overlap(PAGE_TABLES_BASE, PAGE_TABLES_SIZE, text_start,
+  if (kmem_ranges_overlap(page_tables_start, page_tables_size, text_start,
                           kernel_end - text_start)) {
     printk("[MEM] ERROR: Kernel overlaps with page tables!\n");
     kpanic("Kernel/page tables memory overlap detected");
@@ -350,12 +339,16 @@ void platform_mem_print_layout(void) {
   printk("\n[MEM] === x86 Memory Map ===\n");
   printk("  BIOS/Low Memory:     0x00000000 - 0x000FFFFF (1 MiB)\n");
 
+  uintptr_t page_tables_start = (uintptr_t)_page_tables_start;
+  uintptr_t page_tables_end = (uintptr_t)_page_tables_end;
+  uint32_t page_tables_size = page_tables_end - page_tables_start;
+
   printk("  Page Tables:         0x");
-  printk_hex64(PAGE_TABLES_BASE);
+  printk_hex64(page_tables_start);
   printk(" - 0x");
-  printk_hex64(PAGE_TABLES_BASE + PAGE_TABLES_SIZE);
+  printk_hex64(page_tables_end);
   printk(" (");
-  printk_dec(PAGE_TABLES_SIZE / 1024);
+  printk_dec(page_tables_size / 1024);
   printk(" KiB)\n");
 
   uintptr_t text_start = (uintptr_t)_text_start;
@@ -389,16 +382,36 @@ void platform_mem_print_layout(void) {
   printk_dec((kernel_end - bss_start) / 1024);
   printk(" KiB)\n");
 
+  // Note: RAM size is not fixed in x64, but we show the typical QEMU default
+  // The actual usable RAM extends to PCI_MMIO_BASE (0xC0000000 = 3GB)
+  uintptr_t ram_end = PCI_MMIO_BASE;  // RAM ends where PCI MMIO begins
   printk("  Free RAM:            0x");
   printk_hex64(kernel_end);
-  printk(" - 0x08000000 (~");
-  printk_dec((0x08000000 - kernel_end) / (1024 * 1024));
+  printk(" - 0x");
+  printk_hex64(ram_end);
+  printk(" (~");
+  printk_dec((uint32_t)((ram_end - kernel_end) / (1024 * 1024)));
   printk(" MiB)\n");
 
-  printk("  PCI MMIO:            0xC0000000 - 0xD0000000 (256 MiB)\n");
-  printk("  High MMIO:           0xFE000000 - 0xFF000000 (16 MiB)\n");
-  printk("    - IOAPIC:          0xFEC00000\n");
-  printk("    - Local APIC:      0xFEE00000\n");
+  // Use config defines for MMIO regions
+  printk("  PCI MMIO:            0x");
+  printk_hex64(PCI_MMIO_BASE);
+  printk(" - 0x");
+  printk_hex64(PCI_MMIO_END);
+  printk(" (");
+  printk_dec((uint32_t)(PCI_MMIO_SIZE / (1024 * 1024)));
+  printk(" MiB)\n");
+
+  printk("  High MMIO:           0x");
+  printk_hex64(HIGH_MMIO_BASE);
+  printk(" - 0x");
+  printk_hex64(HIGH_MMIO_END);
+  printk(" (");
+  printk_dec((uint32_t)(HIGH_MMIO_SIZE / (1024 * 1024)));
+  printk(" MiB)\n");
+
+  printk("    - IOAPIC:          (discovered via ACPI)\n");
+  printk("    - Local APIC:      (discovered via MSR)\n");
   printk("\n");
 }
 
@@ -429,8 +442,8 @@ void platform_mem_dump_translation(uintptr_t vaddr) {
   printk_hex32(offset);
   printk("\n");
 
-  // Read PML4 entry
-  uintptr_t pml4_base = 0x100000; // Known PML4 location
+  // Read PML4 entry (PML4 is at _page_tables_start)
+  uintptr_t pml4_base = (uintptr_t)_page_tables_start;
   uintptr_t pml4_entry_addr = pml4_base + (pml4_idx * 8);
   uint64_t pml4_entry = *(uint64_t *)pml4_entry_addr;
 
@@ -455,25 +468,39 @@ void platform_mem_dump_translation(uintptr_t vaddr) {
 void platform_mem_dump_pagetables(void) {
   printk("\n[MEM] x86 Page Table Dump:\n");
 
-  // PML4 at 0x100000
-  printk("  PML4 (0x100000):\n");
-  kmem_dump((const void *)0x100000, 64);
+  // Page table structure (from boot.S):
+  // _page_tables_start + 0x0000: PML4 (4096 bytes) - covers 256TB
+  // _page_tables_start + 0x1000: PDPT (4096 bytes) - covers 0-512GB
+  // _page_tables_start + 0x2000: PD0 (4096 bytes) - maps 0-1GB with 2MB pages
+  // _page_tables_start + 0x3000: PD1 (4096 bytes) - maps 1-2GB with 2MB pages
+  // _page_tables_start + 0x4000: PD2 (4096 bytes) - maps 2-3GB with 2MB pages
+  // _page_tables_start + 0x5000: PD3 (4096 bytes) - maps 3-4GB with 2MB pages
 
-  // PDPT at 0x101000
-  printk("\n  PDPT (0x101000):\n");
-  kmem_dump((const void *)0x101000, 64);
+  uintptr_t pt_base = (uintptr_t)_page_tables_start;
 
-  // PD0 at 0x102000 (first few entries)
-  printk("\n  PD0 (0x102000) - First 4 entries:\n");
-  kmem_dump((const void *)0x102000, 32);
+  // PML4
+  printk("  PML4 (0x");
+  printk_hex64(pt_base);
+  printk(") - First 2 entries:\n");
+  kmem_dump((const void *)pt_base, 16);
 
-  // PD3 at 0x103000 (MMIO region, first few entries)
-  printk("\n  PD3 (0x103000) - First 4 entries:\n");
-  kmem_dump((const void *)0x103000, 32);
+  // PDPT
+  printk("\n  PDPT (0x");
+  printk_hex64(pt_base + 0x1000);
+  printk(") - Entries 0-3:\n");
+  kmem_dump((const void *)(pt_base + 0x1000), 32);
 
-  // PT at 0x104000 (kernel region, first few entries)
-  printk("\n  PT (0x104000) - First 8 entries:\n");
-  kmem_dump((const void *)0x104000, 64);
+  // PD0 (first few 2MB mappings)
+  printk("\n  PD0 (0x");
+  printk_hex64(pt_base + 0x2000);
+  printk(") - First 4 × 2MB huge page entries:\n");
+  kmem_dump((const void *)(pt_base + 0x2000), 32);
+
+  // PD3 (last GB, includes MMIO regions)
+  printk("\n  PD3 (0x");
+  printk_hex64(pt_base + 0x5000);
+  printk(") - First 4 × 2MB huge page entries:\n");
+  kmem_dump((const void *)(pt_base + 0x5000), 32);
 }
 
 // Set memory guard (canary value)

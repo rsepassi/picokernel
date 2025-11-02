@@ -780,9 +780,16 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 }
 
 // Probe for VirtIO MMIO devices at known addresses
-// Platform must define VIRTIO_MMIO_* constants
+// Platform must populate virtio_mmio_base in platform_t from FDT
 void mmio_scan_devices(platform_t *platform) {
   printk("Probing for VirtIO MMIO devices...\n");
+
+  // Use discovered VirtIO MMIO base from platform_t
+  // If not discovered, fall back to VIRTIO_MMIO_BASE (compile-time default)
+  uint64_t mmio_base = platform->virtio_mmio_base;
+  if (mmio_base == 0) {
+    mmio_base = VIRTIO_MMIO_BASE;
+  }
 
   int devices_found = 0;
   int rng_initialized = 0;
@@ -791,7 +798,7 @@ void mmio_scan_devices(platform_t *platform) {
 
   // Scan for devices
   for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
-    uint64_t base = VIRTIO_MMIO_BASE + (i * VIRTIO_MMIO_DEVICE_STRIDE);
+    uint64_t base = mmio_base + (i * VIRTIO_MMIO_DEVICE_STRIDE);
 
     // Read magic value
     volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
