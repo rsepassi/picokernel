@@ -51,6 +51,7 @@ CFLAGS = --target=$(TARGET) $(OPT_FLAGS) $(DEBUG_CFLAGS) -static \
 				 -std=c11 -Wpedantic \
 				 -Wall -Wextra -Werror \
 				 -Wundef -Wmissing-prototypes -Wstrict-prototypes -Wvla -Wcast-align \
+				 -Wno-gnu-zero-variadic-macro-arguments \
 				 $(PLATFORM_CFLAGS)
 
 # Linker
@@ -90,7 +91,8 @@ C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
 # Vendor sources
 VENDOR_DIR = vendor
 VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
-                 $(VENDOR_DIR)/monocypher/monocypher-ed25519.c
+                 $(VENDOR_DIR)/monocypher/monocypher-ed25519.c \
+                 $(VENDOR_DIR)/printf/printf.c
 
 # Header files (all .o files depend on all headers)
 HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
@@ -115,7 +117,7 @@ all:
 	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,vendor/monocypher}
+	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,vendor/monocypher,vendor/printf}
 
 # Generic C compilation rule for kernel, driver, and vendor sources
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)

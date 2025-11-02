@@ -13,6 +13,8 @@ static kuser_t g_user;
 // DO NOT use this for general kernel access - pass kernel_t* explicitly
 kernel_t *kget_kernel__logonly__(void) { return &g_kernel; }
 
+uint64_t kget_time_ms__logonly__(void) { return g_kernel.current_time_ms; }
+
 void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
 

@@ -1,10 +1,12 @@
 #ifndef PRINTK_H
 #define PRINTK_H
 
-#include "kbase.h"
+#include <stdint.h>
 
-void printk(const char *str);
-void printks(const char *str, size_t len);
+#include "printf/printf.h"
+
+#define printk printf_
+
 void printk_putc(char c);
 void printk_hex8(uint8_t val);
 void printk_hex16(uint16_t val);

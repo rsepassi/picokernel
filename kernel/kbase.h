@@ -54,26 +54,19 @@
 /* Logging macro with file and line info */
 #define KSTRINGIFY(x) #x
 #define KTOSTRING(x) KSTRINGIFY(x)
-#define KLOG(msg)                                                              \
+
+/* Forward declaration of time getter (defined in kernel.h) */
+uint64_t kget_time_ms__logonly__(void);
+
+#define KLOG(fmt, ...)                                                         \
   do {                                                                         \
-    kernel_t *_k = kget_kernel__logonly__();                                   \
-    if (_k && _k->current_time_ms > 0) {                                       \
-      uint32_t _time = (uint32_t)_k->current_time_ms;                          \
-      uint32_t _len = printk_dec_len(_time);                                   \
-      printk("[");                                                             \
-      for (uint32_t _i = _len; _i < 10; _i++) {                                \
-        printk_putc(' ');                                                      \
-      }                                                                        \
-      printk_dec(_time);                                                       \
-      printk("]");                                                             \
+    uint64_t _time = kget_time_ms__logonly__();                                \
+    if (_time > 0) {                                                           \
+      printk("[%10lu][%s:%d] " fmt "\n", (unsigned long)_time, __FILE__,       \
+             __LINE__, ##__VA_ARGS__);                                         \
+    } else {                                                                   \
+      printk("[%s:%d] " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__);          \
     }                                                                          \
-    printk("[");                                                               \
-    printk(__FILE__);                                                          \
-    printk(":");                                                               \
-    printk(KTOSTRING(__LINE__));                                               \
-    printk("] ");                                                              \
-    printk(msg);                                                               \
-    printk("\n");                                                              \
   } while (0)
 
 /* Assertion macro - aborts if condition is false */
@@ -97,11 +90,11 @@
 /* Conditional debug macros - compiled out in release builds */
 #ifdef KDEBUG
 #define KDEBUG_ASSERT(cond, msg) KASSERT(cond, msg)
-#define KDEBUG_LOG(msg) KLOG(msg)
+#define KDEBUG_LOG(fmt, ...) KLOG(fmt, ##__VA_ARGS__)
 #define KDEBUG_VALIDATE(expr) expr
 #else
 #define KDEBUG_ASSERT(cond, msg) ((void)0)
-#define KDEBUG_LOG(msg) ((void)0)
+#define KDEBUG_LOG(fmt, ...) ((void)0)
 #define KDEBUG_VALIDATE(expr) ((void)0)
 #endif
 
@@ -163,5 +156,17 @@ static inline uint64_t kbe64toh(uint64_t x) { return x; }
 #else
 #error "Unknown byte order"
 #endif
+
+/* Unaligned big-endian load helpers (for FDT/device tree parsing)
+ * These perform byte-by-byte reads to avoid unaligned access faults
+ * Accept volatile pointers to prevent compiler reordering */
+static inline uint32_t kload_be32(const volatile uint8_t *p) {
+  return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+         ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static inline uint64_t kload_be64(const volatile uint8_t *p) {
+  return ((uint64_t)kload_be32(p) << 32) | kload_be32(p + 4);
+}
 
 #endif /* KBASE_H */

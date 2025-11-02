@@ -1,49 +1,19 @@
 #include "printk.h"
 
 #include "platform.h"
+#include "printf/printf.h"
 
 void printk_putc(char c) { platform_uart_putc(c); }
 
-void printk(const char *str) {
-  size_t len = 0;
-  while (str[len]) {
-    len++;
-  }
-  printks(str, len);
-}
+void _putchar(char c) { platform_uart_putc(c); }
 
-void printks(const char *str, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    printk_putc(str[i]);
-  }
-}
+void printk_hex8(uint8_t val) { printf_("%02x", val); }
 
-void printk_hex8(uint8_t val) {
-  const char hex[] = "0123456789abcdef";
-  printk_putc(hex[(val >> 4) & 0xf]);
-  printk_putc(hex[val & 0xf]);
-}
+void printk_hex16(uint16_t val) { printf_("%04x", val); }
 
-void printk_hex16(uint16_t val) {
-  const char hex[] = "0123456789abcdef";
-  for (int i = 12; i >= 0; i -= 4) {
-    printk_putc(hex[(val >> i) & 0xf]);
-  }
-}
+void printk_hex32(uint32_t val) { printf_("%08x", val); }
 
-void printk_hex32(uint32_t val) {
-  const char hex[] = "0123456789abcdef";
-  for (int i = 28; i >= 0; i -= 4) {
-    printk_putc(hex[(val >> i) & 0xf]);
-  }
-}
-
-void printk_hex64(uint64_t val) {
-  const char hex[] = "0123456789abcdef";
-  for (int i = 60; i >= 0; i -= 4) {
-    printk_putc(hex[(val >> i) & 0xf]);
-  }
-}
+void printk_hex64(uint64_t val) { printf_("%016llx", val); }
 
 uint32_t printk_dec_len(uint32_t val) {
   if (val == 0) {
@@ -58,42 +28,13 @@ uint32_t printk_dec_len(uint32_t val) {
   return len;
 }
 
-void printk_dec(uint32_t val) {
-  if (val == 0) {
-    printk_putc('0');
-    return;
-  }
-
-  char buf[12];
-  int i = 0;
-  while (val > 0) {
-    buf[i++] = '0' + (val % 10);
-    val /= 10;
-  }
-
-  /* Print in reverse order */
-  while (i > 0) {
-    printk_putc(buf[--i]);
-  }
-}
+void printk_dec(uint32_t val) { printf_("%u", val); }
 
 void printk_ip(const uint8_t *ip) {
-  printk_dec(ip[0]);
-  printk(".");
-  printk_dec(ip[1]);
-  printk(".");
-  printk_dec(ip[2]);
-  printk(".");
-  printk_dec(ip[3]);
+  printf_("%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
 }
 
 void printk_mac(const uint8_t *mac) {
-  const char hex[] = "0123456789abcdef";
-  for (int i = 0; i < 6; i++) {
-    if (i > 0) {
-      printk_putc(':');
-    }
-    printk_putc(hex[(mac[i] >> 4) & 0xf]);
-    printk_putc(hex[mac[i] & 0xf]);
-  }
+  printf_("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3],
+          mac[4], mac[5]);
 }
