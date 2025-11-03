@@ -3,8 +3,7 @@
 //
 // These values must match the early boot page table setup in boot.S
 
-#ifndef PLATFORM_X64_CONFIG_H
-#define PLATFORM_X64_CONFIG_H
+#pragma once
 
 // PCI MMIO Region (QEMU q35 machine type)
 // Mapped in boot.S with 128 x 2 MiB huge pages
@@ -40,5 +39,3 @@
 #if (PCI_MMIO_END > HIGH_MMIO_BASE)
 #error "PCI MMIO region overlaps with high MMIO region"
 #endif
-
-#endif // PLATFORM_X64_CONFIG_H

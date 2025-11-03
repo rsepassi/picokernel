@@ -2,13 +2,12 @@
 
 ## Current State
 
-MSI-X interrupts are **partially working**:
+MSI-X interrupts are **fully working** for all VirtIO devices:
+- **virtio-rng**: Working (interrupts firing)
 - **virtio-blk**: Working (interrupts firing)
 - **virtio-net**: Working (interrupts firing)
-- **virtio-rng**: Failing (device initialization fails)
 
-Debug output shows MSI-X interrupts are being delivered (`[DEBUG] MSI-X
-interrupts: 2`), confirming LAPIC and interrupt path work correctly.
+All devices initialize successfully and handle interrupts via the MSI-X mechanism.
 
 ## How MSI-X Works on x64
 
@@ -56,43 +55,24 @@ When device needs to signal completion:
 
 No IOAPIC involvement for MSI-X (direct device→LAPIC path).
 
-## Remaining Issue: BAR Overlap
-
-### Problem
-
-virtio-rng device has overlapping BARs:
-```
-[VIRTIO_PCI] COMMON_CFG in BAR4 at offset 0x00000000 (BAR base=0x00000000c0000000)
-[MSI-X] MSI-X table in BAR1 at offset 0x00000000 (BAR base=0x00000000c0000000)
-```
-
-Both BAR1 and BAR4 map to **0xC0000000**. When MSI-X table is written, it corrupts VirtIO common_cfg registers. This causes device status register to read back as 0x00 after writing FEATURES_OK, failing initialization.
-
-### Root Cause
+## 64-bit BAR Handling
 
 Modern VirtIO PCI devices use **64-bit BARs**:
-- BAR0+BAR1 form a 64-bit BAR (MSI-X table)
-- BAR4+BAR5 form a 64-bit BAR (VirtIO capabilities)
+- BAR0+BAR1 form a single 64-bit BAR (typically for MSI-X table)
+- BAR4+BAR5 form a single 64-bit BAR (typically for VirtIO capabilities)
 
-When reading BAR1 independently, it returns the same base address as BAR4 (QEMU bug or misinterpretation of BAR type bits), causing overlap.
+When a BAR has bits [2:1] = 0b10, it indicates a 64-bit BAR where:
+- The current BAR register contains the lower 32 bits
+- The next BAR register contains the upper 32 bits
 
-The `allocate_pci_bars()` function may not properly:
-1. Detect 64-bit BARs (bits [2:1] = 0b10)
-2. Skip upper half of 64-bit BAR when iterating
-3. Validate that BARs don't overlap after assignment
+The PCI BAR reading code properly detects 64-bit BARs and treats the upper half (odd-numbered BARs like 1, 3, 5) as part of the previous 64-bit BAR rather than independent BARs. This prevents address overlaps and ensures MSI-X tables and VirtIO configuration spaces remain properly separated.
 
-### What's Needed
+## Vector Assignments
 
-1. **Debug BAR allocation**: Add logging to see raw BAR values and how they're interpreted
-2. **Fix 64-bit BAR handling**: Properly detect and skip upper 32-bit half
-3. **Detect overlaps**: Check if any two BARs map to overlapping address ranges
-4. **Correct assignments**: Either trust QEMU's assignments or manually reassign non-overlapping addresses
+The kernel uses the following interrupt vector assignments:
+- Vector 33: virtio-rng (queue interrupts)
+- Vector 34: virtio-blk (queue interrupts)
+- Vector 35: virtio-net (RX and TX queue interrupts)
+- Config vectors: 0xFFFF (disabled - we don't use configuration change interrupts)
 
-## Network MAC Address Issue
-
-virtio-net reports MAC as `00:00:00:00:00:00`. The device config space read for MAC address may be:
-1. Reading from wrong offset in BAR
-2. Using uninitialized device_cfg pointer (since DEVICE_CFG is in BAR4, which may be corrupted)
-3. Reading before device is properly initialized
-
-This is likely a side effect of the BAR overlap issue.
+Each device is configured to deliver interrupts directly to LAPIC ID 0 (the boot processor).

@@ -111,9 +111,11 @@ void mmio_scan_devices(platform_t *platform);
 // This handles both 32-bit and 64-bit BARs, skipping I/O BARs
 static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                               uint8_t func, const char *device_name) {
-  KDEBUG_LOG("[%s] Allocating BARs starting at 0x%llx", device_name,
-             (unsigned long long)platform->pci_next_bar_addr);
-  (void)device_name; // Used in KDEBUG_LOG
+  printk("[");
+  printk(device_name);
+  printk("] Allocating BARs starting at 0x");
+  printk_hex64(platform->pci_next_bar_addr);
+  printk("\n");
 
   for (int i = 0; i < 6; i++) {
     uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
@@ -126,6 +128,11 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
 
     // Skip I/O BARs
     if (bar_val & 0x1) {
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk(": I/O BAR (skipped)\n");
       continue;
     }
 
@@ -153,18 +160,46 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                                   (uint32_t)bar_addr);
       platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
                                   (uint32_t)(bar_addr >> 32));
+
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk("+");
+      printk_dec(i+1);
+      printk(": 64-bit, size=");
+      printk_dec(size);
+      printk(" bytes, assigned 0x");
+      printk_hex64(bar_addr);
+      printk("\n");
+
       platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL; // Align to 4KB
       i++; // Skip next BAR (high 32 bits)
     } else {
       // 32-bit BAR
+      uint64_t bar_addr = platform->pci_next_bar_addr;
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)platform->pci_next_bar_addr);
+                                  (uint32_t)bar_addr);
+
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk(": 32-bit, size=");
+      printk_dec(size);
+      printk(" bytes, assigned 0x");
+      printk_hex64(bar_addr);
+      printk("\n");
+
       platform->pci_next_bar_addr += (size + 0xFFF) & ~0xFFFULL;
     }
   }
 
-  KDEBUG_LOG("[%s] BARs allocated, next address: 0x%llx", device_name,
-             (unsigned long long)platform->pci_next_bar_addr);
+  printk("[");
+  printk(device_name);
+  printk("] BARs allocated, next address: 0x");
+  printk_hex64(platform->pci_next_bar_addr);
+  printk("\n");
 }
 
 // Setup VirtIO-RNG device via PCI

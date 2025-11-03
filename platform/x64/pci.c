@@ -84,6 +84,21 @@ uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
     return 0;
   }
 
+  // Check if this BAR is the upper half of a 64-bit BAR
+  // If bar_num is odd (1, 3, 5), check the previous BAR
+  if (bar_num > 0 && (bar_num & 1)) {
+    uint8_t prev_bar_offset = PCI_REG_BAR0 + ((bar_num - 1) * 4);
+    uint32_t prev_bar_low =
+        platform_pci_config_read32(platform, bus, slot, func, prev_bar_offset);
+
+    // Check if previous BAR is 64-bit (bits [2:1] == 0b10 means 64-bit)
+    if ((prev_bar_low & 0x6) == 0x4) {
+      // This BAR is the upper 32 bits of the previous 64-bit BAR
+      // Return 0 to indicate it's not an independent BAR
+      return 0;
+    }
+  }
+
   uint8_t bar_offset = PCI_REG_BAR0 + (bar_num * 4);
   uint32_t bar_low =
       platform_pci_config_read32(platform, bus, slot, func, bar_offset);
