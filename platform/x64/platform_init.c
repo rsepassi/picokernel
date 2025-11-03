@@ -47,7 +47,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   kirq_ring_init(&platform->irq_ring);
   platform->last_overflow_count = 0;
 
-  printk("Initializing x64 platform...\n");
+  KLOG("x64 init...");
 
   // Initialize memory management from PVH boot info
   // fdt parameter is actually PVH start info pointer on x64
@@ -56,48 +56,51 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
     platform_abort();
   }
 
-  // Print memory map early during initialization
-  platform_mem_print_layout();
+  KDEBUG_VALIDATE(platform_mem_print_layout());
 
   // Initialize ACPI (must come before interrupt init, which uses ACPI for
   // IOAPIC)
+  KLOG("acpi init...");
   acpi_init(platform);
+  KLOG("acpi init ok");
 
   // Initialize interrupt handling (IDT)
+  KLOG("interrupt init...");
   interrupt_init(platform);
+  KLOG("interrupt init ok");
 
   // Initialize Local APIC timer
+  KLOG("timer init...");
   timer_init(platform);
+  KLOG("timer init ok");
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
   // to avoid spurious interrupts during device enumeration
 
-  printk("\n");
-
-  // Parse and display device tree (ACPI-based on x32)
-  platform_fdt_dump(platform, NULL);
+  KDEBUG_VALIDATE(platform_fdt_dump(platform, NULL));
 
   // Scan for VirtIO devices via both PCI and MMIO
-  printk("=== Starting VirtIO Device Scan ===\n\n");
+  KLOG("virtio scan...");
   pci_scan_devices(platform);
   mmio_scan_devices(platform);
+  KLOG("virtio scan ok");
 
   // Validate critical memory regions after device initialization
-  printk("\n");
-  platform_mem_validate_critical();
+  KDEBUG_VALIDATE(platform_mem_validate_critical());
 
   // Dump page tables for debugging
-  platform_mem_dump_pagetables();
+  KDEBUG_VALIDATE(platform_mem_dump_pagetables());
 
   // Test LAPIC interrupt delivery (self-IPI test)
   // Note: This runs BEFORE interrupts are enabled globally, so we need to
   // temporarily enable them for the test
-  printk("\n");
-  __asm__ volatile("sti"); // Enable interrupts for test
-  test_lapic_self_ipi(platform);
-  __asm__ volatile("cli"); // Disable interrupts again
+  KDEBUG_VALIDATE({
+    __asm__ volatile("sti"); // Enable interrupts for test
+    test_lapic_self_ipi(platform);
+    __asm__ volatile("cli"); // Disable interrupts again
+  });
 
-  printk("\nPlatform initialization complete.\n\n");
+  KLOG("x64 init ok");
 }
 
 // Wait for interrupt with timeout

@@ -66,12 +66,9 @@ void timer_init(platform_t *platform) {
     platform->timer_freq_hz = 62500000; // Common default for QEMU
   }
 
-  printk("ARM Generic Timer initialized (virtual timer)\n");
-  printk("Timer frequency: ");
-  printk_dec(platform->timer_freq_hz);
-  printk(" Hz (");
-  printk_dec(platform->timer_freq_hz / 1000000);
-  printk(" MHz)\n");
+  KLOG("ARM timer initialized, frequency: %llu Hz (%llu MHz)",
+       (unsigned long long)platform->timer_freq_hz,
+       (unsigned long long)(platform->timer_freq_hz / 1000000));
 
   // Disable timer initially
   write_cntv_ctl(0);
@@ -105,11 +102,8 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
     ticks = 1;
   }
 
-  printk("Timer set for ");
-  printk_dec(milliseconds);
-  printk("ms (");
-  printk_dec((uint32_t)ticks);
-  printk(" ticks)\n");
+  KDEBUG_LOG("Timer set for %ums (%llu ticks)", milliseconds,
+             (unsigned long long)ticks);
 
   // Disable timer first
   write_cntv_ctl(0);

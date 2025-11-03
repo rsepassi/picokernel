@@ -138,14 +138,11 @@ void timer_init(platform_t *platform, void *fdt) {
 
   if (freq > 0) {
     platform->timebase_freq = freq;
-    printk("Timebase frequency: ");
-    printk_dec((uint32_t)(freq / 1000000));
-    printk(" MHz (from device tree)\n");
-  } else {
-    printk("Timebase frequency: ");
-    printk_dec((uint32_t)(platform->timebase_freq / 1000000));
-    printk(" MHz (default)\n");
   }
+
+  KLOG("Timer initialized, frequency: %llu Hz (%llu MHz)",
+       (unsigned long long)platform->timebase_freq,
+       (unsigned long long)(platform->timebase_freq / 1000000));
 
   // Capture start time for timer_get_current_time_ms()
   platform->timer_start = rdtime();
@@ -187,12 +184,6 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
   // Set timer to fire at now + ticks
   uint64_t target = now + ticks;
   sbi_set_timer(target);
-
-  printk("Timer set for ");
-  printk_dec(milliseconds);
-  printk("ms (");
-  printk_dec((uint32_t)ticks);
-  printk(" ticks)\n");
 }
 
 // Get current timer frequency

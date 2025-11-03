@@ -16,22 +16,12 @@ int platform_irq_register(platform_t *platform, uint32_t irq_num,
                           void (*handler)(void *), void *context) {
   if (irq_num >= 128 && irq_num < 256) {
     // MSI-X CPU vector range (128-255) - register directly
-    printk("[IRQ] Registering MSI-X vector ");
-    printk_dec(irq_num);
-    printk("\n");
-
     irq_register(platform, (uint8_t)irq_num, handler, context);
     return 0;
   }
 
   // Hardware IRQ/GSI line (0-127) - route through IOAPIC
   uint32_t vector = 32 + irq_num;
-
-  printk("[IRQ] Registering GSI/IRQ ");
-  printk_dec(irq_num);
-  printk(" -> vector ");
-  printk_dec(vector);
-  printk(" (MMIO/level)\n");
 
   // Register handler for this vector
   platform->irq_table[vector].handler = handler;

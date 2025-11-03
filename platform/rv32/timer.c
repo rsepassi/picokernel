@@ -144,8 +144,6 @@ static const uint8_t *fdt_find_property(void *fdt, const char *node_path,
 
 // Initialize timer subsystem
 void timer_init(platform_t *platform, void *fdt) {
-  printk("Initializing RISC-V timer...\n");
-
   // Default: 10 MHz (typical for QEMU)
   uint32_t timer_freq = 10000000;
 
@@ -158,25 +156,11 @@ void timer_init(platform_t *platform, void *fdt) {
     if (prop && len == 4) {
       // Read as big-endian 32-bit value
       timer_freq = (prop[0] << 24) | (prop[1] << 16) | (prop[2] << 8) | prop[3];
-      printk("Timer frequency from DT: ");
-      printk_dec(timer_freq);
-      printk(" Hz\n");
     } else if (prop && len == 8) {
       // Read as big-endian 64-bit value, but only use low 32 bits
       // (timer frequencies are always < 4GHz in practice)
       timer_freq = (prop[4] << 24) | (prop[5] << 16) | (prop[6] << 8) | prop[7];
-      printk("Timer frequency from DT: ");
-      printk_dec(timer_freq);
-      printk(" Hz\n");
-    } else {
-      printk("Warning: Could not read timebase-frequency, using default ");
-      printk_dec(timer_freq);
-      printk(" Hz\n");
     }
-  } else {
-    printk("Warning: No device tree, using default timer frequency ");
-    printk_dec(timer_freq);
-    printk(" Hz\n");
   }
 
   // Store in platform
@@ -188,14 +172,11 @@ void timer_init(platform_t *platform, void *fdt) {
   // Initialize timer state
   platform->timer_callback = NULL;
   platform->timer_fired = 0;
-
-  printk("Timer initialized\n");
 }
 
 // Set a one-shot timer to fire after specified milliseconds
 void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds) {
   if (!platform->timer_callback) {
-    printk("timer_set_oneshot_ms: NULL callback in platform\n");
     return;
   }
 
@@ -212,12 +193,6 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds) {
 
   // Set the timer via SBI
   sbi_set_timer(target_time);
-
-  printk("Timer set for ");
-  printk_dec(milliseconds);
-  printk("ms (");
-  printk_dec((uint32_t)ticks);
-  printk(" ticks)\n");
 }
 
 // Timer interrupt handler

@@ -165,8 +165,8 @@ static void gic_init(platform_t *platform) {
   // Enable CPU interface
   mmio_write32(gicc_base + GICC_CTLR_OFF, 1);
 
-  KLOG("GIC initialized (Distributor at 0x%08x, CPU Interface at 0x%08x)",
-       (unsigned int)gicd_base, (unsigned int)gicc_base);
+  KLOG("GIC initialized (Distributor at 0x%llx, CPU Interface at 0x%llx)",
+       (unsigned long long)gicd_base, (unsigned long long)gicc_base);
 }
 
 // External assembly function to set VBAR (Vector Base Address Register)

@@ -107,8 +107,6 @@ static const char *exception_names[] = {"Instruction address misaligned",
 
 // Initialize PLIC (Platform-Level Interrupt Controller)
 static void plic_init(void) {
-  printk("Initializing PLIC...\n");
-
   // Set priority for all interrupts to 1 (minimum non-zero priority)
   for (uint32_t i = 1; i < MAX_IRQS; i++) {
     mmio_write32(PLIC_PRIORITY_BASE + i * 4, 1);
@@ -116,14 +114,10 @@ static void plic_init(void) {
 
   // Set priority threshold to 0 (accept all priorities)
   mmio_write32(PLIC_THRESHOLD, 0);
-
-  printk("PLIC initialized\n");
 }
 
 // Initialize interrupt handling
 void interrupt_init(platform_t *platform) {
-  printk("Setting up RISC-V trap handler...\n");
-
   // Store platform pointer for trap handler access
   g_current_platform = platform;
 
@@ -138,17 +132,11 @@ void interrupt_init(platform_t *platform) {
   uintptr_t trap_addr = (uintptr_t)&trap_entry;
   write_csr(stvec, trap_addr); // MODE=0 (direct)
 
-  printk("Trap vector set to ");
-  printk_hex32((uint32_t)trap_addr);
-  printk("\n");
-
   // Initialize PLIC
   plic_init();
 
   // Enable timer and external interrupts in SIE
   set_csr(sie, SIE_STIE | SIE_SEIE);
-
-  printk("Supervisor timer and external interrupts enabled\n");
 }
 
 // Enable interrupts globally
@@ -172,10 +160,6 @@ void irq_register(platform_t *platform, uint32_t irq_num,
 
   platform->irq_table[irq_num].handler = handler;
   platform->irq_table[irq_num].context = context;
-
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" registered\n");
 }
 
 // Enable (unmask) a specific IRQ in the PLIC
@@ -191,10 +175,6 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
   uint32_t enable_bit = 1 << (irq_num % 32);
   uint32_t current = mmio_read32(enable_reg);
   mmio_write32(enable_reg, current | enable_bit);
-
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" enabled in PLIC\n");
 }
 
 // Dispatch IRQ to registered handler
@@ -229,7 +209,7 @@ void trap_handler(void) {
       break;
 
     case CAUSE_SOFTWARE_INTERRUPT:
-      printk("Software interrupt\n");
+      // Software interrupt - not used
       break;
 
     case CAUSE_EXTERNAL_INTERRUPT:
@@ -250,9 +230,7 @@ void trap_handler(void) {
       break;
 
     default:
-      printk("Unknown interrupt: ");
-      printk_dec(cause_code);
-      printk("\n");
+      // Unknown interrupt - should not happen
       break;
     }
   } else {

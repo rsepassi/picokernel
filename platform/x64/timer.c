@@ -162,13 +162,6 @@ static void calibrate_timer(platform_t *platform) {
   // We measured ~10ms, so divide by 10
   if (lapic_elapsed > 0) {
     platform->ticks_per_ms = lapic_elapsed / 10;
-    printk("Timer calibrated: ");
-    printk_dec(platform->ticks_per_ms);
-    printk(" ticks/ms (PIT-based)\n");
-  } else {
-    printk("Timer calibration failed, using default ");
-    printk_dec(platform->ticks_per_ms);
-    printk(" ticks/ms\n");
   }
 }
 
@@ -193,14 +186,9 @@ void timer_init(platform_t *platform) {
     platform_abort();
   }
 
-  printk("LAPIC base address: ");
-  printk_hex64(platform->lapic_base);
-  printk("\n");
-
   // Check and enable LAPIC via MSR if not already enabled
   if (!(apic_base_msr & APIC_BASE_ENABLE)) {
     write_msr(MSR_IA32_APIC_BASE, apic_base_msr | APIC_BASE_ENABLE);
-    printk("LAPIC enabled via MSR\n");
   }
 
   // Enable Local APIC by setting spurious interrupt vector
@@ -217,12 +205,6 @@ void timer_init(platform_t *platform) {
   // Read and extract LAPIC ID (bits 24-31 of LAPIC ID register)
   uint32_t lapic_id_reg = lapic_read(platform->lapic_base, LAPIC_ID);
   platform->lapic_id = (lapic_id_reg >> 24) & 0xFF;
-
-  printk("Local APIC timer initialized (LAPIC ID ");
-  printk_dec(platform->lapic_id);
-  printk(" [reg=0x");
-  printk_hex32(lapic_id_reg);
-  printk("])\n");
 
   // Calibrate timer frequency
   calibrate_timer(platform);
@@ -260,12 +242,6 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
 
   // Set initial count (starts the timer)
   lapic_write(platform->lapic_base, LAPIC_TIMER_INIT, ticks);
-
-  printk("Timer set for ");
-  printk_dec(milliseconds);
-  printk("ms (");
-  printk_dec(ticks);
-  printk(" ticks)\n");
 }
 
 // Get current time in nanoseconds

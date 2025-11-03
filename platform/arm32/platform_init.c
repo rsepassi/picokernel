@@ -25,8 +25,6 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform->pci_next_bar_addr = 0x10000000; // PCI BAR allocation base
   kirq_ring_init(&platform->irq_ring);
 
-  printk("Initializing ARM32 platform...\n");
-
   // Initialize interrupt handling (GIC and exception vectors)
   interrupt_init(platform);
 
@@ -40,11 +38,8 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   platform_fdt_dump(platform, fdt);
 
   // Scan for VirtIO devices via both PCI and MMIO
-  printk("=== Starting VirtIO Device Scan ===\n\n");
   pci_scan_devices(platform);
   mmio_scan_devices(platform);
-
-  printk("\nPlatform initialization complete.\n\n");
 }
 
 // Wait for interrupt with timeout

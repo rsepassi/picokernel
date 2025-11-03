@@ -293,28 +293,31 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   KLOG("Discovered from FDT:");
   KLOG("  RAM regions: %d", platform->num_mem_regions);
   for (int i = 0; i < platform->num_mem_regions; i++) {
-    uint32_t base = (uint32_t)platform->mem_regions[i].base;
-    uint32_t size = (uint32_t)platform->mem_regions[i].size;
-    KLOG("    Region %d: 0x%08x - 0x%08x (%u MB)", i, base, base + size,
-         size / 1024 / 1024);
+    uint64_t base = platform->mem_regions[i].base;
+    uint64_t size = platform->mem_regions[i].size;
+    KLOG("    Region %d: 0x%llx - 0x%llx (%llu MB)", i,
+         (unsigned long long)base, (unsigned long long)(base + size),
+         (unsigned long long)(size / 1024 / 1024));
   }
 
   if (platform->uart_base != 0) {
-    KLOG("  UART: 0x%08x", (unsigned int)platform->uart_base);
+    KLOG("  UART: 0x%llx", (unsigned long long)platform->uart_base);
   }
 
   if (platform->gic_dist_base != 0) {
-    KLOG("  GIC Distributor: 0x%08x", (unsigned int)platform->gic_dist_base);
+    KLOG("  GIC Distributor: 0x%llx",
+         (unsigned long long)platform->gic_dist_base);
   }
 
   if (platform->gic_cpu_base != 0) {
-    KLOG("  GIC CPU Interface: 0x%08x", (unsigned int)platform->gic_cpu_base);
+    KLOG("  GIC CPU Interface: 0x%llx",
+         (unsigned long long)platform->gic_cpu_base);
   }
 
   if (platform->pci_ecam_base != 0) {
-    KLOG("  PCI ECAM: 0x%08x (size: 0x%08x)",
-         (unsigned int)platform->pci_ecam_base,
-         (unsigned int)platform->pci_ecam_size);
+    KLOG("  PCI ECAM: 0x%llx (size: 0x%llx)",
+         (unsigned long long)platform->pci_ecam_base,
+         (unsigned long long)platform->pci_ecam_size);
   }
 
   if (platform->pci_mmio_base != 0) {
@@ -330,10 +333,11 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   KLOG("  MMIO regions: %d", platform->num_mmio_regions);
   KDEBUG_VALIDATE({
     for (int i = 0; i < platform->num_mmio_regions; i++) {
-      uint32_t base = platform->mmio_regions[i].base;
-      uint32_t size = platform->mmio_regions[i].size;
-      KLOG("    Region %d: 0x%08x - 0x%08x (size: 0x%08x)", i, base,
-           base + size, size);
+      uint64_t base = platform->mmio_regions[i].base;
+      uint64_t size = platform->mmio_regions[i].size;
+      KLOG("    Region %d: 0x%llx - 0x%llx (size: 0x%llx)", i,
+           (unsigned long long)base, (unsigned long long)(base + size),
+           (unsigned long long)size);
     }
   });
 }
@@ -665,15 +669,16 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   kregion_t *region = head;
   int idx = 0;
   while (region != NULL) {
-    KLOG("  Region %d: 0x%08x - 0x%08x (%u MB)", idx,
-         (unsigned int)region->base,
-         (unsigned int)(region->base + region->size),
-         (unsigned int)(region->size / 1024 / 1024));
+    KLOG("Region %d: 0x%llx - 0x%llx (%llu MB)", idx,
+         (unsigned long long)region->base,
+         (unsigned long long)(region->base + region->size),
+         (unsigned long long)(region->size / 1024 / 1024));
     total_free += region->size;
     region = region->next;
     idx++;
   }
-  KLOG("Total free memory: %u MB", (unsigned int)(total_free / 1024 / 1024));
+  KLOG("Total free memory: %llu MB",
+       (unsigned long long)(total_free / 1024 / 1024));
 }
 
 // Debug: Verify MMU configuration

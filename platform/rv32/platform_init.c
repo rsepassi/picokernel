@@ -39,13 +39,17 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
 
-  printk("Initializing rv32 platform...\n");
+  KLOG("rv32 init...");
 
   // Initialize interrupt handling (trap vector)
+  KLOG("interrupt init...");
   interrupt_init(platform);
+  KLOG("interrupt init ok");
 
   // Initialize timer (reads frequency from FDT)
+  KLOG("timer init...");
   timer_init(platform, fdt);
+  KLOG("timer init ok");
 
   // For typical timer frequencies (< 4GHz), this fits in 32-bit division
   if (platform->timer_freq < 0x100000000ULL) {
@@ -55,26 +59,19 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
     platform->ticks_per_ms = 10000; // Fallback: assume 10MHz
   }
 
-  printk("Timer frequency: ");
-  printk_dec((uint32_t)platform->timer_freq);
-  printk(" Hz\n");
-
-  printk("Ticks per ms: ");
-  printk_dec((uint32_t)platform->ticks_per_ms);
-  printk("\n");
-
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop
   // to avoid spurious interrupts during device enumeration
 
   // Parse and display device tree
-  platform_fdt_dump(platform, fdt);
+  KDEBUG_VALIDATE(platform_fdt_dump(platform, fdt));
 
   // Scan for VirtIO devices via both PCI and MMIO
-  printk("=== Starting VirtIO Device Scan ===\n\n");
+  KLOG("virtio scan...");
   pci_scan_devices(platform);
   mmio_scan_devices(platform);
+  KLOG("virtio scan ok");
 
-  printk("\nPlatform initialization complete.\n\n");
+  KLOG("rv32 init ok");
 }
 
 // Wait for interrupt with timeout

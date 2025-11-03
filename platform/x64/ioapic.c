@@ -133,16 +133,6 @@ void ioapic_init(platform_t *platform) {
       uint64_t entry = IOAPIC_MASK;
       ioapic_write_redtbl(ioapic, i, entry);
     }
-
-    printk("IOAPIC #");
-    printk_dec(ioapic_idx);
-    printk(" initialized at 0x");
-    printk_hex32(ioapic->base_addr);
-    printk(" (GSI base ");
-    printk_dec(ioapic->gsi_base);
-    printk(", ");
-    printk_dec(ioapic->max_entries);
-    printk(" entries)\n");
   }
 }
 
@@ -155,7 +145,6 @@ void ioapic_route_irq(platform_t *platform, uint8_t gsi, uint8_t vector,
   // Find which IOAPIC handles this GSI
   ioapic_t *ioapic = NULL;
   uint8_t pin = 0;
-  uint8_t ioapic_idx = 0;
 
   for (uint8_t i = 0; i < platform->num_ioapics; i++) {
     ioapic_t *candidate = &platform->ioapic[i];
@@ -163,7 +152,6 @@ void ioapic_route_irq(platform_t *platform, uint8_t gsi, uint8_t vector,
         gsi < candidate->gsi_base + candidate->max_entries) {
       ioapic = candidate;
       pin = gsi - candidate->gsi_base;
-      ioapic_idx = i;
       break;
     }
   }
@@ -186,23 +174,6 @@ void ioapic_route_irq(platform_t *platform, uint8_t gsi, uint8_t vector,
                    ((uint64_t)apic_id << 56);
 
   ioapic_write_redtbl(ioapic, pin, entry);
-
-  // Debug: Read back and verify
-  printk("[IOAPIC #");
-  printk_dec(ioapic_idx);
-  printk("] GSI ");
-  printk_dec(gsi);
-  printk(" (pin ");
-  printk_dec(pin);
-  printk(") -> vec=");
-  printk_dec(vector);
-  printk(" apic=");
-  printk_dec(apic_id);
-  printk(" trig=");
-  printk_dec(trigger);
-  printk(" pol=");
-  printk_dec(polarity);
-  printk("\n");
 }
 
 // Mask a GSI
@@ -232,18 +203,6 @@ void ioapic_unmask_irq(platform_t *platform, uint8_t gsi) {
       uint64_t entry = ioapic_read_redtbl(ioapic, pin);
       entry &= ~IOAPIC_MASK;
       ioapic_write_redtbl(ioapic, pin, entry);
-
-      // Debug: Read back and verify unmask
-      uint64_t readback = ioapic_read_redtbl(ioapic, pin);
-      printk("[IOAPIC #");
-      printk_dec(i);
-      printk("] Unmasked GSI ");
-      printk_dec(gsi);
-      printk(" (pin ");
-      printk_dec(pin);
-      printk(") entry=0x");
-      printk_hex64(readback);
-      printk("\n");
       return;
     }
   }

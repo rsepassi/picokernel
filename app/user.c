@@ -105,7 +105,7 @@ static void on_random_ready(kwork_t *work) {
   krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
 
   // Log the random bytes received (first 32 bytes)
-  printk("Random bytes (%llu): ", req->completed);
+  printk("Random bytes (%zu): ", req->completed);
   for (size_t i = 0; i < req->completed && i < 32; i++) {
     printk_hex8(req->buffer[i]);
     if (i < req->completed - 1)

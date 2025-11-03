@@ -257,8 +257,6 @@ void interrupt_init(platform_t *platform) {
   // Load IDT
   __asm__ volatile("lidt %0" : : "m"(platform->idtp));
 
-  printk("IDT initialized (256 entries)\n");
-
   // Initialize IOAPIC
   ioapic_init(platform);
 }

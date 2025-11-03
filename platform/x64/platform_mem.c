@@ -19,58 +19,39 @@ extern uint8_t stack_top[];
 extern uint8_t _page_tables_start[];
 extern uint8_t _page_tables_end[];
 
+#ifdef KDEBUG
 // Print reserved regions for debugging
 static void print_reserved_regions(uintptr_t kernel_start, uintptr_t kernel_end,
                                    uintptr_t stack_start, uintptr_t stack_end,
                                    uintptr_t pt_start, uintptr_t pt_end,
                                    struct hvm_start_info *pvh_info) {
-  printk("\n[MEM] === Reserved Regions ===\n");
-
-  printk("[MEM]   Page Tables: 0x");
-  printk_hex64(pt_start);
-  printk(" - 0x");
-  printk_hex64(pt_end);
-  printk("  (");
-  printk_dec(pt_end - pt_start);
-  printk(" bytes)\n");
-
-  printk("[MEM]   Kernel:      0x");
-  printk_hex64(kernel_start);
-  printk(" - 0x");
-  printk_hex64(kernel_end);
-  printk("  (");
-  printk_dec(kernel_end - kernel_start);
-  printk(" bytes)\n");
-
-  printk("[MEM]   Stack:       0x");
-  printk_hex64(stack_start);
-  printk(" - 0x");
-  printk_hex64(stack_end);
-  printk("  (");
-  printk_dec(stack_end - stack_start);
-  printk(" bytes)\n");
-
-  printk("[MEM]   PVH Info:    0x");
-  printk_hex64((uintptr_t)pvh_info);
-  printk(" - 0x");
-  printk_hex64((uintptr_t)pvh_info + sizeof(struct hvm_start_info));
-  printk("  (");
-  printk_dec(sizeof(struct hvm_start_info));
-  printk(" bytes)\n");
+  KDEBUG_LOG("Reserved Regions:");
+  KDEBUG_LOG("  Page Tables: 0x%llx - 0x%llx  (%llu bytes)",
+             (unsigned long long)pt_start, (unsigned long long)pt_end,
+             (unsigned long long)(pt_end - pt_start));
+  KDEBUG_LOG("  Kernel:      0x%llx - 0x%llx  (%llu bytes)",
+             (unsigned long long)kernel_start, (unsigned long long)kernel_end,
+             (unsigned long long)(kernel_end - kernel_start));
+  KDEBUG_LOG("  Stack:       0x%llx - 0x%llx  (%llu bytes)",
+             (unsigned long long)stack_start, (unsigned long long)stack_end,
+             (unsigned long long)(stack_end - stack_start));
+  KDEBUG_LOG("  PVH Info:    0x%llx - 0x%llx  (%llu bytes)",
+             (unsigned long long)(uintptr_t)pvh_info,
+             (unsigned long long)((uintptr_t)pvh_info +
+                                  sizeof(struct hvm_start_info)),
+             (unsigned long long)sizeof(struct hvm_start_info));
 
   if (pvh_info->memmap_paddr) {
     uintptr_t memmap_start = pvh_info->memmap_paddr;
     size_t memmap_size =
         pvh_info->memmap_entries * sizeof(struct hvm_memmap_table_entry);
-    printk("[MEM]   E820 Map:    0x");
-    printk_hex64(memmap_start);
-    printk(" - 0x");
-    printk_hex64(memmap_start + memmap_size);
-    printk("  (");
-    printk_dec(memmap_size);
-    printk(" bytes)\n");
+    KDEBUG_LOG("  E820 Map:    0x%llx - 0x%llx  (%llu bytes)",
+               (unsigned long long)memmap_start,
+               (unsigned long long)(memmap_start + memmap_size),
+               (unsigned long long)memmap_size);
   }
 }
+#endif
 
 // Subtract a reserved region from available regions (may split regions)
 // Returns: number of output regions
@@ -88,7 +69,7 @@ static int subtract_reserved_region(const kregion_t *input_regions,
     // Case 1: No overlap, keep entire region
     if (region_end <= reserved_base || region_base >= reserved_end) {
       if (num_output >= max_output) {
-        printk("[MEM] ERROR: Too many output regions during subtraction\n");
+        printk("ERROR: Too many output regions during subtraction\n");
         return num_output;
       }
       output_regions[num_output++] = input_regions[i];
@@ -104,7 +85,7 @@ static int subtract_reserved_region(const kregion_t *input_regions,
     if (reserved_base > region_base && reserved_end < region_end) {
       // Add region before reserved area
       if (num_output >= max_output) {
-        printk("[MEM] ERROR: Too many output regions during split (before)\n");
+        printk("ERROR: Too many output regions during split (before)\n");
         return num_output;
       }
       output_regions[num_output].base = region_base;
@@ -113,7 +94,7 @@ static int subtract_reserved_region(const kregion_t *input_regions,
 
       // Add region after reserved area
       if (num_output >= max_output) {
-        printk("[MEM] ERROR: Too many output regions during split (after)\n");
+        printk("ERROR: Too many output regions during split (after)\n");
         return num_output;
       }
       output_regions[num_output].base = reserved_end;
@@ -125,7 +106,7 @@ static int subtract_reserved_region(const kregion_t *input_regions,
     // Case 4: Reserved region overlaps start of region
     if (reserved_base <= region_base && reserved_end < region_end) {
       if (num_output >= max_output) {
-        printk("[MEM] ERROR: Too many output regions (start overlap)\n");
+        printk("ERROR: Too many output regions (start overlap)\n");
         return num_output;
       }
       output_regions[num_output].base = reserved_end;
@@ -137,7 +118,7 @@ static int subtract_reserved_region(const kregion_t *input_regions,
     // Case 5: Reserved region overlaps end of region
     if (reserved_base > region_base && reserved_end >= region_end) {
       if (num_output >= max_output) {
-        printk("[MEM] ERROR: Too many output regions (end overlap)\n");
+        printk("ERROR: Too many output regions (end overlap)\n");
         return num_output;
       }
       output_regions[num_output].base = region_base;
@@ -164,8 +145,9 @@ static int build_free_regions(const kregion_t *ram_regions,
   uintptr_t pt_end = (uintptr_t)_page_tables_end;
 
   // Print reserved regions for debugging
-  print_reserved_regions(kernel_start, kernel_end, stack_start, stack_end,
-                         pt_start, pt_end, pvh_info);
+  KDEBUG_VALIDATE(print_reserved_regions(kernel_start, kernel_end, stack_start,
+                                          stack_end, pt_start, pt_end,
+                                          pvh_info));
 
   // Use double buffering to avoid overwriting input during subtraction
   kregion_t temp_regions_a[KCONFIG_MAX_MEM_REGIONS];
@@ -227,7 +209,7 @@ static int build_free_regions(const kregion_t *ram_regions,
 int platform_mem_init(platform_t *platform, void *pvh_info_ptr) {
   struct hvm_start_info *pvh_info = (struct hvm_start_info *)pvh_info_ptr;
 
-  printk("\n[MEM] === x64 Memory Discovery (PVH Boot) ===\n");
+  KDEBUG_LOG("x64 Memory Discovery (PVH Boot)");
 
   // Parse boot context (PVH start info) and populate RAM regions
   if (platform_boot_context_parse(platform, pvh_info_ptr) < 0) {
@@ -247,29 +229,20 @@ int platform_mem_init(platform_t *platform, void *pvh_info_ptr) {
                          KCONFIG_MAX_MEM_REGIONS, pvh_info);
 
   // Print final free regions
-  printk("\n[MEM] === Free Memory Regions ===\n");
-  printk("[MEM] Found ");
-  printk_dec(platform->num_mem_regions);
-  printk(" free region(s):\n");
-
+  KLOG("Free memory regions:");
   uint64_t total_free = 0;
   for (int i = 0; i < platform->num_mem_regions; i++) {
-    printk("[MEM]   [");
-    printk_dec(i);
-    printk("] 0x");
-    printk_hex64(platform->mem_regions[i].base);
-    printk(" - 0x");
-    printk_hex64(platform->mem_regions[i].base + platform->mem_regions[i].size);
-    printk("  (");
-    printk_dec(platform->mem_regions[i].size >> 20); // Size in MiB
-    printk(" MiB)\n");
+    KLOG("Region %d: 0x%llx - 0x%llx (%llu MB)", i,
+         (unsigned long long)platform->mem_regions[i].base,
+         (unsigned long long)(platform->mem_regions[i].base +
+                              platform->mem_regions[i].size),
+         (unsigned long long)(platform->mem_regions[i].size / 1024 / 1024));
 
     total_free += platform->mem_regions[i].size;
   }
 
-  printk("[MEM] Total free memory: ");
-  printk_dec(total_free >> 20);
-  printk(" MiB\n");
+  KLOG("Total free memory: %llu MB",
+       (unsigned long long)(total_free / 1024 / 1024));
 
   // Build linked list from array for platform_mem_regions() API
   if (platform->num_mem_regions > 0) {

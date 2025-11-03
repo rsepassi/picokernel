@@ -173,10 +173,6 @@ static void plic_init(platform_t *platform) {
     platform->irq_table[i].handler = NULL;
     platform->irq_table[i].context = NULL;
   }
-
-  printk("PLIC initialized at 0x");
-  printk_hex64(g_plic_base);
-  printk("\n");
 }
 
 // Initialize trap handling
@@ -192,12 +188,10 @@ void interrupt_init(platform_t *platform) {
   // Enable supervisor timer and external interrupts
   set_csr(sie, SIE_STIE | SIE_SEIE);
 
-  printk("Trap handler initialized (stvec = ");
-  printk_hex64(tvec);
-  printk(")\n");
-
   // Initialize PLIC
   plic_init(platform);
+
+  KLOG("PLIC initialized at 0x%llx", (unsigned long long)platform->plic_base);
 }
 
 // Enable interrupts globally
@@ -221,10 +215,6 @@ void irq_register(platform_t *platform, uint32_t irq_num,
 
   platform->irq_table[irq_num].handler = handler;
   platform->irq_table[irq_num].context = context;
-
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" registered\n");
 }
 
 // Enable (unmask) a specific IRQ in the PLIC
@@ -240,10 +230,6 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
   uint32_t val = mmio_read32(g_plic_base + PLIC_ENABLE_OFFSET + reg_offset);
   val |= (1 << bit);
   mmio_write32(g_plic_base + PLIC_ENABLE_OFFSET + reg_offset, val);
-
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" enabled in PLIC\n");
 }
 
 // Dispatch IRQ to registered handler

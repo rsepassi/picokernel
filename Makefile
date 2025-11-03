@@ -126,6 +126,7 @@ default: $(KERNEL)
 
 all:
 	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
+	ls -lh build/*/kernel.elf
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/{kernel,app,driver/virtio,platform,libc,vendor/monocypher,vendor/printf,vendor/libfdt}

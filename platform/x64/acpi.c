@@ -274,32 +274,20 @@ void acpi_init(platform_t *platform) {
     return;
   }
 
-  printk("ACPI initialized (RSDP at ");
-  printk_hex32((uint32_t)(uintptr_t)platform->rsdp);
-  printk(", Revision ");
-  printk_dec(platform->rsdp->revision);
-  printk(", OEM: ");
-  for (int i = 0; i < 6; i++) {
-    char c = platform->rsdp->oem_id[i];
-    printk_putc(c >= 32 && c <= 126 ? c : '?');
-  }
-  printk(")\n\n");
+  KDEBUG_LOG("ACPI initialized (RSDP at 0x%x, Revision %d)",
+             (uint32_t)(uintptr_t)platform->rsdp, platform->rsdp->revision);
 
   // Cache DSDT from FADT (for BIOS path where fw_cfg isn't used)
   struct acpi_table_header *fadt = acpi_find_table(platform, ACPI_SIG_FADT);
   if (fadt != NULL) {
     struct acpi_fadt *fadt_table = (struct acpi_fadt *)fadt;
-    printk("[ACPI] FADT found, dsdt field = ");
-    printk_hex32(fadt_table->dsdt);
-    printk("\n");
+    KDEBUG_LOG("FADT found, dsdt field = 0x%x", fadt_table->dsdt);
     if (fadt_table->dsdt != 0) {
       cached_dsdt = (struct acpi_table_header *)(uintptr_t)fadt_table->dsdt;
-      printk("[ACPI] DSDT cached at ");
-      printk_hex32((uint32_t)(uintptr_t)cached_dsdt);
-      printk("\n");
+      KDEBUG_LOG("DSDT cached at 0x%x", (uint32_t)(uintptr_t)cached_dsdt);
     }
   } else {
-    printk("[ACPI] FADT not found in RSDT\n");
+    KDEBUG_LOG("FADT not found in RSDT");
   }
 }
 
@@ -460,11 +448,11 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
   // Get DSDT table
   struct acpi_table_header *dsdt = acpi_find_table(platform, ACPI_SIG_DSDT);
   if (dsdt == NULL) {
-    printk("[ACPI] DSDT not found\n");
+    KDEBUG_LOG("DSDT not found");
     return 0;
   }
 
-  printk("[ACPI] Scanning DSDT for virtio-mmio devices (LNRO0005)...\n");
+  KDEBUG_LOG("Scanning DSDT for virtio-mmio devices (LNRO0005)...");
 
   uint8_t *data = (uint8_t *)dsdt;
   uint32_t length = dsdt->length;
@@ -474,9 +462,7 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
   for (uint32_t i = 0; i < length - 8 && device_count < max_devices; i++) {
     // Look for the HID string "LNRO0005"
     if (memcmp(&data[i], "LNRO0005", 8) == 0) {
-      printk("[ACPI]   Found LNRO0005 at offset ");
-      printk_hex32(i);
-      printk("\n");
+      KDEBUG_LOG("  Found LNRO0005 at offset 0x%x", i);
 
       // Search forward for Memory32Fixed resource (0x86 opcode)
       // and Interrupt resource (0x89 opcode)
@@ -498,11 +484,8 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
           mmio_size = data[j + 8] | (data[j + 9] << 8) | (data[j + 10] << 16) |
                       ((uint32_t)data[j + 11] << 24);
           found_memory = true;
-          printk("[ACPI]     Memory32Fixed: base=0x");
-          printk_hex64(mmio_base);
-          printk(" size=0x");
-          printk_hex32(mmio_size);
-          printk("\n");
+          KDEBUG_LOG("    Memory32Fixed: base=0x%llx size=0x%x",
+                     (unsigned long long)mmio_base, mmio_size);
         }
 
         // Extended Interrupt Descriptor: 0x89 followed by variable length
@@ -514,9 +497,7 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
             irq = data[j + 5] | (data[j + 6] << 8) | (data[j + 7] << 16) |
                   ((uint32_t)data[j + 8] << 24);
             found_interrupt = true;
-            printk("[ACPI]     Interrupt: IRQ ");
-            printk_dec(irq);
-            printk("\n");
+            KDEBUG_LOG("    Interrupt: IRQ %u", irq);
           }
         }
 
@@ -533,16 +514,14 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
 
       // Warn if we found device but not all resources
       if (found_memory && !found_interrupt) {
-        printk("[ACPI]     WARNING: Found memory but no interrupt resource\n");
+        KDEBUG_LOG("    WARNING: Found memory but no interrupt resource");
       } else if (!found_memory && found_interrupt) {
-        printk("[ACPI]     WARNING: Found interrupt but no memory resource\n");
+        KDEBUG_LOG("    WARNING: Found interrupt but no memory resource");
       }
     }
   }
 
-  printk("[ACPI] Found ");
-  printk_dec(device_count);
-  printk(" virtio-mmio device(s)\n");
+  KDEBUG_LOG("Found %d virtio-mmio device(s)", device_count);
   return device_count;
 }
 

@@ -468,11 +468,6 @@ static void subtract_reserved_region(kregion_t *regions, kregion_t **head,
 
 // Helper function to map a memory range using 2MB megapages
 static void map_mmio_range(uint64_t base, uint64_t size, const char *name __attribute__((unused))) {
-    KDEBUG_LOG("Mapping %s: 0x%llx - 0x%llx (0x%llx bytes)", name,
-               (unsigned long long)base,
-               (unsigned long long)(base + size),
-               (unsigned long long)size);
-
     // Map this MMIO region using 2MB megapages
     // Calculate L2 index (which 1 GB region this falls in)
     uint64_t l2_idx = (base >> 30) & 0x1FF;

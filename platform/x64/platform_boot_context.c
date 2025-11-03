@@ -10,7 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Helper: Get E820 type name
+#ifdef KDEBUG
+// Helper: Get E820 type name (debug only)
 static const char *e820_type_name(uint32_t type) {
   switch (type) {
   case E820_RAM:
@@ -29,30 +30,26 @@ static const char *e820_type_name(uint32_t type) {
     return "Unknown";
   }
 }
+#endif
 
 // Validate PVH start info structure
 static int validate_pvh_info(struct hvm_start_info *pvh_info) {
   if (!pvh_info) {
-    printk("[BOOT] ERROR: PVH start info pointer is NULL\n");
+    printk("ERROR: PVH start info pointer is NULL\n");
     return -1;
   }
 
   // Check magic number
   if (pvh_info->magic != HVM_START_MAGIC_VALUE) {
-    printk("[BOOT] ERROR: Invalid PVH magic: 0x");
-    printk_hex32(pvh_info->magic);
-    printk(" (expected 0x336ec578)\n");
+    printk("ERROR: Invalid PVH magic: 0x%x (expected 0x336ec578)\n",
+           pvh_info->magic);
     return -1;
   }
 
   // Check memory map
   if (pvh_info->memmap_paddr == 0 || pvh_info->memmap_entries == 0) {
-    printk("[BOOT] ERROR: PVH memory map not provided\n");
-    printk("  memmap_paddr: 0x");
-    printk_hex64(pvh_info->memmap_paddr);
-    printk("\n  memmap_entries: ");
-    printk_dec(pvh_info->memmap_entries);
-    printk("\n");
+    printk("ERROR: PVH memory map not provided (memmap_paddr: 0x%llx, entries: %u)\n",
+           (unsigned long long)pvh_info->memmap_paddr, pvh_info->memmap_entries);
     return -1;
   }
 
@@ -66,10 +63,7 @@ static int parse_e820_map(struct hvm_start_info *pvh_info,
   struct hvm_memmap_table_entry *memmap =
       (struct hvm_memmap_table_entry *)(uintptr_t)pvh_info->memmap_paddr;
 
-  printk("\n[BOOT] === PVH E820 Memory Map ===\n");
-  printk("[BOOT] Found ");
-  printk_dec(pvh_info->memmap_entries);
-  printk(" memory map entries:\n\n");
+  KDEBUG_LOG("PVH E820 Memory Map (%u entries)", pvh_info->memmap_entries);
 
   platform->num_mem_regions = 0;
 
@@ -79,24 +73,15 @@ static int parse_e820_map(struct hvm_start_info *pvh_info,
     uint32_t type = memmap[i].type;
 
     // Print entry
-    printk("[BOOT]   [");
-    printk_dec(i);
-    printk("] 0x");
-    printk_hex64(base);
-    printk(" - 0x");
-    printk_hex64(base + size - 1);
-    printk("  (");
-    printk_dec(size >> 20); // Size in MiB
-    printk(" MiB)  Type ");
-    printk_dec(type);
-    printk(": ");
-    printk(e820_type_name(type));
-    printk("\n");
+    KDEBUG_LOG("  [%u] 0x%llx - 0x%llx  (%u MiB)  Type %u: %s",
+               i, (unsigned long long)base,
+               (unsigned long long)(base + size - 1),
+               (unsigned int)(size >> 20), type, e820_type_name(type));
 
     // Collect available RAM regions
     if (type == E820_RAM) {
       if (platform->num_mem_regions >= KCONFIG_MAX_MEM_REGIONS) {
-        printk("[BOOT] WARNING: Too many RAM regions, skipping some\n");
+        printk("WARNING: Too many RAM regions, skipping some\n");
         continue;
       }
 
@@ -106,9 +91,7 @@ static int parse_e820_map(struct hvm_start_info *pvh_info,
     }
   }
 
-  printk("\n[BOOT] Discovered ");
-  printk_dec(platform->num_mem_regions);
-  printk(" RAM region(s)\n");
+  KDEBUG_LOG("Discovered %d RAM region(s)", platform->num_mem_regions);
 
   return 0;
 }
@@ -119,7 +102,7 @@ static int parse_e820_map(struct hvm_start_info *pvh_info,
 int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   struct hvm_start_info *pvh_info = (struct hvm_start_info *)boot_context;
 
-  printk("\n[BOOT] === x64 Boot Context Parsing (PVH) ===\n");
+  KDEBUG_LOG("x64 Boot Context Parsing (PVH)");
 
   // Validate PVH start info
   if (validate_pvh_info(pvh_info) < 0) {
@@ -129,14 +112,9 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   // Save PVH info pointer
   platform->pvh_info = pvh_info;
 
-  printk("[BOOT] PVH start info valid (magic: 0x");
-  printk_hex32(pvh_info->magic);
-  printk(", version: ");
-  printk_dec(pvh_info->version);
-  printk(")\n");
-  printk("[BOOT] PVH rsdp_paddr: 0x");
-  printk_hex64(pvh_info->rsdp_paddr);
-  printk("\n");
+  KDEBUG_LOG("PVH start info valid (magic: 0x%x, version: %d)",
+             pvh_info->magic, pvh_info->version);
+  KDEBUG_LOG("PVH rsdp_paddr: 0x%llx", (unsigned long long)pvh_info->rsdp_paddr);
 
   // Parse E820 memory map and populate platform->mem_regions[]
   if (parse_e820_map(pvh_info, platform) < 0) {
@@ -144,7 +122,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   }
 
   if (platform->num_mem_regions == 0) {
-    printk("[BOOT] ERROR: No RAM regions found in E820 map\n");
+    printk("ERROR: No RAM regions found in E820 map\n");
     return -1;
   }
 
