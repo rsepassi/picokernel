@@ -87,8 +87,10 @@ struct platform {
   void *kernel;
 
   // Memory management (discovered at init)
-  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
-  int num_mem_regions;                               // Number of free regions
+  kregion_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  int num_mem_regions;                            // Number of free regions
+  kregion_t *mem_regions_head;                    // Head of free region list
+  kregion_t *mem_regions_tail;                    // Tail of free region list
   uintptr_t fdt_base; // Device tree base (to reserve)
   size_t fdt_size;    // Device tree size (from header)
 

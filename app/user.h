@@ -4,10 +4,12 @@
 #define USER_H
 
 #include "kernel.h"
+#include "csprng.h"
 
 // User state structure
 typedef struct {
   kernel_t *kernel;
+  csprng_ctx rng;
   krng_req_t rng_req;
   uint8_t random_buf[32];
 
@@ -43,9 +45,9 @@ typedef struct {
   uint8_t __attribute__((aligned(64))) arp_tx_buf[64];    // 42 bytes needed
   uint8_t __attribute__((aligned(64))) icmp_tx_buf[1514]; // Full MTU
   uint8_t __attribute__((aligned(64))) udp_tx_buf[1514];  // Full MTU
-} kuser_t;
+} user_t;
 
 // User entry point
-void kmain_usermain(kuser_t *user);
+void user_main(user_t *user);
 
 #endif // USER_H

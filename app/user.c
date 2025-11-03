@@ -5,7 +5,7 @@
 #include "printk.h"
 
 // Helper to get current timestamp
-static uint64_t get_timestamp_ms(kuser_t *user) {
+static uint64_t get_timestamp_ms(user_t *user) {
   return user->kernel->current_time_ms;
 }
 
@@ -66,13 +66,13 @@ static uint16_t ip_checksum(const uint8_t *header, size_t len) {
 
 // Forward declarations
 static void on_packet_sent(kwork_t *work);
-static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
+static void send_arp_reply(user_t *user, const uint8_t *target_mac,
                            const uint8_t *target_ip);
-static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
+static void handle_arp_packet(user_t *user, const uint8_t *pkt,
                               size_t pkt_len);
-static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
+static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
                                size_t pkt_len, const uint8_t *ip_hdr);
-static void handle_udp_packet(kuser_t *user, const uint8_t *pkt, size_t pkt_len,
+static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
                               const uint8_t *ip_hdr);
 
 // Network configuration (QEMU user networking)
@@ -100,8 +100,7 @@ static const uint16_t UDP_ECHO_PORT = 8080;
 
 // RNG callback
 static void on_random_ready(kwork_t *work) {
-  kuser_t *user = work->ctx;
-  (void)user;
+  user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
     printk("RNG failed: error ");
@@ -110,22 +109,27 @@ static void on_random_ready(kwork_t *work) {
     return;
   }
 
-  printk("Random bytes (");
   krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
+
+  // Log the random bytes received
+  printk("Random bytes (");
   printk_dec(req->completed);
   printk("): ");
-
   for (size_t i = 0; i < req->completed && i < 32; i++) {
     printk_hex8(req->buffer[i]);
     if (i < req->completed - 1)
       printk(" ");
   }
   printk("\n");
+
+  // Seed CSPRNG with the random bytes from virtio-rng
+  csprng_init(&user->rng, req->buffer, req->completed);
+
   printk("[TEST PASS] RNG\n");
 }
 
 // Send ARP reply packet
-static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
+static void send_arp_reply(user_t *user, const uint8_t *target_mac,
                            const uint8_t *target_ip) {
   if (user->arp_send_req.work.state != KWORK_STATE_DEAD) {
     printk("ARP reply already in flight, ignoring\n");
@@ -179,7 +183,7 @@ static void send_arp_reply(kuser_t *user, const uint8_t *target_mac,
 }
 
 // Handle ARP packet
-static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
+static void handle_arp_packet(user_t *user, const uint8_t *pkt,
                               size_t pkt_len) {
   // Minimum ARP packet: 14 (Ethernet) + 28 (ARP) = 42 bytes
   if (pkt_len < 42) {
@@ -235,7 +239,7 @@ static void handle_arp_packet(kuser_t *user, const uint8_t *pkt,
 }
 
 // Handle ICMP packet (ping)
-static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
+static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
                                size_t pkt_len, const uint8_t *ip_hdr) {
   // Minimum ICMP packet: 14 (Ethernet) + 20 (IP) + 8 (ICMP header) = 42 bytes
   if (pkt_len < 42) {
@@ -329,7 +333,7 @@ static void handle_icmp_packet(kuser_t *user, const uint8_t *pkt,
 }
 
 // Handle UDP packet (echo server)
-static void handle_udp_packet(kuser_t *user, const uint8_t *pkt, size_t pkt_len,
+static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
                               const uint8_t *ip_hdr) {
   // Minimum UDP packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
   if (pkt_len < 42) {
@@ -458,7 +462,7 @@ static void on_packet_received(kwork_t *work) {
   KUNUSED(GATEWAY_IP);
   KUNUSED(GATEWAY_MAC);
 
-  kuser_t *user = work->ctx;
+  user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
     if (work->result != KERR_CANCELLED) {
@@ -564,7 +568,7 @@ release:
 
 // Network packet sent callback
 static void on_packet_sent(kwork_t *work) {
-  kuser_t *user = work->ctx;
+  user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
     printk("Network send failed: error ");
@@ -588,7 +592,7 @@ static void on_packet_sent(kwork_t *work) {
 
 // Block device test callback
 static void on_block_complete(kwork_t *work) {
-  kuser_t *user = work->ctx;
+  user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
     printk("Block operation failed: error ");
@@ -709,8 +713,8 @@ static void on_block_complete(kwork_t *work) {
 }
 
 // User entry point
-void kmain_usermain(kuser_t *user) {
-  printk("kmain_usermain: Requesting 32 random bytes...\n");
+void user_main(user_t *user) {
+  printk("user_main: Requesting random bytes for CSPRNG...\n");
 
   // Setup RNG request
   kwork_init(&user->rng_req.work, KWORK_OP_RNG_READ, user, on_random_ready, 0);
@@ -729,7 +733,7 @@ void kmain_usermain(kuser_t *user) {
   }
 
   // Setup block device test (stage 0: initial read)
-  printk("kmain_usermain: Starting block device test...\n");
+  printk("user_main: Starting block device test...\n");
 
   user->test_stage = 0;
 
@@ -753,7 +757,7 @@ void kmain_usermain(kuser_t *user) {
   }
 
   // Setup network device test (continuous packet reception)
-  printk("kmain_usermain: Starting network packet reception...\n");
+  printk("user_main: Starting network packet reception...\n");
 
   // Initialize receive buffers
   user->net_rx_bufs[0].buffer = user->net_rx_buf0;

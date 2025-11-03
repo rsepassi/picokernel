@@ -7,7 +7,7 @@
 #include "user.h"
 
 static kernel_t g_kernel;
-static kuser_t g_user;
+static user_t g_user;
 
 // Internal getter for logging/debug purposes only
 // DO NOT use this for general kernel access - pass kernel_t* explicitly
@@ -30,10 +30,10 @@ void kmain(void *fdt) {
   KDEBUG_VALIDATE(platform_mem_validate_post_init(&k->platform, fdt));
 
   // User kickoff
-  kuser_t *user = &g_user;
+  user_t *user = &g_user;
   user->kernel = k;
-  kmain_usermain(user);
-  KLOG("kmain_usermain ok");
+  user_main(user);
+  KLOG("user_main ok");
 
   // Event loop
   KLOG("kloop...");

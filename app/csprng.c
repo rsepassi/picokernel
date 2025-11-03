@@ -1,9 +1,9 @@
-#include "kcsprng.h"
+#include "csprng.h"
 #include "kbase.h"
 #include "monocypher/monocypher.h"
 
 // Initialize the CSPRNG with a seed
-void kcsprng_init(kcsprng_ctx *ctx, uint8_t *seed, size_t seed_size) {
+void csprng_init(csprng_ctx *ctx, uint8_t *seed, size_t seed_size) {
   uint8_t hash[40]; // 32 bytes for key + 8 bytes for nonce
 
   // Hash the seed to derive key and nonce
@@ -21,7 +21,7 @@ void kcsprng_init(kcsprng_ctx *ctx, uint8_t *seed, size_t seed_size) {
 }
 
 // Generate random bytes using ChaCha20
-void kcsprng_generate(kcsprng_ctx *ctx, uint8_t *output, size_t size) {
+void csprng_generate(csprng_ctx *ctx, uint8_t *output, size_t size) {
   // ChaCha20 is a stream cipher that XORs plaintext with keystream
   // To generate random bytes, we encrypt zeros
   // (This is equivalent to just generating the keystream)
@@ -35,8 +35,8 @@ void kcsprng_generate(kcsprng_ctx *ctx, uint8_t *output, size_t size) {
 }
 
 // Mix in new entropy
-void kcsprng_mix(kcsprng_ctx *ctx, const uint8_t *entropy,
-                 size_t entropy_size) {
+void csprng_mix(csprng_ctx *ctx, const uint8_t *entropy,
+                size_t entropy_size) {
   crypto_blake2b_ctx hash_ctx;
   uint8_t new_hash[40]; // 32 bytes for new key + 8 bytes for new nonce
 

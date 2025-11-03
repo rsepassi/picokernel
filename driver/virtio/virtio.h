@@ -160,8 +160,8 @@ struct kernel;
 
 // Common device header (MUST be first field in all device structures)
 typedef struct {
-  kdevice_type_t device_type;  // Device type tag
-  struct platform *platform; // Back-pointer for ISR access
+  kdevice_type_t device_type; // Device type tag
+  struct platform *platform;  // Back-pointer for ISR access
   void (*process_irq)(void *dev, struct kernel *k); // Virtual dispatch function
   bool (*ack_isr)(void *dev); // Acknowledge ISR, returns true if interrupt
                               // should be processed

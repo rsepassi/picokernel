@@ -158,11 +158,6 @@ void kmain_init(kernel_t *k, void *fdt) {
   platform_interrupt_enable(&k->platform);
   KLOG("interrupts enabled");
 
-  // Initialize CSPRNG with strong entropy
-  kcsprng_init_state_t csprng_init_state;
-  kmain_init_csprng(k, &csprng_init_state);
-  KLOG("CSPRNG ready");
-
   printk("kmain_init complete\n");
 }
 
@@ -349,53 +344,6 @@ void kplatform_cancel_work(kernel_t *k, kwork_t *work) {
   record_work_transition(k, work, work->state, KWORK_STATE_READY);
   work->state = KWORK_STATE_READY;
   enqueue_ready(k, work);
-}
-
-// CSPRNG initialization
-static void csprng_seed_callback(kwork_t *work) {
-  if (work->result != KERR_OK) {
-    printk("ERROR: Failed to get entropy for CSPRNG: error ");
-    printk_dec(work->result);
-    printk("\n");
-    return;
-  }
-
-  krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
-  printk("Got ");
-  printk_dec(req->completed);
-  printk(" bytes of entropy from virtio-rng\n");
-
-  // Mark seed as ready (state is in ctx)
-  kcsprng_init_state_t *state = (kcsprng_init_state_t *)work->ctx;
-  state->seed_ready = 1;
-}
-
-void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state) {
-  printk("Initializing CSPRNG with virtio-rng entropy...\n");
-
-  state->seed_ready = 0;
-
-  // Setup RNG request for entropy
-  kwork_init(&state->seed_req.work, KWORK_OP_RNG_READ, state,
-             csprng_seed_callback, 0);
-  state->seed_req.buffer = state->seed_buffer;
-  state->seed_req.length = 64;
-  state->seed_req.completed = 0;
-
-  // Submit request
-  kerr_t err = ksubmit(k, &state->seed_req.work);
-  KASSERT(err == KERR_OK, "CSPRNG submit failed");
-
-  // Wait for entropy by running event loop until seed is ready
-  printk("Waiting for entropy...\n");
-  KWAIT_UNTIL(k, state->seed_ready, 10, 100);
-
-  KASSERT(state->seed_ready, "CSPRNG init failed");
-
-  // Initialize CSPRNG with entropy
-  kcsprng_init(&k->rng, state->seed_buffer, sizeof(state->seed_buffer));
-
-  printk("[CSPRNG] CSPRNG initialized\n");
 }
 
 void kmain_step(kernel_t *k, uint64_t max_timeout) {

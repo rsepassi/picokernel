@@ -59,7 +59,8 @@ LD = ld.lld
 LDFLAGS = --no-pie -static -nostdlib --gc-sections $(DEBUG_LDFLAGS) $(PLATFORM_LDFLAGS)
 
 # Common variables
-INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -isystem $(LIBC_DIR)
+APP_DIR = app
+INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(APP_DIR) -I$(VENDOR_DIR) -isystem $(LIBC_DIR)
 PLATFORMS = rv32 rv64 x64 arm32 arm64
 
 # Source files
@@ -75,8 +76,7 @@ PLATFORM_S_SOURCES = $(addprefix $(PLATFORM_DIR)/,$(PLATFORM_S_SRCS))
 
 # Common C sources
 C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
-            $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/user.c \
-            $(KERNEL_DIR)/kcsprng.c \
+            $(KERNEL_DIR)/kernel.c \
             $(KERNEL_DIR)/kbase.c \
             $(KERNEL_DIR)/irq_ring.c \
             $(KERNEL_DIR)/timer_heap.c \
@@ -89,6 +89,10 @@ C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
             $(DRIVER_DIR)/virtio/virtio_blk.c \
             $(DRIVER_DIR)/virtio/virtio_net.c
 
+# App sources
+APP_SOURCES = $(APP_DIR)/user.c \
+              $(APP_DIR)/csprng.c
+
 # Libc sources
 LIBC_SOURCES = $(LIBC_DIR)/string.c
 
@@ -100,7 +104,7 @@ VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(wildcard $(VENDOR_DIR)/libfdt/*.c)
 
 # Header files (all .o files depend on all headers)
-HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
+HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(APP_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
 
 # Object files in build directory (maintaining source tree structure)
 # Platform sources may include files from ../shared or ../x86, so we match from platform/ root
@@ -108,11 +112,12 @@ PLATFORM_C_OBJS = $(patsubst platform/%.c,$(BUILD_DIR)/platform/%.o,$(PLATFORM_C
 PLATFORM_S_OBJS = $(patsubst platform/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S_SOURCES))
 KERNEL_OBJECTS = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(filter $(KERNEL_DIR)/%,$(C_SOURCES)))
 DRIVER_OBJECTS = $(patsubst $(DRIVER_DIR)/%.c,$(BUILD_DIR)/driver/%.o,$(filter $(DRIVER_DIR)/%,$(C_SOURCES)))
+APP_OBJECTS = $(patsubst $(APP_DIR)/%.c,$(BUILD_DIR)/app/%.o,$(APP_SOURCES))
 C_OBJECTS = $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
 LIBC_OBJECTS = $(patsubst $(LIBC_DIR)/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_SOURCES))
 VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(LIBC_OBJECTS) $(VENDOR_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(APP_OBJECTS) $(LIBC_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -123,10 +128,13 @@ all:
 	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,libc,vendor/monocypher,vendor/printf,vendor/libfdt}
+	mkdir -p $(BUILD_DIR)/{kernel,app,driver/virtio,platform,libc,vendor/monocypher,vendor/printf,vendor/libfdt}
 
-# Generic C compilation rule for kernel, driver, and vendor sources
+# Generic C compilation rule for kernel, app, driver, and vendor sources
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
+
+$(BUILD_DIR)/app/%.o: $(APP_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/driver/%.o: $(DRIVER_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
@@ -177,7 +185,7 @@ clean:
 	rm -rf build
 
 format:
-	clang-format -i $$(find kernel/ driver/ platform/ libc/ -type f \( -name '*.c' -o -name '*.h' \))
+	clang-format -i $$(find kernel/ app/ driver/ platform/ libc/ -type f \( -name '*.c' -o -name '*.h' \))
 
 test: $(KERNEL)
 	@./script/run_test.sh $(PLATFORM) $(USE_PCI)

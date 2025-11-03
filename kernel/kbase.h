@@ -6,6 +6,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* ===========================================================================
+ * Foundation Types - Basic data structures
+ * ===========================================================================*/
+
+/* Physical memory/address region with intrusive doubly-linked list */
+typedef struct kregion {
+  uintptr_t base;       // Base physical address
+  size_t size;          // Size in bytes
+  struct kregion *next; // Next region in list
+  struct kregion *prev; // Previous region in list
+} kregion_t;
+
+/* Linked list of memory regions */
+typedef struct {
+  kregion_t *head; // First region in list
+  kregion_t *tail; // Last region in list
+  int count;       // Number of regions in list
+} kregions_t;
+
+/* Generic buffer (data pointer + size) */
+typedef struct {
+  uint8_t *data; // Pointer to buffer data
+  size_t size;   // Size in bytes
+} kbuf_t;
+
 /* Container of macro - get pointer to container from member pointer */
 #define KCONTAINER_OF(ptr, type, member)                                       \
   ((type *)(void *)((char *)(ptr) - offsetof(type, member)))

@@ -2,6 +2,7 @@
 // Combines: Register/stack dumps and memory validation
 
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stdint.h>
 

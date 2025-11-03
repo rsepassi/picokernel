@@ -4,14 +4,6 @@
 #pragma once
 
 #include "kapi.h"
-#include "kcsprng.h"
-
-// CSPRNG initialization state (stack-allocated by caller)
-typedef struct {
-  uint8_t seed_buffer[64];
-  krng_req_t seed_req;
-  volatile uint8_t seed_ready;
-} kcsprng_init_state_t;
 
 typedef uint64_t ktime_t;
 
@@ -29,8 +21,6 @@ struct kernel {
   ktimer_req_t *timer_heap_root; // Root of min-heap tree
   size_t timer_heap_size;        // Number of active timers
   ktime_t current_time_ms;
-
-  kcsprng_ctx rng;
 
 #ifdef KDEBUG
   // Work transition history (debug builds only)
@@ -57,9 +47,6 @@ uint64_t kget_time_ms__logonly__(void);
 
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt);
-
-// Initialize CSPRNG with strong entropy from virtio-rng
-void kmain_init_csprng(kernel_t *k, kcsprng_init_state_t *state);
 
 // Get next timeout for platform_wfi
 uint64_t kmain_next_delay(kernel_t *k);

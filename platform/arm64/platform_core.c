@@ -158,10 +158,23 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
         int len;
         const void *reg = fdt_getprop(fdt, node, "reg", &len);
         if (reg && len >= 16) {
-          platform->mem_regions[platform->num_mem_regions].base =
-              kload_be64((const uint8_t *)reg);
-          platform->mem_regions[platform->num_mem_regions].size =
-              kload_be64((const uint8_t *)reg + 8);
+          kregion_t *region = &platform->mem_regions[platform->num_mem_regions];
+          region->base = kload_be64((const uint8_t *)reg);
+          region->size = kload_be64((const uint8_t *)reg + 8);
+
+          // Link into doubly-linked list
+          region->next = NULL;
+          if (platform->num_mem_regions == 0) {
+            // First region - no previous
+            region->prev = NULL;
+          } else {
+            // Link to previous region
+            kregion_t *prev_region =
+                &platform->mem_regions[platform->num_mem_regions - 1];
+            prev_region->next = region;
+            region->prev = prev_region;
+          }
+
           platform->num_mem_regions++;
         }
       }
@@ -349,59 +362,90 @@ static int ranges_overlap(uintptr_t base1, size_t size1, uintptr_t base2,
   return !(end1 <= base2 || end2 <= base1);
 }
 
-// Helper: Subtract reserved region from available regions
+// Helper: Subtract reserved region from available regions (linked list version)
 // May split a region into two parts if reserved region is in the middle
-static void subtract_reserved_region(mem_region_t *regions, int *count,
+// regions: array of regions (for allocation)
+// head: pointer to head pointer of linked list
+// tail: pointer to tail pointer of linked list
+// count: pointer to count of regions
+static void subtract_reserved_region(kregion_t *regions, kregion_t **head,
+                                     kregion_t **tail, int *count,
                                      uintptr_t reserved_base,
                                      size_t reserved_size) {
   uintptr_t reserved_end = reserved_base + reserved_size;
 
-  for (int i = 0; i < *count; i++) {
-    uintptr_t region_base = regions[i].base;
-    uintptr_t region_end = region_base + regions[i].size;
+  kregion_t *region = *head;
+  while (region != NULL) {
+    kregion_t *next = region->next; // Save next before we might modify it
+    uintptr_t region_base = region->base;
+    uintptr_t region_end = region_base + region->size;
 
     // Skip if no overlap
-    if (!ranges_overlap(region_base, regions[i].size, reserved_base,
+    if (!ranges_overlap(region_base, region->size, reserved_base,
                         reserved_size)) {
+      region = next;
       continue;
     }
 
     // Case 1: Reserved region completely contains this region
     if (reserved_base <= region_base && reserved_end >= region_end) {
-      // Remove this region entirely
-      for (int j = i; j < *count - 1; j++) {
-        regions[j] = regions[j + 1];
+      // Remove this region from the linked list
+      if (region->prev != NULL) {
+        region->prev->next = region->next;
+      } else {
+        *head = region->next; // Removing head
+      }
+      if (region->next != NULL) {
+        region->next->prev = region->prev;
+      } else {
+        *tail = region->prev; // Removing tail
       }
       (*count)--;
-      i--; // Re-check this index
+      region = next;
       continue;
     }
 
     // Case 2: Reserved region at the start
     if (reserved_base <= region_base && reserved_end < region_end) {
-      regions[i].base = reserved_end;
-      regions[i].size = region_end - reserved_end;
+      region->base = reserved_end;
+      region->size = region_end - reserved_end;
+      region = next;
       continue;
     }
 
     // Case 3: Reserved region at the end
     if (reserved_base > region_base && reserved_end >= region_end) {
-      regions[i].size = reserved_base - region_base;
+      region->size = reserved_base - region_base;
+      region = next;
       continue;
     }
 
     // Case 4: Reserved region in the middle - split into two regions
     if (reserved_base > region_base && reserved_end < region_end) {
       // First part: [region_base, reserved_base)
-      regions[i].size = reserved_base - region_base;
+      region->size = reserved_base - region_base;
 
       // Second part: [reserved_end, region_end) - add as new region
       if (*count < KCONFIG_MAX_MEM_REGIONS) {
-        regions[*count].base = reserved_end;
-        regions[*count].size = region_end - reserved_end;
+        kregion_t *new_region = &regions[*count];
+        new_region->base = reserved_end;
+        new_region->size = region_end - reserved_end;
+        new_region->prev = region;
+        new_region->next = region->next;
+
+        // Insert after current region
+        if (region->next != NULL) {
+          region->next->prev = new_region;
+        } else {
+          *tail = new_region; // New region is now the tail
+        }
+        region->next = new_region;
+
         (*count)++;
       }
     }
+
+    region = next;
   }
 }
 
@@ -630,15 +674,30 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
 // platform_boot_context_parse
 __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   printk("\nBuilding free memory region list...\n");
-  int initial_num_regions = platform->num_mem_regions;
+
+  // Head and tail of linked list (starts at first region if any exist)
+  kregion_t *head =
+      (platform->num_mem_regions > 0) ? &platform->mem_regions[0] : NULL;
+  kregion_t *tail = NULL;
+
+  // Find tail (last region in initial list)
+  if (head != NULL) {
+    tail = head;
+    while (tail->next != NULL) {
+      tail = tail->next;
+    }
+  }
 
   // Print initial discovered RAM regions
-  for (int i = 0; i < initial_num_regions; i++) {
-    KLOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", i,
-         (unsigned long long)platform->mem_regions[i].base,
-         (unsigned long long)(platform->mem_regions[i].base +
-                              platform->mem_regions[i].size),
-         (unsigned long long)(platform->mem_regions[i].size / 1024 / 1024));
+  kregion_t *region = head;
+  int idx = 0;
+  while (region != NULL) {
+    KLOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", idx,
+         (unsigned long long)region->base,
+         (unsigned long long)(region->base + region->size),
+         (unsigned long long)(region->size / 1024 / 1024));
+    region = region->next;
+    idx++;
   }
 
   // Reserve DTB region
@@ -647,8 +706,9 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
          (unsigned long long)platform->fdt_base,
          (unsigned long long)(platform->fdt_base + platform->fdt_size),
          (unsigned long long)(platform->fdt_size / 1024));
-    subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
-                             platform->fdt_base, platform->fdt_size);
+    subtract_reserved_region(platform->mem_regions, &head, &tail,
+                             &platform->num_mem_regions, platform->fdt_base,
+                             platform->fdt_size);
   }
 
   // Reserve kernel region (_start to _end)
@@ -661,19 +721,27 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
        "tables in .bss)",
        (unsigned long long)kernel_base, (unsigned long long)kernel_end,
        (unsigned long long)(kernel_size / 1024));
-  subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
-                           kernel_base, kernel_size);
+  subtract_reserved_region(platform->mem_regions, &head, &tail,
+                           &platform->num_mem_regions, kernel_base,
+                           kernel_size);
+
+  // Store the head and tail pointers for O(1) access in platform_mem_regions
+  platform->mem_regions_head = head;
+  platform->mem_regions_tail = tail;
 
   // Print final free regions
   printk("\nFree memory regions:\n");
   size_t total_free = 0;
-  for (int i = 0; i < platform->num_mem_regions; i++) {
-    KLOG("Region %d: 0x%llx - 0x%llx (%llu MB)", i,
-         (unsigned long long)platform->mem_regions[i].base,
-         (unsigned long long)(platform->mem_regions[i].base +
-                              platform->mem_regions[i].size),
-         (unsigned long long)(platform->mem_regions[i].size / 1024 / 1024));
-    total_free += platform->mem_regions[i].size;
+  region = head;
+  idx = 0;
+  while (region != NULL) {
+    KLOG("Region %d: 0x%llx - 0x%llx (%llu MB)", idx,
+         (unsigned long long)region->base,
+         (unsigned long long)(region->base + region->size),
+         (unsigned long long)(region->size / 1024 / 1024));
+    total_free += region->size;
+    region = region->next;
+    idx++;
   }
   KLOG("Total free memory: %llu MB\n",
        (unsigned long long)(total_free / 1024 / 1024));
@@ -687,10 +755,11 @@ void platform_mem_init(platform_t *platform) {
 }
 
 // Get list of available memory regions
-mem_region_list_t platform_mem_regions(platform_t *platform) {
-  mem_region_list_t list;
-  list.regions = platform->mem_regions;
+kregions_t platform_mem_regions(platform_t *platform) {
+  kregions_t list;
   list.count = platform->num_mem_regions;
+  list.head = platform->mem_regions_head;
+  list.tail = platform->mem_regions_tail;
   return list;
 }
 

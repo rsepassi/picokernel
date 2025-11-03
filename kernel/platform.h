@@ -12,12 +12,6 @@ typedef struct kernel kernel_t;
 typedef struct kwork kwork_t;
 typedef struct platform platform_t;
 
-// Memory region descriptor (needed by platform_impl.h)
-typedef struct {
-  uintptr_t base; // Base physical address
-  size_t size;    // Size in bytes
-} mem_region_t;
-
 // Each platform implements platform_impl.h with platform-specific types
 // #include "platform_impl.h"
 
@@ -25,16 +19,10 @@ typedef struct {
 // SECTION 1: Memory Management - Memory region discovery and management
 // ===========================================================================
 
-// Memory region list (returned by platform_mem_regions)
-typedef struct {
-  mem_region_t *regions; // Pointer to platform-managed array
-  int count;             // Number of regions
-} mem_region_list_t;
-
 // Get list of available (free) memory regions
 // Called after platform_init() completes
-// Returns: list of free memory regions suitable for allocation
-mem_region_list_t platform_mem_regions(platform_t *platform);
+// Returns: linked list of free memory regions suitable for allocation
+kregions_t platform_mem_regions(platform_t *platform);
 
 // ===========================================================================
 // SECTION 2: PCI - PCI configuration space access
