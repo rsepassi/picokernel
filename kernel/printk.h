@@ -1,5 +1,4 @@
-#ifndef PRINTK_H
-#define PRINTK_H
+#pragma once
 
 #include <stdint.h>
 
@@ -16,5 +15,3 @@ uint32_t printk_dec_len(uint32_t val);
 void printk_dec(uint32_t val);
 void printk_ip(const uint8_t *ip);
 void printk_mac(const uint8_t *mac);
-
-#endif

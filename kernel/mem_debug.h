@@ -1,5 +1,4 @@
-#ifndef MEM_DEBUG_H
-#define MEM_DEBUG_H
+#pragma once
 
 #include "platform.h"
 
@@ -100,5 +99,3 @@ static inline uint32_t kmem_checksum_section(const void *start,
   return 0;
 }
 #endif
-
-#endif // MEM_DEBUG_H

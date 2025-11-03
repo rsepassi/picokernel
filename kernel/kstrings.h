@@ -1,8 +1,7 @@
 // String Helper Utilities
 // Foundation layer - no dependencies except standard headers
 
-#ifndef KSTRINGS_H
-#define KSTRINGS_H
+#pragma once
 
 #include <stddef.h>
 
@@ -53,5 +52,3 @@ static inline int str_endswith(const char *str, const char *suffix) {
   const char *str_end = str + slen - suffix_len;
   return str_eql(str_end, suffix);
 }
-
-#endif // KSTRINGS_H

@@ -1,5 +1,4 @@
-#ifndef CSPRNG_H
-#define CSPRNG_H
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -26,5 +25,3 @@ void csprng_generate(csprng_ctx *ctx, uint8_t *output, size_t size);
 // This allows forward secrecy - even if the current state is compromised,
 // future states will be unpredictable given enough new entropy
 void csprng_mix(csprng_ctx *ctx, const uint8_t *entropy, size_t entropy_size);
-
-#endif // CSPRNG_H

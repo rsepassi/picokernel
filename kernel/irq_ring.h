@@ -1,5 +1,4 @@
-#ifndef IRQ_RING_H
-#define IRQ_RING_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,5 +58,3 @@ struct kirq_ring {
   volatile uint32_t overflow_count; // Dropped interrupt counter
 };
 #endif
-
-#endif // IRQ_RING_H

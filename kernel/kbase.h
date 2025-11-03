@@ -1,5 +1,4 @@
-#ifndef KBASE_H
-#define KBASE_H
+#pragma once
 
 #include <limits.h>
 #include <stdbool.h>
@@ -198,5 +197,3 @@ static inline uint32_t kload_be32(const volatile uint8_t *p) {
 static inline uint64_t kload_be64(const volatile uint8_t *p) {
   return ((uint64_t)kload_be32(p) << 32) | kload_be32(p + 4);
 }
-
-#endif /* KBASE_H */

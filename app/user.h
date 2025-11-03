@@ -1,7 +1,6 @@
 // User state and entry point
 
-#ifndef USER_H
-#define USER_H
+#pragma once
 
 #include "csprng.h"
 #include "kernel.h"
@@ -49,5 +48,3 @@ typedef struct {
 
 // User entry point
 void user_main(user_t *user);
-
-#endif // USER_H
