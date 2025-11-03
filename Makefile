@@ -59,12 +59,13 @@ LD = ld.lld
 LDFLAGS = --no-pie -static -nostdlib --gc-sections $(DEBUG_LDFLAGS) $(PLATFORM_LDFLAGS)
 
 # Common variables
-INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR)
+INCLUDE_DIRS = -I$(PLATFORM_DIR) -I$(KERNEL_DIR) -I$(DRIVER_DIR) -I$(VENDOR_DIR) -isystem $(LIBC_DIR)
 PLATFORMS = rv32 rv64 x64 arm32 arm64
 
 # Source files
 KERNEL_DIR = kernel
 DRIVER_DIR = driver
+LIBC_DIR = libc
 
 LINKER_SCRIPT = $(PLATFORM_DIR)/linker.ld
 
@@ -88,11 +89,15 @@ C_SOURCES = $(KERNEL_DIR)/kmain.c $(KERNEL_DIR)/printk.c \
             $(DRIVER_DIR)/virtio/virtio_blk.c \
             $(DRIVER_DIR)/virtio/virtio_net.c
 
+# Libc sources
+LIBC_SOURCES = $(LIBC_DIR)/string.c
+
 # Vendor sources
 VENDOR_DIR = vendor
 VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(VENDOR_DIR)/monocypher/monocypher-ed25519.c \
-                 $(VENDOR_DIR)/printf/printf.c
+                 $(VENDOR_DIR)/printf/printf.c \
+                 $(wildcard $(VENDOR_DIR)/libfdt/*.c)
 
 # Header files (all .o files depend on all headers)
 HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
@@ -104,9 +109,10 @@ PLATFORM_S_OBJS = $(patsubst platform/%.S,$(BUILD_DIR)/platform/%.o,$(PLATFORM_S
 KERNEL_OBJECTS = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/kernel/%.o,$(filter $(KERNEL_DIR)/%,$(C_SOURCES)))
 DRIVER_OBJECTS = $(patsubst $(DRIVER_DIR)/%.c,$(BUILD_DIR)/driver/%.o,$(filter $(DRIVER_DIR)/%,$(C_SOURCES)))
 C_OBJECTS = $(KERNEL_OBJECTS) $(DRIVER_OBJECTS)
+LIBC_OBJECTS = $(patsubst $(LIBC_DIR)/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_SOURCES))
 VENDOR_OBJECTS = $(patsubst $(VENDOR_DIR)/%.c,$(BUILD_DIR)/vendor/%.o,$(VENDOR_SOURCES))
 
-ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(VENDOR_OBJECTS)
+ALL_OBJECTS = $(PLATFORM_C_OBJS) $(PLATFORM_S_OBJS) $(C_OBJECTS) $(LIBC_OBJECTS) $(VENDOR_OBJECTS)
 
 KERNEL = $(BUILD_DIR)/kernel.elf
 
@@ -117,13 +123,16 @@ all:
 	for platform in $(PLATFORMS); do $(MAKE) PLATFORM=$$platform; done
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,vendor/monocypher,vendor/printf}
+	mkdir -p $(BUILD_DIR)/{kernel,driver/virtio,platform,libc,vendor/monocypher,vendor/printf,vendor/libfdt}
 
 # Generic C compilation rule for kernel, driver, and vendor sources
 $(BUILD_DIR)/kernel/%.o: $(KERNEL_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/driver/%.o: $(DRIVER_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
+
+$(BUILD_DIR)/libc/%.o: $(LIBC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
 
 $(BUILD_DIR)/vendor/%.o: $(VENDOR_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
@@ -168,7 +177,7 @@ clean:
 	rm -rf build
 
 format:
-	clang-format -i $$(find kernel/ driver/ platform/ -type f \( -name '*.c' -o -name '*.h' \))
+	clang-format -i $$(find kernel/ driver/ platform/ libc/ -type f \( -name '*.c' -o -name '*.h' \))
 
 test: $(KERNEL)
 	@./script/run_test.sh $(PLATFORM) $(USE_PCI)

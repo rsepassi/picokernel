@@ -15,6 +15,9 @@ void platform_mem_validate_post_init(platform_t *platform, void *fdt);
 void platform_mem_print_layout(void);
 void platform_mem_dump_translation(uintptr_t vaddr);
 
+// FDT/device tree debugging
+void platform_fdt_dump(platform_t *platform, void *fdt);
+
 // Platform-specific checksum getters (returns expected checksums)
 uint32_t platform_get_expected_text_checksum(void);
 uint32_t platform_get_expected_rodata_checksum(void);
@@ -48,6 +51,10 @@ static inline void platform_mem_validate_post_init(platform_t *platform,
 static inline void platform_mem_print_layout(void) {}
 static inline void platform_mem_dump_translation(uintptr_t vaddr) {
   (void)vaddr;
+}
+static inline void platform_fdt_dump(platform_t *platform, void *fdt) {
+  (void)platform;
+  (void)fdt;
 }
 static inline uint32_t platform_get_expected_text_checksum(void) { return 0; }
 static inline uint32_t platform_get_expected_rodata_checksum(void) { return 0; }
