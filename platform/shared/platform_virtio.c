@@ -577,12 +577,15 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
 // Helper to get device type name
 static const char *virtio_device_name(uint16_t device_id) {
   switch (device_id) {
+  case VIRTIO_ID_NET:  // MMIO device ID
   case VIRTIO_PCI_DEVICE_NET_LEGACY:
   case VIRTIO_PCI_DEVICE_NET_MODERN:
     return "VirtIO-Net";
+  case VIRTIO_ID_BLOCK:  // MMIO device ID
   case VIRTIO_PCI_DEVICE_BLOCK_LEGACY:
   case VIRTIO_PCI_DEVICE_BLOCK_MODERN:
     return "VirtIO-Block";
+  case VIRTIO_ID_RNG:  // MMIO device ID
   case VIRTIO_PCI_DEVICE_RNG_LEGACY:
   case VIRTIO_PCI_DEVICE_RNG_MODERN:
     return "VirtIO-RNG";
@@ -854,6 +857,8 @@ void platform_net_buffer_release(platform_t *platform, void *req,
 }
 
 // Helper to get VirtIO device type name from device ID
+#ifdef __x86_64__
+// x64-specific device name helper (for ACPI-discovered devices)
 static const char *virtio_mmio_device_name(uint32_t device_id) {
   switch (device_id) {
   case VIRTIO_ID_NET:
@@ -866,6 +871,7 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
     return "VirtIO-Unknown";
   }
 }
+#endif
 
 // Probe for VirtIO MMIO devices at known addresses
 // Platform must populate virtio_mmio_base in platform_t from FDT
@@ -968,7 +974,7 @@ void mmio_scan_devices(platform_t *platform) {
       continue; // No device
     }
 
-    KLOG("Found %s at MMIO 0x%llx (device ID %d)", get_virtio_device_name(device_id),
+    KLOG("Found %s at MMIO 0x%llx (device ID %d)", virtio_device_name(device_id),
          (unsigned long long)base, device_id);
     devices_found++;
 

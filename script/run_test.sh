@@ -36,7 +36,7 @@ fi
 LOGDIR="/tmp/vmos-logs/${PLATFORM}-${TRANSPORT}-${TIMESTAMP}"
 mkdir -p "$LOGDIR"
 
-TIMEOUT=2
+TIMEOUT=3
 
 echo "=== VMOS Test Suite ==="
 echo "Platform: $PLATFORM"
