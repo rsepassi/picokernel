@@ -26,10 +26,9 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
 
   // For legacy (version 1) devices, set GuestPageSize BEFORE queue setup
   if (mmio->version == 1) {
-    // Write GuestPageSize register (offset 0x028)
-    volatile void *ptr = (volatile void *)(mmio->base + 0x028);
-    volatile uint32_t *guest_page_size_reg = (volatile uint32_t *)ptr;
-    *guest_page_size_reg = 4096;
+    // Write GuestPageSize register (offset 0x028) with proper memory barrier
+    platform_mmio_write32((volatile uint32_t *)(void *)(mmio->base + 0x028),
+                          4096);
   }
 
   // Feature negotiation (RNG needs no features)
@@ -106,9 +105,8 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   }
 
   // Configure device to use legacy interrupts (not MSI-X)
-  // Direct write to avoid unaligned pointer warning
-  volatile virtio_pci_common_cfg_t *common_cfg = pci->common_cfg;
-  common_cfg->msix_config = 0xFFFF;
+  // Use platform MMIO function to ensure proper memory barrier
+  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
 
   // Setup queue
   rng->vq_memory = queue_memory;

@@ -41,21 +41,23 @@ int virtio_blk_init_mmio(virtio_blk_dev_t *blk, virtio_mmio_transport_t *mmio,
 
   // For legacy (version 1) devices, set GuestPageSize BEFORE queue setup
   if (mmio->version == 1) {
-    // Write GuestPageSize register (offset 0x028)
-    volatile void *ptr = (volatile void *)(mmio->base + 0x028);
-    volatile uint32_t *guest_page_size_reg = (volatile uint32_t *)ptr;
-    *guest_page_size_reg = 4096;
+    // Write GuestPageSize register (offset 0x028) with proper memory barrier
+    platform_mmio_write32((volatile uint32_t *)(void *)(mmio->base + 0x028),
+                          4096);
   }
 
   // Read device configuration
   volatile virtio_blk_config_t *config =
       (volatile virtio_blk_config_t *)(mmio->base + 0x100);
-  blk->capacity = config->capacity;
-  blk->sector_size = config->blk_size;
+  blk->capacity =
+      platform_mmio_read64((volatile uint64_t *)(void *)&config->capacity);
+  blk->sector_size =
+      platform_mmio_read32((volatile uint32_t *)(void *)&config->blk_size);
   if (blk->sector_size == 0) {
     blk->sector_size = 512; // Default to 512 if not specified
   }
-  blk->seg_max = config->seg_max;
+  blk->seg_max =
+      platform_mmio_read32((volatile uint32_t *)(void *)&config->seg_max);
   if (blk->seg_max == 0) {
     blk->seg_max = 1; // Default to 1 segment
   }
@@ -123,12 +125,15 @@ int virtio_blk_init_pci(virtio_blk_dev_t *blk, virtio_pci_transport_t *pci,
   // Read device configuration
   volatile virtio_blk_config_t *config =
       (volatile virtio_blk_config_t *)pci->device_cfg;
-  blk->capacity = config->capacity;
-  blk->sector_size = config->blk_size;
+  blk->capacity =
+      platform_mmio_read64((volatile uint64_t *)(void *)&config->capacity);
+  blk->sector_size =
+      platform_mmio_read32((volatile uint32_t *)(void *)&config->blk_size);
   if (blk->sector_size == 0) {
     blk->sector_size = 512; // Default to 512 if not specified
   }
-  blk->seg_max = config->seg_max;
+  blk->seg_max =
+      platform_mmio_read32((volatile uint32_t *)(void *)&config->seg_max);
   if (blk->seg_max == 0) {
     blk->seg_max = 1; // Default to 1 segment
   }
@@ -147,8 +152,8 @@ int virtio_blk_init_pci(virtio_blk_dev_t *blk, virtio_pci_transport_t *pci,
   }
 
   // Configure device to use legacy interrupts (not MSI-X)
-  volatile virtio_pci_common_cfg_t *common_cfg = pci->common_cfg;
-  common_cfg->msix_config = 0xFFFF;
+  // Use platform MMIO function to ensure proper memory barrier
+  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
 
   // Setup queue
   blk->vq_memory = queue_memory;

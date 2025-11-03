@@ -111,8 +111,8 @@ typedef struct virtio_net_dev {
   void *active_tx_requests[VIRTIO_NET_MAX_REQUESTS]; // TX packets
 
   // Track number of outstanding requests
-  volatile uint16_t outstanding_rx_requests;
-  volatile uint16_t outstanding_tx_requests;
+  uint16_t outstanding_rx_requests;
+  uint16_t outstanding_tx_requests;
 
   // Receive buffer tracking for standing work
   void *standing_recv_req; // Pointer to the standing recv request (if any)

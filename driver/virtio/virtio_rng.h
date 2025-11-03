@@ -41,7 +41,7 @@ typedef struct virtio_rng_dev {
   void *active_requests[VIRTIO_RNG_MAX_REQUESTS];
 
   // Track number of outstanding requests
-  volatile uint16_t outstanding_requests;
+  uint16_t outstanding_requests;
 
   // Kernel reference
   kernel_t *kernel;

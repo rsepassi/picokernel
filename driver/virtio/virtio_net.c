@@ -37,10 +37,9 @@ int virtio_net_init_mmio(virtio_net_dev_t *net, virtio_mmio_transport_t *mmio,
 
   // For legacy (version 1) devices, set GuestPageSize BEFORE queue setup
   if (mmio->version == 1) {
-    // Write GuestPageSize register (offset 0x028)
-    volatile void *ptr = (volatile void *)(mmio->base + 0x028);
-    volatile uint32_t *guest_page_size_reg = (volatile uint32_t *)ptr;
-    *guest_page_size_reg = 4096;
+    // Write GuestPageSize register (offset 0x028) with proper memory barrier
+    platform_mmio_write32((volatile uint32_t *)(void *)(mmio->base + 0x028),
+                          4096);
   }
 
   // Feature negotiation (request MAC feature only)
@@ -63,7 +62,8 @@ int virtio_net_init_mmio(virtio_net_dev_t *net, virtio_mmio_transport_t *mmio,
   volatile virtio_net_config_t *config =
       (volatile virtio_net_config_t *)(mmio->base + 0x100);
   for (int i = 0; i < 6; i++) {
-    net->mac_address[i] = config->mac[i];
+    net->mac_address[i] =
+        platform_mmio_read8((volatile uint8_t *)(void *)&config->mac[i]);
   }
 
   // Setup RX queue (queue 0)
@@ -150,12 +150,13 @@ int virtio_net_init_pci(virtio_net_dev_t *net, virtio_pci_transport_t *pci,
   volatile virtio_net_config_t *config =
       (volatile virtio_net_config_t *)pci->device_cfg;
   for (int i = 0; i < 6; i++) {
-    net->mac_address[i] = config->mac[i];
+    net->mac_address[i] =
+        platform_mmio_read8((volatile uint8_t *)(void *)&config->mac[i]);
   }
 
   // Configure device to use legacy interrupts (not MSI-X)
-  volatile virtio_pci_common_cfg_t *common_cfg = pci->common_cfg;
-  common_cfg->msix_config = 0xFFFF;
+  // Use platform MMIO function to ensure proper memory barrier
+  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
 
   // Setup RX queue (queue 0)
   net->rx_vq_memory = rx_queue_memory;

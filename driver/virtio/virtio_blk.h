@@ -102,7 +102,7 @@ typedef struct virtio_blk_dev {
   void *active_requests[VIRTIO_BLK_MAX_REQUESTS];
 
   // Track number of outstanding requests
-  volatile uint16_t outstanding_requests;
+  uint16_t outstanding_requests;
 
   // Kernel reference
   kernel_t *kernel;
