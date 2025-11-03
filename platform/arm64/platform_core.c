@@ -51,9 +51,9 @@ extern uint8_t stack_top[];
 #define ARM64_L1_COVERAGE (1ULL << 48)             // 256 TB (64 * 4 TB)
 
 // Index masks for page table levels
-#define ARM64_L1_MASK 0x3FULL    // 6 bits for L1 index (64 entries)
-#define ARM64_L2_MASK 0x1FFFULL  // 13 bits for L2 index (8192 entries)
-#define ARM64_L3_MASK 0x1FFFULL  // 13 bits for L3 index (8192 entries)
+#define ARM64_L1_MASK 0x3FULL   // 6 bits for L1 index (64 entries)
+#define ARM64_L2_MASK 0x1FFFULL // 13 bits for L2 index (8192 entries)
+#define ARM64_L3_MASK 0x1FFFULL // 13 bits for L3 index (8192 entries)
 
 // Page alignment mask (64KB granule)
 #define ARM64_PAGE_ALIGN_MASK 0xFFFFULL // Lower 16 bits for 64KB pages
@@ -474,7 +474,8 @@ static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
   if (!(platform->page_table_l1[l1_idx] & PTE_VALID)) {
     uint64_t *l2_table = get_l2_table(platform);
     uint64_t l2_addr = (uint64_t)l2_table;
-    KASSERT((l2_addr & ARM64_PAGE_ALIGN_MASK) == 0, "L2 table must be 64KB aligned");
+    KASSERT((l2_addr & ARM64_PAGE_ALIGN_MASK) == 0,
+            "L2 table must be 64KB aligned");
     platform->page_table_l1[l1_idx] = l2_addr | PTE_L1_TABLE;
   }
 
@@ -484,7 +485,8 @@ static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
   if (!(l2_table[l2_idx] & PTE_VALID)) {
     uint64_t *l3_table = get_l3_table(platform);
     uint64_t l3_addr = (uint64_t)l3_table;
-    KASSERT((l3_addr & ARM64_PAGE_ALIGN_MASK) == 0, "L3 table must be 64KB aligned");
+    KASSERT((l3_addr & ARM64_PAGE_ALIGN_MASK) == 0,
+            "L3 table must be 64KB aligned");
     l2_table[l2_idx] = l3_addr | PTE_L2_TABLE;
   }
 
@@ -526,9 +528,9 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
 
   // Print kernel location for debugging
   KDEBUG_LOG("Kernel location: _start=0x%llx, _end=0x%llx, size=%llu KB",
-       (unsigned long long)(uintptr_t)_start,
-       (unsigned long long)(uintptr_t)_end,
-       (unsigned long long)((uintptr_t)_end - (uintptr_t)_start) / 1024);
+             (unsigned long long)(uintptr_t)_start,
+             (unsigned long long)(uintptr_t)_end,
+             (unsigned long long)((uintptr_t)_end - (uintptr_t)_start) / 1024);
 
   // Reset allocation counters
   platform->next_l2_table = 0;
@@ -690,9 +692,9 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   int idx = 0;
   while (region != NULL) {
     KDEBUG_LOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", idx,
-         (unsigned long long)region->base,
-         (unsigned long long)(region->base + region->size),
-         (unsigned long long)(region->size / 1024 / 1024));
+               (unsigned long long)region->base,
+               (unsigned long long)(region->base + region->size),
+               (unsigned long long)(region->size / 1024 / 1024));
     region = region->next;
     idx++;
   }
@@ -700,9 +702,9 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   // Reserve DTB region
   if (platform->fdt_base != 0 && platform->fdt_size != 0) {
     KDEBUG_LOG("Reserving DTB: 0x%llx - 0x%llx (%llu KB)",
-         (unsigned long long)platform->fdt_base,
-         (unsigned long long)(platform->fdt_base + platform->fdt_size),
-         (unsigned long long)(platform->fdt_size / 1024));
+               (unsigned long long)platform->fdt_base,
+               (unsigned long long)(platform->fdt_base + platform->fdt_size),
+               (unsigned long long)(platform->fdt_size / 1024));
     subtract_reserved_region(platform->mem_regions, &head, &tail,
                              &platform->num_mem_regions, platform->fdt_base,
                              platform->fdt_size);
@@ -714,10 +716,11 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   uintptr_t kernel_base = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
   size_t kernel_size = kernel_end - kernel_base;
-  KDEBUG_LOG("Reserving kernel: 0x%llx - 0x%llx (%llu KB, includes stack and page "
-       "tables in .bss)",
-       (unsigned long long)kernel_base, (unsigned long long)kernel_end,
-       (unsigned long long)(kernel_size / 1024));
+  KDEBUG_LOG(
+      "Reserving kernel: 0x%llx - 0x%llx (%llu KB, includes stack and page "
+      "tables in .bss)",
+      (unsigned long long)kernel_base, (unsigned long long)kernel_end,
+      (unsigned long long)(kernel_size / 1024));
   subtract_reserved_region(platform->mem_regions, &head, &tail,
                            &platform->num_mem_regions, kernel_base,
                            kernel_size);

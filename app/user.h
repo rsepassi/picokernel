@@ -3,8 +3,8 @@
 #ifndef USER_H
 #define USER_H
 
-#include "kernel.h"
 #include "csprng.h"
+#include "kernel.h"
 
 // User state structure
 typedef struct {

@@ -35,8 +35,7 @@ void csprng_generate(csprng_ctx *ctx, uint8_t *output, size_t size) {
 }
 
 // Mix in new entropy
-void csprng_mix(csprng_ctx *ctx, const uint8_t *entropy,
-                size_t entropy_size) {
+void csprng_mix(csprng_ctx *ctx, const uint8_t *entropy, size_t entropy_size) {
   crypto_blake2b_ctx hash_ctx;
   uint8_t new_hash[40]; // 32 bytes for new key + 8 bytes for new nonce
 

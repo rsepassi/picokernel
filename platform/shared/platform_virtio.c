@@ -303,8 +303,8 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   uint64_t mb =
       (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
   KLOG("  sector_size=%u capacity=%llu sectors (%llu MB)",
-       platform->block_sector_size, (unsigned long long)platform->block_capacity,
-       (unsigned long long)mb);
+       platform->block_sector_size,
+       (unsigned long long)platform->block_capacity, (unsigned long long)mb);
 }
 
 // Setup VirtIO-BLK device via MMIO
@@ -353,8 +353,8 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
   uint64_t mb =
       (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
   KLOG("  sector_size=%u capacity=%llu sectors (%llu MB)",
-       platform->block_sector_size, (unsigned long long)platform->block_capacity,
-       (unsigned long long)mb);
+       platform->block_sector_size,
+       (unsigned long long)platform->block_capacity, (unsigned long long)mb);
 }
 
 // Setup VirtIO-NET device via PCI
@@ -411,10 +411,10 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
   // Log device info
-  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x",
-       platform->net_mac_address[0], platform->net_mac_address[1],
-       platform->net_mac_address[2], platform->net_mac_address[3],
-       platform->net_mac_address[4], platform->net_mac_address[5]);
+  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x", platform->net_mac_address[0],
+       platform->net_mac_address[1], platform->net_mac_address[2],
+       platform->net_mac_address[3], platform->net_mac_address[4],
+       platform->net_mac_address[5]);
 }
 
 // Setup VirtIO-NET device via MMIO
@@ -460,10 +460,10 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
   memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
   // Log device info
-  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x",
-       platform->net_mac_address[0], platform->net_mac_address[1],
-       platform->net_mac_address[2], platform->net_mac_address[3],
-       platform->net_mac_address[4], platform->net_mac_address[5]);
+  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x", platform->net_mac_address[0],
+       platform->net_mac_address[1], platform->net_mac_address[2],
+       platform->net_mac_address[3], platform->net_mac_address[4],
+       platform->net_mac_address[5]);
 }
 
 // Helper to get device type name
@@ -769,7 +769,8 @@ void mmio_scan_devices(platform_t *platform) {
     }
 
     KLOG("Found %s at MMIO 0x%llx (device ID %u)",
-         virtio_mmio_device_name(device_id), (unsigned long long)base, device_id);
+         virtio_mmio_device_name(device_id), (unsigned long long)base,
+         device_id);
 
     devices_found++;
 

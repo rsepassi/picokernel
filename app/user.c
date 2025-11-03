@@ -68,10 +68,9 @@ static uint16_t ip_checksum(const uint8_t *header, size_t len) {
 static void on_packet_sent(kwork_t *work);
 static void send_arp_reply(user_t *user, const uint8_t *target_mac,
                            const uint8_t *target_ip);
-static void handle_arp_packet(user_t *user, const uint8_t *pkt,
-                              size_t pkt_len);
-static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
-                               size_t pkt_len, const uint8_t *ip_hdr);
+static void handle_arp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len);
+static void handle_icmp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
+                               const uint8_t *ip_hdr);
 static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
                               const uint8_t *ip_hdr);
 
@@ -227,8 +226,8 @@ static void handle_arp_packet(user_t *user, const uint8_t *pkt,
 }
 
 // Handle ICMP packet (ping)
-static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
-                               size_t pkt_len, const uint8_t *ip_hdr) {
+static void handle_icmp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
+                               const uint8_t *ip_hdr) {
   // Minimum ICMP packet: 14 (Ethernet) + 20 (IP) + 8 (ICMP header) = 42 bytes
   if (pkt_len < 42) {
     KLOG("ICMP packet too small");

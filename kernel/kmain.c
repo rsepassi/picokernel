@@ -41,12 +41,12 @@ void kmain(void *fdt) {
   // Event loop
   KLOG("kloop...");
   while (1) {
-  KLOG("[KLOOP] tick");
-  kmain_tick(k, k->current_time_ms);
-  uint64_t timeout = kmain_next_delay(k);
-  if (timeout > MAX_TICK_TIMEOUT)
-    timeout = MAX_TICK_TIMEOUT;
-  KLOG("[KLOOP] wfi");
-  k->current_time_ms = platform_wfi(&k->platform, timeout);
+    KLOG("[KLOOP] tick");
+    kmain_tick(k, k->current_time_ms);
+    uint64_t timeout = kmain_next_delay(k);
+    if (timeout > MAX_TICK_TIMEOUT)
+      timeout = MAX_TICK_TIMEOUT;
+    KLOG("[KLOOP] wfi");
+    k->current_time_ms = platform_wfi(&k->platform, timeout);
   }
 }
