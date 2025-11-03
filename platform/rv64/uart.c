@@ -2,6 +2,7 @@
 // NS16550A UART for QEMU virt machine
 
 #include "platform.h"
+#include "platform_impl.h"
 #include <stdint.h>
 
 // UART base address (initialized from platform_t during boot)

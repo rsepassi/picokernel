@@ -124,6 +124,16 @@ static bool is_valid_bar_address(uint64_t addr) {
 // Prefers existing QEMU-assigned BARs, falls back to manual allocation
 static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                               uint8_t func, const char *device_name) {
+  printk("[");
+  printk(device_name);
+  printk("] Allocating BARs for ");
+  printk_dec(bus);
+  printk(":");
+  printk_dec(slot);
+  printk(".");
+  printk_dec(func);
+  printk("\n");
+
   bool any_allocated = false;
   bool any_existing = false;
 
@@ -132,12 +142,30 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     uint32_t bar_val =
         platform_pci_config_read32(platform, bus, slot, func, bar_offset);
 
+    printk("[");
+    printk(device_name);
+    printk("] BAR");
+    printk_dec(i);
+    printk(" raw value: 0x");
+    printk_hex32(bar_val);
+    printk("\n");
+
     if (bar_val == 0 || bar_val == 0xFFFFFFFF) {
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk(" not implemented\n");
       continue; // BAR not implemented
     }
 
     // Skip I/O BARs
     if (bar_val & 0x1) {
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk(" is I/O, skipping\n");
       continue;
     }
 
@@ -157,12 +185,27 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
 
     // If BAR is already assigned and valid, use it (trust QEMU/firmware)
     if (existing_addr != 0 && is_valid_bar_address(existing_addr)) {
+      printk("[");
+      printk(device_name);
+      printk("] BAR");
+      printk_dec(i);
+      printk(" already assigned at 0x");
+      printk_hex64(existing_addr);
+      printk(" (valid, keeping)\n");
       any_existing = true;
       if (is_64bit) {
         i++; // Skip next BAR (high 32 bits)
       }
       continue; // Keep existing assignment
     }
+
+    printk("[");
+    printk(device_name);
+    printk("] BAR");
+    printk_dec(i);
+    printk(" at 0x");
+    printk_hex64(existing_addr);
+    printk(" needs manual allocation\n");
 
     // BAR is unassigned or invalid - need to allocate manually
     // Temporarily disable device to probe BAR size
@@ -257,7 +300,32 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
-  // Initialize RNG device
+  // Setup MSI-X interrupt (vector 33 for RNG)
+  uint8_t cpu_vector = 33;
+  uint8_t apic_id = platform->lapic_id; // Use actual LAPIC ID
+
+  printk("[RNG] Using LAPIC ID ");
+  printk_dec(apic_id);
+  printk(" for MSI-X vector ");
+  printk_dec(cpu_vector);
+  printk("\n");
+
+  // Configure MSI-X in PCI config space
+  // Vector 0: Queue interrupts
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X in PCI
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  // Config vector: 0xFFFF (no config interrupts needed)
+  // Queue vector: 0 (MSI-X table entry 0)
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_rng, 0xFFFF, 0);
+
+  // Initialize RNG device (will configure queues with MSI-X)
   if (virtio_rng_init_pci(
           &platform->virtio_rng, &platform->virtio_pci_transport_rng,
           &platform->virtqueue_rng_memory, platform->kernel) < 0) {
@@ -270,22 +338,9 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
   platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
-  // Setup MSI-X interrupt (vector 33 for RNG)
-  uint8_t cpu_vector = 33;
-  uint8_t apic_id = 0; // BSP APIC ID
-
-  // Configure MSI-X vector 0 (first queue interrupt)
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-
-  // Disable legacy INTx interrupts
-  pci_disable_intx(platform, bus, slot, func);
-
-  // Enable MSI-X
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Register interrupt handler directly (no IOAPIC routing needed)
-  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
-                        &platform->virtio_rng);
+  // Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_rng);
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
@@ -351,7 +406,32 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
-  // Initialize BLK device
+  // Setup MSI-X interrupt (vector 34 for BLK)
+  uint8_t cpu_vector = 34;
+  uint8_t apic_id = platform->lapic_id; // Use actual LAPIC ID
+
+  printk("[BLK] Using LAPIC ID ");
+  printk_dec(apic_id);
+  printk(" for MSI-X vector ");
+  printk_dec(cpu_vector);
+  printk("\n");
+
+  // Configure MSI-X in PCI config space
+  // Vector 0: Queue interrupts
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X in PCI
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  // Config vector: 0xFFFF (no config interrupts needed)
+  // Queue vector: 0 (MSI-X table entry 0)
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_blk, 0xFFFF, 0);
+
+  // Initialize BLK device (will configure queues with MSI-X)
   if (virtio_blk_init_pci(
           &platform->virtio_blk, &platform->virtio_pci_transport_blk,
           &platform->virtqueue_blk_memory, platform->kernel) < 0) {
@@ -364,22 +444,9 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
   platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
 
-  // Setup MSI-X interrupt (vector 34 for BLK)
-  uint8_t cpu_vector = 34;
-  uint8_t apic_id = 0; // BSP APIC ID
-
-  // Configure MSI-X vector 0 (first queue interrupt)
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-
-  // Disable legacy INTx interrupts
-  pci_disable_intx(platform, bus, slot, func);
-
-  // Enable MSI-X
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Register interrupt handler directly (no IOAPIC routing needed)
-  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
-                        &platform->virtio_blk);
+  // Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_blk);
 
   // Store device info
   platform->virtio_blk_ptr = &platform->virtio_blk;
@@ -482,8 +549,36 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
+  // Setup MSI-X interrupt (vector 35 for NET)
+  uint8_t cpu_vector = 35;
+  uint8_t apic_id = platform->lapic_id; // Use actual LAPIC ID
+
+  printk("[NET] Using LAPIC ID ");
+  printk_dec(apic_id);
+  printk(" for MSI-X vector ");
+  printk_dec(cpu_vector);
+  printk("\n");
+
+  // Configure MSI-X in PCI config space
+  // Vector 0: RX queue
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  // Vector 1: TX queue (same CPU vector for both)
+  pci_configure_msix_vector(platform, bus, slot, func, 1, cpu_vector, apic_id);
+
+  // Disable legacy INTx interrupts
+  pci_disable_intx(platform, bus, slot, func);
+
+  // Enable MSI-X in PCI
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  // Config vector: 0xFFFF (no config interrupts needed)
+  // Queue vector: 0 (MSI-X table entry 0 for RX, entry 1 for TX)
+  // Note: Both queues will use entry 0's vector since we set same vector for both
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_net, 0xFFFF, 0);
+
   printk("[NET] Initializing NET device...\n");
-  // Initialize NET device
+  // Initialize NET device (will configure queues with MSI-X)
   if (virtio_net_init_pci(
           &platform->virtio_net, &platform->virtio_pci_transport_net,
           &platform->virtqueue_net_rx_memory,
@@ -500,25 +595,9 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
   platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
 
-  // Setup MSI-X interrupt (vector 35 for NET)
-  uint8_t cpu_vector = 35;
-  uint8_t apic_id = 0; // BSP APIC ID
-
-  // Configure MSI-X vectors for RX and TX queues
-  // Vector 0: RX queue
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-  // Vector 1: TX queue (same handler, same CPU vector for simplicity)
-  pci_configure_msix_vector(platform, bus, slot, func, 1, cpu_vector, apic_id);
-
-  // Disable legacy INTx interrupts
-  pci_disable_intx(platform, bus, slot, func);
-
-  // Enable MSI-X
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Register interrupt handler directly (no IOAPIC routing needed)
-  platform_irq_register(platform, cpu_vector, virtio_irq_handler,
-                        &platform->virtio_net);
+  // Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_net);
 
   printk("[NET] Storing device info...\n");
   // Store device info

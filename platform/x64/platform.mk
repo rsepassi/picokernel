@@ -20,7 +20,8 @@ PLATFORM_LDFLAGS =
 # Platform-specific sources (x64 only)
 PLATFORM_C_SRCS = uart.c devinfo.c acpi.c interrupt.c ioapic.c \
                   timer.c platform_init.c pci.c platform_hooks.c \
-                  platform_virtio.c mmio.c platform_boot_context.c \
+                  platform_boot_context.c \
                   platform_mem.c platform_mem_debug.c \
-                  platform_debug.c ../shared/platform_checksums.c
+                  platform_debug.c ../shared/platform_checksums.c \
+                  ../shared/mmio.c ../shared/platform_virtio.c
 PLATFORM_S_SRCS = boot.S isr.S

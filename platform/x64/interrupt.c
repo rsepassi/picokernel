@@ -1,9 +1,10 @@
-// x32 Interrupt Handling
+// x64 Interrupt Handling
 // IDT (Interrupt Descriptor Table) setup and interrupt handlers
 
 #include "interrupt.h"
 #include "ioapic.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stdint.h>
 
@@ -52,7 +53,7 @@ extern void isr_stub_31(void);
 // Timer interrupt (vector 32)
 extern void isr_stub_32(void);
 
-// IRQ interrupts (vectors 33-47)
+// IRQ interrupts (vectors 33-55)
 extern void isr_stub_33(void);
 extern void isr_stub_34(void);
 extern void isr_stub_35(void);
@@ -68,6 +69,14 @@ extern void isr_stub_44(void);
 extern void isr_stub_45(void);
 extern void isr_stub_46(void);
 extern void isr_stub_47(void);
+extern void isr_stub_48(void);
+extern void isr_stub_49(void);
+extern void isr_stub_50(void);
+extern void isr_stub_51(void);
+extern void isr_stub_52(void);
+extern void isr_stub_53(void);
+extern void isr_stub_54(void);
+extern void isr_stub_55(void);
 
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
@@ -181,7 +190,7 @@ void interrupt_init(platform_t *platform) {
   // Install timer interrupt handler (vector 32)
   idt_set_gate(platform->idt, 32, (uint64_t)(uintptr_t)isr_stub_32, 0x08, 0x8E);
 
-  // Install IRQ interrupt handlers (vectors 33-47)
+  // Install IRQ interrupt handlers (vectors 33-55)
   idt_set_gate(platform->idt, 33, (uint64_t)(uintptr_t)isr_stub_33, 0x08, 0x8E);
   idt_set_gate(platform->idt, 34, (uint64_t)(uintptr_t)isr_stub_34, 0x08, 0x8E);
   idt_set_gate(platform->idt, 35, (uint64_t)(uintptr_t)isr_stub_35, 0x08, 0x8E);
@@ -197,6 +206,14 @@ void interrupt_init(platform_t *platform) {
   idt_set_gate(platform->idt, 45, (uint64_t)(uintptr_t)isr_stub_45, 0x08, 0x8E);
   idt_set_gate(platform->idt, 46, (uint64_t)(uintptr_t)isr_stub_46, 0x08, 0x8E);
   idt_set_gate(platform->idt, 47, (uint64_t)(uintptr_t)isr_stub_47, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 48, (uint64_t)(uintptr_t)isr_stub_48, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 49, (uint64_t)(uintptr_t)isr_stub_49, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 50, (uint64_t)(uintptr_t)isr_stub_50, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 51, (uint64_t)(uintptr_t)isr_stub_51, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 52, (uint64_t)(uintptr_t)isr_stub_52, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 53, (uint64_t)(uintptr_t)isr_stub_53, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 54, (uint64_t)(uintptr_t)isr_stub_54, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 55, (uint64_t)(uintptr_t)isr_stub_55, 0x08, 0x8E);
 
   // Install spurious interrupt handler (vector 255)
   idt_set_gate(platform->idt, 255, (uint64_t)(uintptr_t)isr_stub_255, 0x08,
@@ -233,13 +250,37 @@ void irq_register(platform_t *platform, uint8_t irq_num,
 }
 
 // Register MMIO IRQ handler (edge-triggered, routes through IOAPIC)
-void irq_register_mmio(platform_t *platform, uint8_t irq_num,
+// irq_line: The IRQ line from the device (0-23)
+// handler/context: Handler to call when interrupt fires
+// Note: IRQ table storage is handled by caller (platform_irq_register)
+void irq_register_mmio(platform_t *platform, uint8_t irq_line,
                        void (*handler)(void *), void *context) {
-  platform->irq_table[irq_num].handler = handler;
-  platform->irq_table[irq_num].context = context;
+  (void)handler;  // Handler stored by caller in IRQ table at vector index
+  (void)context;  // Context stored by caller in IRQ table at vector index
 
-  // Route MMIO IRQ through IOAPIC (edge-triggered)
-  ioapic_route_irq(platform, irq_num, irq_num, 0);
+  // Convert IRQ line to interrupt vector
+  uint8_t vector = 32 + irq_line;
+
+  // Route IRQ line through IOAPIC to CPU vector
+  // MMIO: edge-triggered (trigger=0), active-high (polarity=0)
+  ioapic_route_irq(platform, irq_line, vector, 0, 0, 0);
+}
+
+// Register PCI IRQ handler (level-triggered, routes through IOAPIC)
+// irq_line: The IRQ line from the device (typically 16-23 for PCI)
+// handler/context: Handler to call when interrupt fires
+// Note: IRQ table storage is handled by caller (platform_irq_register)
+void irq_register_pci(platform_t *platform, uint8_t irq_line,
+                      void (*handler)(void *), void *context) {
+  (void)handler;  // Handler stored by caller in IRQ table at vector index
+  (void)context;  // Context stored by caller in IRQ table at vector index
+
+  // Convert IRQ line to interrupt vector
+  uint8_t vector = 32 + irq_line;
+
+  // Route IRQ line through IOAPIC to CPU vector
+  // PCI INTx: level-triggered (trigger=1), active-low (polarity=1)
+  ioapic_route_irq(platform, irq_line, vector, 0, 1, 1);
 }
 
 // Enable (unmask) a specific IRQ
@@ -249,10 +290,25 @@ void irq_enable(platform_t *platform, uint8_t irq_num) {
   ioapic_unmask_irq(platform, irq_num);
 }
 
+// Global variable for debugging interrupts (printk not safe in IRQ context)
+static volatile uint32_t g_last_irq_vector = 0;
+static volatile uint32_t g_irq_count = 0;
+volatile uint32_t g_msix_irq_count = 0; // Non-static for external access
+static volatile uint32_t g_self_ipi_fired = 0; // Self-IPI test flag
+
 // Dispatch IRQ (called from exception handler)
 void irq_dispatch(uint8_t irq_num) {
   if (g_current_platform == NULL) {
     return;
+  }
+
+  // Track interrupt for debugging (printk not safe here)
+  g_last_irq_vector = irq_num;
+  g_irq_count++;
+
+  // Track MSI-X interrupts (vectors 33-47)
+  if (irq_num >= 33 && irq_num <= 47) {
+    g_msix_irq_count++;
   }
 
   irq_entry_t *entry = &g_current_platform->irq_table[irq_num];
@@ -264,4 +320,53 @@ void irq_dispatch(uint8_t irq_num) {
   volatile uint32_t *lapic_eoi =
       (volatile uint32_t *)(uintptr_t)(g_current_platform->lapic_base + 0xB0);
   *lapic_eoi = 0;
+}
+
+// Self-IPI test handler (for vector 50)
+static void self_ipi_test_handler(void *context) {
+  (void)context;
+  g_self_ipi_fired = 1;
+}
+
+// Test LAPIC interrupt delivery via self-IPI
+void test_lapic_self_ipi(platform_t *platform) {
+  printk("\n[LAPIC TEST] Sending self-IPI to vector 50...\n");
+
+  // Register test handler for vector 50
+  irq_register(platform, 50, self_ipi_test_handler, NULL);
+
+  // Reset test flag
+  g_self_ipi_fired = 0;
+
+  // Send self-IPI using LAPIC ICR (Inter-processor Interrupt Command Register)
+  // ICR Low is at offset 0x300, ICR High is at offset 0x310
+  // For self-IPI: Destination = self (dest_shorthand=01b), delivery_mode=000b (fixed), vector=50
+  volatile uint32_t *lapic_icr_high = (volatile uint32_t *)(uintptr_t)(platform->lapic_base + 0x310);
+  volatile uint32_t *lapic_icr_low = (volatile uint32_t *)(uintptr_t)(platform->lapic_base + 0x300);
+
+  // Write destination (not used for self-IPI, but clear it anyway)
+  *lapic_icr_high = 0;
+
+  // Write command: dest_shorthand=01b (self), delivery_mode=000b (fixed), vector=50
+  // Bits: [18:19]=01 (self), [10:8]=000 (fixed), [7:0]=50 (vector)
+  uint32_t icr_command = (1 << 18) | 50;
+  *lapic_icr_low = icr_command;
+
+  // Wait briefly for interrupt to fire (should be nearly instant)
+  // Use a simple delay loop
+  for (volatile int i = 0; i < 1000000; i++) {
+    if (g_self_ipi_fired) {
+      break;
+    }
+  }
+
+  if (g_self_ipi_fired) {
+    printk("[LAPIC TEST] SUCCESS: Self-IPI delivered! LAPIC→CPU path is working.\n\n");
+  } else {
+    printk("[LAPIC TEST] FAILED: Self-IPI did not fire. LAPIC or IDT issue!\n\n");
+  }
+
+  // Unregister test handler
+  platform->irq_table[50].handler = NULL;
+  platform->irq_table[50].context = NULL;
 }

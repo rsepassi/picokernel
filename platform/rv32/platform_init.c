@@ -2,7 +2,9 @@
 // Sets up interrupts, timer, and device enumeration
 
 #include "interrupt.h"
+#include "mem_debug.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include "sbi.h"
 #include "timer.h"

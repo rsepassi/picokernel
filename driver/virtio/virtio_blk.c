@@ -151,9 +151,17 @@ int virtio_blk_init_pci(virtio_blk_dev_t *blk, virtio_pci_transport_t *pci,
     return -1;
   }
 
-  // Configure device to use legacy interrupts (not MSI-X)
-  // Use platform MMIO function to ensure proper memory barrier
-  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
+  // Write MSI-X config vector to device (if configured by platform code)
+  // This must be done AFTER reset but BEFORE DRIVER_OK
+  platform_mmio_write16(&pci->common_cfg->msix_config, pci->msix_config_vector);
+
+  // Verify config vector was accepted
+  uint16_t actual_config_vec = platform_mmio_read16(&pci->common_cfg->msix_config);
+  printk("[BLK] MSI-X config vector: wrote 0x");
+  printk_hex16(pci->msix_config_vector);
+  printk(" read 0x");
+  printk_hex16(actual_config_vec);
+  printk("\n");
 
   // Setup queue
   blk->vq_memory = queue_memory;

@@ -73,7 +73,8 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   }
 
   // Atomically enable interrupts and wait
-  __asm__ volatile("cpsie i; wfi" ::: "memory");
+  __asm__ volatile("wfi" ::: "memory");
+  __asm__ volatile("cpsie i" ::: "memory");
 
   // Cancel timer if it was set
   if (timeout_ms != UINT64_MAX) {

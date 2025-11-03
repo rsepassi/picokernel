@@ -186,6 +186,20 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
+#ifdef __x86_64__
+  // x64: Use MSI-X interrupts
+  uint8_t cpu_vector = 33;
+  uint8_t apic_id = 0;
+
+  // Configure MSI-X in PCI config space (vector 0: queue interrupts)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  pci_disable_intx(platform, bus, slot, func);
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_rng, 0xFFFF, 0);
+#endif
+
   // Initialize RNG device
   if (virtio_rng_init_pci(
           &platform->virtio_rng, &platform->virtio_pci_transport_rng,
@@ -199,7 +213,12 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
   platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
-  // Setup interrupt using platform-specific IRQ calculation
+#ifdef __x86_64__
+  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_rng);
+#else
+  // Other platforms: Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
   uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
@@ -207,6 +226,7 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_rng);
   platform_irq_enable(platform, irq_num);
+#endif
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
@@ -271,6 +291,20 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
+#ifdef __x86_64__
+  // x64: Use MSI-X interrupts
+  uint8_t cpu_vector = 34;
+  uint8_t apic_id = 0;
+
+  // Configure MSI-X in PCI config space (vector 0: queue interrupts)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  pci_disable_intx(platform, bus, slot, func);
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_blk, 0xFFFF, 0);
+#endif
+
   // Initialize BLK device
   if (virtio_blk_init_pci(
           &platform->virtio_blk, &platform->virtio_pci_transport_blk,
@@ -284,7 +318,12 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
   platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
 
-  // Setup interrupt using platform-specific IRQ calculation
+#ifdef __x86_64__
+  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_blk);
+#else
+  // Other platforms: Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
   uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
@@ -292,6 +331,7 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_blk);
   platform_irq_enable(platform, irq_num);
+#endif
 
   // Store device info
   platform->virtio_blk_ptr = &platform->virtio_blk;
@@ -378,6 +418,22 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
+#ifdef __x86_64__
+  // x64: Use MSI-X interrupts
+  uint8_t cpu_vector = 35;
+  uint8_t apic_id = 0;
+
+  // Configure MSI-X in PCI config space
+  // Vector 0: RX queue, Vector 1: TX queue (both use same CPU vector)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  pci_configure_msix_vector(platform, bus, slot, func, 1, cpu_vector, apic_id);
+  pci_disable_intx(platform, bus, slot, func);
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors
+  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_net, 0xFFFF, 0);
+#endif
+
   KDEBUG_LOG("[NET] Initializing NET device...");
   // Initialize NET device
   if (virtio_net_init_pci(
@@ -396,7 +452,12 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
   platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
 
-  // Setup interrupt using platform-specific IRQ calculation
+#ifdef __x86_64__
+  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
+  irq_register(platform, cpu_vector, virtio_irq_handler,
+               &platform->virtio_net);
+#else
+  // Other platforms: Setup interrupt using platform-specific IRQ calculation
   uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
                                               PCI_REG_INTERRUPT_PIN);
   uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
@@ -404,6 +465,7 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform_irq_register(platform, irq_num, virtio_irq_handler,
                         &platform->virtio_net);
   platform_irq_enable(platform, irq_num);
+#endif
 
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
@@ -548,7 +610,23 @@ void pci_scan_devices(platform_t *platform) {
 }
 
 // Process deferred interrupt work (called from ktick before callbacks)
+// External debug counters (x64 only)
+#ifdef __x86_64__
+extern volatile uint32_t g_msix_irq_count;
+#endif
+
 void platform_tick(platform_t *platform, kernel_t *k) {
+#ifdef __x86_64__
+  // Log MSI-X interrupt count for debugging (x64 only)
+  static uint32_t last_msix_count = 0;
+  if (g_msix_irq_count != last_msix_count) {
+    printk("[DEBUG] MSI-X interrupts: ");
+    printk_dec(g_msix_irq_count);
+    printk("\n");
+    last_msix_count = g_msix_irq_count;
+  }
+#endif
+
   // Check for IRQ ring overflows (dropped interrupts)
   uint32_t current_overflow = kirq_ring_overflow_count(&platform->irq_ring);
   if (current_overflow > platform->last_overflow_count) {

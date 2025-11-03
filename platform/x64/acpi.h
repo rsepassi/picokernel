@@ -101,7 +101,7 @@ struct acpi_madt_interrupt_override {
 } __attribute__((packed));
 
 // Forward declaration
-typedef struct platform_t platform_t;
+typedef struct platform platform_t;
 
 // Function declarations
 void *acpi_find_rsdp(void);

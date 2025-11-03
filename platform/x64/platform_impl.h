@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Include platform configuration (for VIRTIO_MMIO_BASE, etc.)
+#include "platform_config.h"
+
 // Include VirtIO headers for complete type definitions
 // This is needed to embed VirtIO structures in platform_t
 #include "irq_ring.h"
@@ -65,7 +68,7 @@ struct idt_ptr {
 struct acpi_rsdp;
 
 // x64 platform-specific state
-typedef struct platform_t {
+struct platform {
   uint32_t last_interrupt; // Last interrupt reason code
   kernel_t *kernel;        // Back-pointer to kernel
 
@@ -73,6 +76,7 @@ typedef struct platform_t {
   timer_callback_t timer_callback;
   uint64_t timer_start;
   uint64_t lapic_base;
+  uint8_t lapic_id; // Local APIC ID (extracted from LAPIC ID register)
   uint32_t ticks_per_ms;
   uint64_t tsc_freq; // TSC frequency in Hz (matches x32)
 
@@ -110,6 +114,9 @@ typedef struct platform_t {
   // PCI BAR allocator (for bare-metal BAR assignment)
   uint64_t pci_next_bar_addr; // Next available BAR address
 
+  // VirtIO MMIO base address (discovered from ACPI or using default)
+  uint64_t virtio_mmio_base; // VirtIO MMIO device base
+
   // VirtIO debug counters
   volatile uint32_t irq_count;
   volatile uint32_t last_isr_status;
@@ -137,9 +144,11 @@ typedef struct platform_t {
 
   // Memory management (PVH boot)
   struct hvm_start_info *pvh_info;                   // PVH start info structure
-  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  kregion_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
   int num_mem_regions;                               // Number of free regions
-} platform_t;
+  kregion_t *mem_regions_head; // Head of free region list
+  kregion_t *mem_regions_tail; // Tail of free region list
+};
 
 // x64 RNG request platform-specific fields (VirtIO)
 typedef struct {
@@ -165,3 +174,54 @@ typedef struct {
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor chain head index
 } knet_send_req_platform_t;
+
+// MMIO inline functions (x86-64 memory barriers)
+// Note: 8/16/32-bit functions are provided by platform/shared/mmio.c
+
+static inline void platform_mmio_barrier(void) {
+  __asm__ volatile("mfence" ::: "memory");
+}
+
+static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
+  uint64_t val = *addr;
+  platform_mmio_barrier();
+  return val;
+}
+
+static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+  *addr = val;
+  platform_mmio_barrier();
+}
+
+// VirtIO MMIO configuration for QEMU x64
+// Defined in platform_config.h: VIRTIO_MMIO_BASE
+#define VIRTIO_MMIO_DEVICE_STRIDE 0x200 // 512 bytes per device
+#define VIRTIO_MMIO_MAX_DEVICES 32
+#define VIRTIO_MMIO_MAGIC 0x74726976 // "virt" in little-endian
+
+// Calculate PCI IRQ number from slot and pin
+// x64 QEMU: PCI interrupts use standard INTx swizzling
+// For QEMU Q35/microvm, PCI IRQs typically start at 16
+static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
+                                                uint8_t slot, uint8_t irq_pin) {
+  (void)platform;
+  // Standard PCI IRQ swizzle: ((slot + pin - 1) % 4) + base
+  uint32_t base_irq = 16; // PCI interrupt base for x64
+  return base_irq + ((slot + irq_pin - 1) % 4);
+}
+
+// Calculate MMIO IRQ number from device index
+// x64 QEMU microvm: IRQs assigned in device creation order (RNG, Block, Net = 5, 6, 7)
+// but MMIO addresses are in a different order (Net, Block, RNG)
+// This function maps from MMIO slot index to the correct IRQ
+static inline uint32_t platform_mmio_irq_number(platform_t *platform,
+                                                int index) {
+  (void)platform;
+  // Devices appear in memory as: Net (slot 0), Block (slot 1), RNG (slot 2)
+  // But QEMU assigns IRQs in creation order: RNG=5, Block=6, Net=7
+  // So we need to map: slot 0 (Net) -> IRQ 7, slot 1 (Block) -> IRQ 6, slot 2 (RNG) -> IRQ 5
+  if (index == 0) return 7; // Net
+  if (index == 1) return 6; // Block
+  if (index == 2) return 5; // RNG
+  return 5 + index; // Fallback for other slots
+}

@@ -5,10 +5,12 @@
 #include "acpi.h"
 #include "io.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include "pvh.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 // QEMU fw_cfg interface (IOport-based for x86)
 #define FW_CFG_PORT_SEL 0x510
@@ -27,18 +29,6 @@ struct fw_cfg_file {
   char name[56];
 } __attribute__((packed));
 
-// Memory comparison function
-static int memcmp(const void *s1, const void *s2, unsigned long n) {
-  const unsigned char *p1 = (const unsigned char *)s1;
-  const unsigned char *p2 = (const unsigned char *)s2;
-
-  for (unsigned long i = 0; i < n; i++) {
-    if (p1[i] != p2[i]) {
-      return p1[i] - p2[i];
-    }
-  }
-  return 0;
-}
 
 // Calculate checksum for ACPI tables
 static uint8_t acpi_checksum(void *addr, uint32_t length) {
@@ -63,14 +53,6 @@ static uint16_t bswap16(uint16_t x) {
   return ((x & 0xFF00) >> 8) | ((x & 0x00FF) << 8);
 }
 
-// String comparison
-static int strcmp(const char *s1, const char *s2) {
-  while (*s1 && (*s1 == *s2)) {
-    s1++;
-    s2++;
-  }
-  return *(const unsigned char *)s1 - *(const unsigned char *)s2;
-}
 
 // Read data from fw_cfg
 static void fw_cfg_read_data(uint8_t *buf, uint32_t len) {
@@ -216,8 +198,50 @@ static void *fw_cfg_find_rsdp(void) {
   return (rsdp && tables_size > 0) ? rsdp : NULL;
 }
 
-// Find RSDP using fw_cfg (for QEMU -kernel boot)
-void *acpi_find_rsdp(void) { return fw_cfg_find_rsdp(); }
+// Find RSDP by searching BIOS memory regions (for traditional BIOS boot)
+static void *bios_find_rsdp(void) {
+  // Search EBDA (Extended BIOS Data Area)
+  // The EBDA base address (segment) is stored at physical address 0x40E
+  uint16_t ebda_seg = *(uint16_t *)0x40E;
+  if (ebda_seg != 0) {
+    uintptr_t ebda_base = (uintptr_t)ebda_seg << 4;
+    // Search first 1KB of EBDA
+    for (uintptr_t addr = ebda_base; addr < ebda_base + 1024; addr += 16) {
+      if (memcmp((void *)addr, "RSD PTR ", 8) == 0) {
+        struct acpi_rsdp *rsdp = (struct acpi_rsdp *)addr;
+        // Verify checksum (first 20 bytes for ACPI 1.0)
+        if (acpi_checksum(rsdp, 20) == 0) {
+          return rsdp;
+        }
+      }
+    }
+  }
+
+  // Search BIOS read-only memory area (0xE0000 - 0xFFFFF)
+  for (uintptr_t addr = 0xE0000; addr < 0x100000; addr += 16) {
+    if (memcmp((void *)addr, "RSD PTR ", 8) == 0) {
+      struct acpi_rsdp *rsdp = (struct acpi_rsdp *)addr;
+      // Verify checksum (first 20 bytes for ACPI 1.0)
+      if (acpi_checksum(rsdp, 20) == 0) {
+        return rsdp;
+      }
+    }
+  }
+
+  return NULL;
+}
+
+// Find RSDP using multiple methods (for QEMU boot)
+void *acpi_find_rsdp(void) {
+  // Try BIOS memory search first (for q35 with SeaBIOS)
+  void *rsdp = bios_find_rsdp();
+  if (rsdp) {
+    return rsdp;
+  }
+
+  // Fall back to fw_cfg (for microvm direct kernel boot)
+  return fw_cfg_find_rsdp();
+}
 
 // Find a specific ACPI table by signature
 struct acpi_table_header *acpi_find_table(platform_t *platform,

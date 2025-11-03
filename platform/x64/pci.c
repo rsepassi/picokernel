@@ -4,6 +4,7 @@
 #include "pci.h"
 #include "io.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 
 // PCI configuration space I/O ports
@@ -154,38 +155,107 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
   uint8_t table_bir = table_info & 0x7;      // BAR Index Register (bits 2:0)
   uint32_t table_offset = table_info & ~0x7; // Table offset in BAR
 
+  printk("[MSI-X] MSI-X table in BAR");
+  printk_dec(table_bir);
+  printk(" at offset 0x");
+  printk_hex32(table_offset);
+  printk("\n");
+
   // Get BAR base address
   uint64_t bar_addr =
       platform_pci_read_bar(platform, bus, slot, func, table_bir);
   if (bar_addr == 0) {
+    printk("[MSI-X] ERROR: BAR");
+    printk_dec(table_bir);
+    printk(" not configured for ");
+    printk_dec(bus);
+    printk(":");
+    printk_dec(slot);
+    printk(".");
+    printk_dec(func);
+    printk("\n");
     return; // BAR not configured
   }
 
+  // Probe BAR size by reading BAR value after writing 0xFFFFFFFF
+  uint8_t bar_reg = PCI_REG_BAR0 + (table_bir * 4);
+  uint32_t orig_bar_low = platform_pci_config_read32(platform, bus, slot, func, bar_reg);
+  platform_pci_config_write32(platform, bus, slot, func, bar_reg, 0xFFFFFFFF);
+  uint32_t size_mask = platform_pci_config_read32(platform, bus, slot, func, bar_reg);
+  platform_pci_config_write32(platform, bus, slot, func, bar_reg, orig_bar_low);
+
+  size_mask &= ~0xF; // Clear flags
+  uint32_t bar_size = (~size_mask) + 1;
+
+  printk("[MSI-X] BAR");
+  printk_dec(table_bir);
+  printk(" size: ");
+  printk_dec(bar_size);
+  printk(" bytes (0x");
+  printk_hex32(bar_size);
+  printk(")\n");
+
+  // Read MSI-X table size from Message Control register
+  uint16_t msg_control = platform_pci_config_read16(platform, bus, slot, func,
+                                                     msix_cap + MSIX_CAP_CONTROL);
+  uint16_t table_size = (msg_control & 0x7FF) + 1; // Bits 0-10 = table size minus 1
+
+  printk("[MSI-X] Table: size=");
+  printk_dec(table_size);
+  printk(" entries\n");
+
   // Calculate MSI-X table entry address
+  uint64_t entry_addr = bar_addr + table_offset + (vector_idx * sizeof(msix_table_entry_t));
   volatile msix_table_entry_t *msix_table =
       (volatile msix_table_entry_t *)(bar_addr + table_offset);
   volatile msix_table_entry_t *entry = &msix_table[vector_idx];
 
-  // DEBUG: Print MSI-X table address
-  printk("[MSIX DEBUG] bar_addr=0x");
-  printk_hex64(bar_addr);
-  printk(" table_offset=0x");
-  printk_hex32(table_offset);
-  printk(" entry_addr=0x");
-  printk_hex64((uint64_t)entry);
-  printk("\n");
+  printk("[MSI-X] Entry address: 0x");
+  printk_hex64(entry_addr);
+  printk(" (vector ");
+  printk_dec(vector_idx);
+  printk("/");
+  printk_dec(table_size);
+  printk(")\n");
 
   // MSI-X message format for x86/x64:
-  // Address: LAPIC_BASE | (destination_id << 12)
-  // Data: delivery_mode | trigger_mode | vector
-  // Use discovered LAPIC base from MSR (not hardcoded default)
-  uint32_t lapic_base_low = (uint32_t)(platform->lapic_base & 0xFFFFFFFF);
-  uint32_t msg_addr_low = lapic_base_low | ((uint32_t)apic_id << 12);
-  uint32_t msg_addr_high = (uint32_t)(platform->lapic_base >> 32);
-  uint32_t msg_data = cpu_vector; // Fixed delivery mode, edge-triggered
+  // Address: Always 0xFEE00000 (hardcoded MSI address) | (destination_id << 12)
+  // Data: [15:trigger(0=edge)][14:level][10-8:delivery(000=fixed)][7-0:vector]
+  // Note: x86 MSI/MSI-X always use 0xFEE00000 base, not actual LAPIC base
+  uint32_t msg_addr_low = 0xFEE00000 | ((uint32_t)apic_id << 12);
+  uint32_t msg_addr_high = 0;
+  // Fixed delivery mode, edge-triggered (bit 15=0, bit 14=0)
+  uint32_t msg_data = cpu_vector;
+
+  printk("[MSI-X] ");
+  printk_dec(bus);
+  printk(":");
+  printk_dec(slot);
+  printk(".");
+  printk_dec(func);
+  printk(" vec[");
+  printk_dec(vector_idx);
+  printk("]: BAR");
+  printk_dec(table_bir);
+  printk("=0x");
+  printk_hex64(bar_addr);
+  printk(" off=0x");
+  printk_hex32(table_offset);
+  printk(" -> vec");
+  printk_dec(cpu_vector);
+  printk(" addr=0x");
+  printk_hex32(msg_addr_low);
+  printk("\n");
+
+  printk("[MSI-X] Writing: addr_lo=0x");
+  printk_hex32(msg_addr_low);
+  printk(" addr_hi=0x");
+  printk_hex32(msg_addr_high);
+  printk(" data=0x");
+  printk_hex32(msg_data);
+  printk(" ctrl=0\n");
 
   // Write MSI-X table entry (with memory barriers to ensure ordering)
-  printk("[MSIX] SKIPPING table writes to test corruption hypothesis\n");
   entry->msg_addr_low = msg_addr_low;
   __asm__ volatile("mfence" ::: "memory");
   entry->msg_addr_high = msg_addr_high;
@@ -194,6 +264,22 @@ void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
   __asm__ volatile("mfence" ::: "memory");
   entry->vector_control = 0; // Unmask vector
   __asm__ volatile("mfence" ::: "memory");
+
+  // Read back MSI-X entry to verify writes
+  uint32_t rb_addr_low = entry->msg_addr_low;
+  uint32_t rb_addr_high = entry->msg_addr_high;
+  uint32_t rb_data = entry->msg_data;
+  uint32_t rb_ctrl = entry->vector_control;
+
+  printk("[MSI-X] Readback: addr_lo=0x");
+  printk_hex32(rb_addr_low);
+  printk(" addr_hi=0x");
+  printk_hex32(rb_addr_high);
+  printk(" data=0x");
+  printk_hex32(rb_data);
+  printk(" ctrl=0x");
+  printk_hex32(rb_ctrl);
+  printk("\n");
 }
 
 // Enable MSI-X for a device
@@ -204,6 +290,15 @@ void pci_enable_msix(platform_t *platform, uint8_t bus, uint8_t slot,
   if (msix_cap == 0) {
     return; // MSI-X not supported
   }
+
+  // Verify PCI Command register
+  uint16_t command =
+      platform_pci_config_read16(platform, bus, slot, func, PCI_REG_COMMAND);
+  printk("[MSI-X] PCI Command: 0x");
+  printk_hex16(command);
+  printk(" (bit 10 INT_DISABLE should be ");
+  printk((command & (1 << 10)) ? "1" : "0");
+  printk(")\n");
 
   // Read current control register
   uint16_t control = platform_pci_config_read16(platform, bus, slot, func,
@@ -216,6 +311,23 @@ void pci_enable_msix(platform_t *platform, uint8_t bus, uint8_t slot,
   // Write back control register
   platform_pci_config_write16(platform, bus, slot, func,
                               msix_cap + MSIX_CAP_CONTROL, control);
+
+  // Verify MSI-X is enabled
+  uint16_t verify = platform_pci_config_read16(platform, bus, slot, func,
+                                               msix_cap + MSIX_CAP_CONTROL);
+  printk("[MSI-X] ");
+  printk_dec(bus);
+  printk(":");
+  printk_dec(slot);
+  printk(".");
+  printk_dec(func);
+  printk(" enabled: ctrl=0x");
+  printk_hex16(verify);
+  printk(" (bit 15 Enable=");
+  printk((verify & (1 << 15)) ? "1" : "0");
+  printk(", bit 14 FnMask=");
+  printk((verify & (1 << 14)) ? "1" : "0");
+  printk(")\n");
 }
 
 // Disable legacy INTx interrupts (required when using MSI-X)

@@ -9,26 +9,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// GICv2 register offsets (QEMU virt machine)
-// Distributor base: 0x08000000
-// CPU Interface base: 0x08010000
+// GICv2 register offsets
+#define GICD_CTLR_OFF 0x000       // Distributor Control Register
+#define GICD_TYPER_OFF 0x004      // Interrupt Controller Type Register
+#define GICD_ISENABLER_OFF 0x100 // Interrupt Set-Enable Registers
+#define GICD_ICENABLER_OFF 0x180 // Interrupt Clear-Enable Registers
+#define GICD_IPRIORITYR_OFF 0x400 // Interrupt Priority Registers
+#define GICD_ITARGETSR_OFF 0x800  // Interrupt Processor Targets Registers
+#define GICD_ICFGR_OFF 0xC00      // Interrupt Configuration Registers
 
-#define GICD_BASE 0x08000000UL
-#define GICC_BASE 0x08010000UL
-
-// Distributor registers
-#define GICD_CTLR 0x000       // Distributor Control Register
-#define GICD_TYPER 0x004      // Interrupt Controller Type Register
-#define GICD_ISENABLER0 0x100 // Interrupt Set-Enable Registers
-#define GICD_IPRIORITYR 0x400 // Interrupt Priority Registers
-#define GICD_ITARGETSR 0x800  // Interrupt Processor Targets Registers
-#define GICD_ICFGR 0xC00      // Interrupt Configuration Registers
-
-// CPU Interface registers
-#define GICC_CTLR 0x000 // CPU Interface Control Register
-#define GICC_PMR 0x004  // Interrupt Priority Mask Register
-#define GICC_IAR 0x00C  // Interrupt Acknowledge Register
-#define GICC_EOIR 0x010 // End of Interrupt Register
+// CPU Interface register offsets
+#define GICC_CTLR_OFF 0x000 // CPU Interface Control Register
+#define GICC_PMR_OFF 0x004  // Interrupt Priority Mask Register
+#define GICC_IAR_OFF 0x00C  // Interrupt Acknowledge Register
+#define GICC_EOIR_OFF 0x010 // End of Interrupt Register
 
 // ARM Generic Timer virtual timer interrupt
 // PPI 11 = IRQ 27 (16 + 11)
@@ -39,20 +33,12 @@
 #define MAX_IRQS 1024
 
 // Memory-mapped register access helpers
-static inline void gicd_write32(uint32_t offset, uint32_t value) {
-  *(volatile uint32_t *)(GICD_BASE + offset) = value;
+static inline void mmio_write32(uintptr_t addr, uint32_t value) {
+  platform_mmio_write32((volatile uint32_t *)addr, value);
 }
 
-static inline uint32_t gicd_read32(uint32_t offset) {
-  return *(volatile uint32_t *)(GICD_BASE + offset);
-}
-
-static inline void gicc_write32(uint32_t offset, uint32_t value) {
-  *(volatile uint32_t *)(GICC_BASE + offset) = value;
-}
-
-static inline uint32_t gicc_read32(uint32_t offset) {
-  return *(volatile uint32_t *)(GICC_BASE + offset);
+static inline uint32_t mmio_read32(uintptr_t addr) {
+  return platform_mmio_read32((volatile uint32_t *)addr);
 }
 
 // Module-local platform pointer for interrupt_handler()
@@ -83,7 +69,11 @@ void interrupt_handler(uint32_t vector) {
 
   if (vector == 6) {
     // IRQ - read IAR to get interrupt ID
-    uint32_t iar = gicc_read32(GICC_IAR);
+    if (g_current_platform == NULL || g_current_platform->gic_cpu_base == 0) {
+      return; // GIC not initialized yet
+    }
+    uint32_t iar =
+        mmio_read32(g_current_platform->gic_cpu_base + GICC_IAR_OFF);
     uint32_t irq = iar & 0x3FF; // Interrupt ID is in bits [9:0]
 
     if (irq >= 1020) {
@@ -96,7 +86,8 @@ void interrupt_handler(uint32_t vector) {
     irq_dispatch(g_current_platform, irq);
 
     // Send EOI (End of Interrupt)
-    gicc_write32(GICC_EOIR, iar);
+    // For level-triggered interrupts, use full IAR value per GICv2 spec
+    mmio_write32(g_current_platform->gic_cpu_base + GICC_EOIR_OFF, iar);
   } else {
     // Exception - print diagnostic and halt
     printk("\n!!! EXCEPTION: ");
@@ -119,56 +110,63 @@ void interrupt_handler(uint32_t vector) {
 
 // Initialize GIC
 static void gic_init(platform_t *platform) {
-  (void)platform; // Unused parameter
-  // Disable distributor
-  gicd_write32(GICD_CTLR, 0);
+  uintptr_t gicd_base = platform->gic_dist_base;
+  uintptr_t gicc_base = platform->gic_cpu_base;
+
+  KASSERT(gicd_base != 0 && gicc_base != 0,
+          "GIC addresses must be discovered from FDT");
+
+  // Initialize GIC Distributor
+  // Disable distributor during configuration
+  mmio_write32(gicd_base + GICD_CTLR_OFF, 0);
 
   // Read number of interrupt lines
-  uint32_t typer = gicd_read32(GICD_TYPER);
+  uint32_t typer = mmio_read32(gicd_base + GICD_TYPER_OFF);
   uint32_t num_lines = ((typer & 0x1F) + 1) * 32;
 
-  printk("GIC Distributor: ");
-  printk_dec(num_lines);
-  printk(" interrupt lines\n");
+  KDEBUG_LOG("GIC Distributor: %u interrupt lines", num_lines);
 
-  // Set all interrupt priorities to a default value (0xA0)
+  // Disable all interrupts
+  for (uint32_t i = 0; i < num_lines; i += 32) {
+    mmio_write32(gicd_base + GICD_ICENABLER_OFF + (i / 32) * 4, 0xFFFFFFFF);
+  }
+
+  // Set priority for all interrupts to a default value
   for (uint32_t i = 0; i < num_lines; i += 4) {
-    gicd_write32(GICD_IPRIORITYR + i, 0xA0A0A0A0);
+    mmio_write32(gicd_base + GICD_IPRIORITYR_OFF + i, 0xA0A0A0A0);
   }
 
-  // Set all interrupts to target CPU 0
-  // Each byte controls one interrupt, value is CPU mask (bit 0 = CPU 0)
+  // Set all SPIs (IRQs 32+) to target CPU 0
+  KDEBUG_LOG("Setting SPI targets to CPU 0...");
   for (uint32_t i = 32; i < num_lines; i += 4) {
-    gicd_write32(GICD_ITARGETSR + i, 0x01010101);
+    mmio_write32(gicd_base + GICD_ITARGETSR_OFF + i, 0x01010101);
   }
 
-  // Configure all interrupts as level-sensitive (default)
-  for (uint32_t i = 0; i < num_lines / 16; i++) {
-    gicd_write32(GICD_ICFGR + (i * 4), 0);
-  }
+  // Configure timer interrupt (IRQ 27)
+  // Set target to CPU 0
+  uint32_t target_reg = gicd_base + GICD_ITARGETSR_OFF + (TIMER_IRQ / 4) * 4;
+  uint32_t target_shift = (TIMER_IRQ % 4) * 8;
+  uint32_t target_val = mmio_read32(target_reg);
+  target_val &= ~(0xFF << target_shift);
+  target_val |= (0x01 << target_shift); // Target CPU 0
+  mmio_write32(target_reg, target_val);
 
-  // Don't enable timer interrupt here - it will be registered and enabled
-  // by interrupt_init() after the GIC is ready
+  // Enable timer interrupt
+  mmio_write32(gicd_base + GICD_ISENABLER_OFF + (TIMER_IRQ / 32) * 4,
+               1 << (TIMER_IRQ % 32));
 
-  // Enable distributor (enable both Group 0 and Group 1 for non-secure mode)
-  // Bit 0: Enable Group 0, Bit 1: Enable Group 1 (if in secure mode)
-  // For non-secure mode, bit 0 enables non-secure interrupts
-  gicd_write32(GICD_CTLR, 1);
+  // Enable distributor
+  mmio_write32(gicd_base + GICD_CTLR_OFF, 1);
 
-  // Configure CPU interface
-  // Set priority mask to allow all interrupts (0xFF = lowest priority)
-  gicc_write32(GICC_PMR, 0xFF);
+  // Initialize GIC CPU Interface
+  // Set priority mask to allow all priorities
+  mmio_write32(gicc_base + GICC_PMR_OFF, 0xFF);
 
-  // Enable CPU interface for IRQ and FIQ
-  // Bit 0: Enable Group 0 interrupts
   // Enable CPU interface
-  gicc_write32(GICC_CTLR, 1);
+  mmio_write32(gicc_base + GICC_CTLR_OFF, 1);
 
-  printk("GIC initialized (Distributor at 0x");
-  printk_hex32(GICD_BASE);
-  printk(", CPU Interface at 0x");
-  printk_hex32(GICC_BASE);
-  printk(")\n");
+  KLOG("GIC initialized (Distributor at 0x%08x, CPU Interface at 0x%08x)",
+       (unsigned int)gicd_base, (unsigned int)gicc_base);
 }
 
 // External assembly function to set VBAR (Vector Base Address Register)
@@ -185,18 +183,17 @@ void interrupt_init(platform_t *platform) {
   // Set vector table address
   set_vbar((uint32_t)&vectors_start);
 
-  printk("Exception vectors installed at 0x");
-  printk_hex32((uint32_t)&vectors_start);
-  printk("\n");
+  KDEBUG_LOG("Exception vectors installed at 0x%08x",
+             (unsigned int)&vectors_start);
 
   // Initialize GIC
   gic_init(platform);
 
+  // Initialize IRQ ring
+  kirq_ring_init(&platform->irq_ring);
+
   // Register timer interrupt with platform context
   irq_register(platform, TIMER_IRQ, generic_timer_handler, platform);
-
-  // Enable timer interrupt in GIC
-  irq_enable(platform, TIMER_IRQ);
 }
 
 // Enable interrupts (clear I bit in CPSR)
@@ -219,17 +216,18 @@ void platform_interrupt_disable(platform_t *platform) {
 
 // Configure interrupt trigger type (level/edge)
 // trigger: 0 = level-sensitive, 1 = edge-triggered
-static void irq_set_trigger(uint32_t irq_num, uint32_t trigger) {
-  if (irq_num >= MAX_IRQS) {
+static void irq_set_trigger(platform_t *platform, uint32_t irq_num,
+                            uint32_t trigger) {
+  if (irq_num >= MAX_IRQS || platform->gic_dist_base == 0) {
     return;
   }
 
   // GICD_ICFGR: 2 bits per interrupt
   // Bit [2n+1]: 0 = level-sensitive, 1 = edge-triggered
   // Bit [2n]: reserved (model-specific)
-  uint32_t reg = irq_num / 16;
+  uint32_t reg = platform->gic_dist_base + GICD_ICFGR_OFF + (irq_num / 16) * 4;
   uint32_t shift = (irq_num % 16) * 2;
-  uint32_t val = gicd_read32(GICD_ICFGR + (reg * 4));
+  uint32_t val = mmio_read32(reg);
 
   // Clear the trigger bit
   val &= ~(0x2 << shift);
@@ -239,7 +237,7 @@ static void irq_set_trigger(uint32_t irq_num, uint32_t trigger) {
     val |= (0x2 << shift);
   }
 
-  gicd_write32(GICD_ICFGR + (reg * 4), val);
+  mmio_write32(reg, val);
 }
 
 // Register IRQ handler
@@ -252,34 +250,28 @@ void irq_register(platform_t *platform, uint32_t irq_num,
   platform->irq_table[irq_num].handler = handler;
   platform->irq_table[irq_num].context = context;
 
-  // VirtIO MMIO interrupts are edge-triggered (from device tree)
-  // Configure as edge-triggered for all non-timer IRQs
+  // VirtIO MMIO interrupts should be level-triggered on ARM32
+  // This differs from ARM64 but matches QEMU's ARM32 virt machine behavior
   if (irq_num != TIMER_IRQ) {
-    irq_set_trigger(irq_num, 1); // 1 = edge-triggered
+    irq_set_trigger(platform, irq_num, 0); // 0 = level-sensitive
   }
 
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" registered (");
-  printk(irq_num == TIMER_IRQ ? "level" : "edge");
-  printk("-triggered, target CPU 0)\n");
+  KDEBUG_LOG("IRQ %u registered (%s-triggered, target CPU 0)", irq_num,
+             irq_num == TIMER_IRQ ? "level" : "level");
 }
 
 // Enable (unmask) a specific IRQ in the GIC
 void irq_enable(platform_t *platform, uint32_t irq_num) {
-  (void)platform; // Not used in this function but kept for API consistency
-  if (irq_num >= MAX_IRQS) {
+  if (irq_num >= MAX_IRQS || platform->gic_dist_base == 0) {
     return;
   }
 
   // Enable interrupt in GIC Distributor
-  uint32_t reg_idx = irq_num / 32;
-  uint32_t bit_idx = irq_num % 32;
-  gicd_write32(GICD_ISENABLER0 + (reg_idx * 4), 1 << bit_idx);
+  mmio_write32(platform->gic_dist_base + GICD_ISENABLER_OFF +
+                   (irq_num / 32) * 4,
+               1 << (irq_num % 32));
 
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" enabled in GIC\n");
+  KDEBUG_LOG("IRQ %u enabled in GIC", irq_num);
 }
 
 // Dispatch IRQ to registered handler

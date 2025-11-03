@@ -3,6 +3,7 @@
 
 #include "interrupt.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include <stddef.h>
 #include <stdint.h>

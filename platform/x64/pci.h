@@ -67,8 +67,7 @@ typedef struct {
 #define PCI_BAR_TYPE_IO 1
 
 // Forward declaration
-struct platform_t;
-typedef struct platform_t platform_t;
+typedef struct platform platform_t;
 
 // MSI-X configuration functions
 uint8_t pci_find_msix_capability(platform_t *platform, uint8_t bus,

@@ -5,26 +5,7 @@
 .global _start
 
 _start:
-    // Verify we are in S-mode (Supervisor mode)
-    // Set up minimal trap handler first - if we're in S-mode and try to
-    // access M-mode CSRs, we'll trap here and continue booting
-    la t0, _mode_check_trap
-    csrw stvec, t0
-
-    // Try to read mstatus (M-mode only CSR)
-    // If in S-mode: will trap to _mode_check_trap -> continue boot (good!)
-    // If in M-mode: will succeed -> hang (bad - we require S-mode)
-    csrr t0, mstatus
-
-    // If we reach here, we're in M-mode (not S-mode) - hang with wfi
-_mode_check_hang:
-    wfi
-    j _mode_check_hang
-
-_mode_check_trap:
-    // Trapped trying to access M-mode CSR - we're in S-mode (good!)
-    // Continue normal boot process
-_boot_continue:
+    // OpenSBI boots us in S-mode, no need to check
     // Disable interrupts explicitly (clear SIE bit in sstatus)
     csrci sstatus, 0x2
 

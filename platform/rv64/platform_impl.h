@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "kconfig_platform.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,8 +15,6 @@
 #include "virtio/virtio_net.h"
 #include "virtio/virtio_pci.h"
 #include "virtio/virtio_rng.h"
-
-// Note: mem_region_t is defined in platform.h before this file is included
 
 // Forward declarations
 struct kernel;
@@ -33,22 +32,12 @@ typedef struct {
 // Maximum number of external interrupts in QEMU virt
 #define MAX_IRQS 128
 
-// rv64 platform-specific state
-struct platform_t {
+// RISC-V platform-specific state
+struct platform {
   // Timer state
   uint64_t timebase_freq; // Timebase frequency in Hz (from device tree)
   uint64_t timer_start;   // Start time counter value
   timer_callback_t timer_callback; // Timer callback function pointer
-
-  // Device addresses discovered from FDT
-  uint64_t uart_base;        // UART base address
-  uint64_t plic_base;        // PLIC base address
-  uint64_t clint_base;       // CLINT base address
-  uint64_t pci_ecam_base;    // PCI ECAM base address
-  uint64_t pci_ecam_size;    // PCI ECAM size
-  uint64_t pci_mmio_base;    // PCI MMIO range for BAR allocation
-  uint64_t pci_mmio_size;    // PCI MMIO range size
-  uint64_t virtio_mmio_base; // VirtIO MMIO device base
 
   // VirtIO device state
   virtio_pci_transport_t virtio_pci_transport_rng;   // PCI transport for RNG
@@ -91,11 +80,28 @@ struct platform_t {
   // Back-pointer to kernel
   void *kernel;
 
-  // Memory management (populated during platform_init)
-  mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Available memory regions
-  int num_mem_regions;                               // Number of regions
+  // Memory management (discovered at init)
+  kregion_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  int num_mem_regions;                            // Number of free regions
+  kregion_t *mem_regions_head;                    // Head of free region list
+  kregion_t *mem_regions_tail;                    // Tail of free region list
+  uintptr_t fdt_base; // Device tree base (to reserve)
+  size_t fdt_size;    // Device tree size (from header)
+
+  // MMIO regions (discovered from FDT for MMU mapping)
+  kregion_t mmio_regions[KCONFIG_MAX_MMIO_REGIONS]; // MMIO device regions
+  int num_mmio_regions;                              // Number of MMIO regions
+
+  // Device addresses (discovered from FDT)
+  uintptr_t uart_base;        // UART base address
+  uintptr_t plic_base;        // PLIC base address
+  uintptr_t clint_base;       // CLINT base address
+  uintptr_t pci_ecam_base;    // PCI ECAM base address
+  size_t pci_ecam_size;       // PCI ECAM size
+  uint64_t pci_mmio_base;     // PCI MMIO range for BAR allocation
+  uint64_t pci_mmio_size;     // PCI MMIO range size
+  uint64_t virtio_mmio_base;  // VirtIO MMIO device base
 };
-typedef struct platform_t platform_t;
 
 // RISC-V RNG request platform-specific fields (VirtIO)
 typedef struct {
@@ -121,6 +127,13 @@ typedef struct {
 typedef struct {
   uint16_t desc_idx; // VirtIO descriptor chain head index
 } knet_send_req_platform_t;
+
+// ============================================================================
+// Platform-specific functions
+// ============================================================================
+
+// Initialize UART with address from FDT (called after FDT parsing)
+void platform_uart_init(platform_t *platform);
 
 // ============================================================================
 // Platform-specific hooks for shared platform code
@@ -154,9 +167,6 @@ static inline void platform_mmio_write64(volatile uint64_t *addr,
   *addr = val;
   platform_mmio_barrier();
 }
-
-// Initialize UART with discovered base address from FDT
-void platform_uart_init(platform_t *platform);
 
 // Calculate PCI IRQ number from slot and pin
 // RISC-V QEMU virt: PCI interrupts use standard INTx swizzling

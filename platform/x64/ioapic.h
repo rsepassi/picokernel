@@ -23,15 +23,17 @@
 #define IOAPIC_MASK 0x00010000          // Interrupt masked
 
 // Forward declarations
-typedef struct platform_t platform_t;
+typedef struct platform platform_t;
 typedef struct ioapic_t ioapic_t;
 
 // Initialize IOAPIC (finds base address from ACPI MADT)
 void ioapic_init(platform_t *platform);
 
-// Route an IRQ to a vector (edge-triggered for MMIO devices)
+// Route an IRQ to a vector with specified trigger mode and polarity
+// trigger: 0 = edge-triggered (MMIO), 1 = level-triggered (PCI INTx)
+// polarity: 0 = active-high, 1 = active-low
 void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
-                      uint8_t apic_id);
+                      uint8_t apic_id, uint8_t trigger, uint8_t polarity);
 
 // Mask/unmask an IRQ
 void ioapic_mask_irq(platform_t *platform, uint8_t irq);

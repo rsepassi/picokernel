@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "platform_impl.h"
+#include "platform.h"
 #include <stdint.h>
 
 // Initialize GIC and exception vectors

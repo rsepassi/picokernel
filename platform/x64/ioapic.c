@@ -4,6 +4,7 @@
 #include "ioapic.h"
 #include "acpi.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 
 // IOAPIC indirect register access (memory-mapped)
@@ -96,10 +97,12 @@ static int find_ioapic_in_madt(platform_t *platform) {
 
 // Initialize IOAPIC
 void ioapic_init(platform_t *platform) {
-  // Find IOAPIC in ACPI MADT (required - no default fallback)
+  // Find IOAPIC in ACPI MADT (optional for microvm)
   if (find_ioapic_in_madt(platform) < 0) {
-    printk("FATAL: Failed to find IOAPIC in ACPI MADT\n");
-    platform_abort();
+    printk("WARNING: No IOAPIC found in ACPI MADT (expected for microvm)\n");
+    platform->ioapic.base_addr = 0;
+    platform->ioapic.max_entries = 0;
+    return;
   }
 
   // Read version and max entries
@@ -117,17 +120,23 @@ void ioapic_init(platform_t *platform) {
   printk("\n");
 }
 
-// Route an IRQ to a vector (edge-triggered for MMIO devices)
+// Route an IRQ to a vector with specified trigger mode and polarity
+// trigger: 0 = edge-triggered (MMIO), 1 = level-triggered (PCI INTx)
+// polarity: 0 = active-high, 1 = active-low
 void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
-                      uint8_t apic_id) {
-  if (irq >= platform->ioapic.max_entries) {
+                      uint8_t apic_id, uint8_t trigger, uint8_t polarity) {
+  if (platform->ioapic.base_addr == 0 || irq >= platform->ioapic.max_entries) {
     return;
   }
 
-  // Build redirection entry for edge-triggered MMIO interrupt
+  // Select trigger mode and polarity based on parameters
+  uint64_t trigger_mode = trigger ? IOAPIC_TRIGGER_LEVEL : IOAPIC_TRIGGER_EDGE;
+  uint64_t polarity_mode = polarity ? IOAPIC_INTPOL_LOW : IOAPIC_INTPOL_HIGH;
+
+  // Build redirection entry
   uint64_t entry = (uint64_t)vector | IOAPIC_DELMOD_FIXED |
-                   IOAPIC_DEST_PHYSICAL | IOAPIC_INTPOL_HIGH |
-                   IOAPIC_TRIGGER_EDGE | IOAPIC_MASK |
+                   IOAPIC_DEST_PHYSICAL | polarity_mode |
+                   trigger_mode | IOAPIC_MASK |
                    ((uint64_t)apic_id << 56);
 
   ioapic_write_redtbl(&platform->ioapic, irq, entry);
@@ -135,7 +144,7 @@ void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
 
 // Mask an IRQ
 void ioapic_mask_irq(platform_t *platform, uint8_t irq) {
-  if (irq >= platform->ioapic.max_entries) {
+  if (platform->ioapic.base_addr == 0 || irq >= platform->ioapic.max_entries) {
     return;
   }
 
@@ -146,7 +155,7 @@ void ioapic_mask_irq(platform_t *platform, uint8_t irq) {
 
 // Unmask an IRQ
 void ioapic_unmask_irq(platform_t *platform, uint8_t irq) {
-  if (irq >= platform->ioapic.max_entries) {
+  if (platform->ioapic.base_addr == 0 || irq >= platform->ioapic.max_entries) {
     return;
   }
 

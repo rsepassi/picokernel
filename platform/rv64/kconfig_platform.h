@@ -3,5 +3,6 @@
 
 #pragma once
 
-// Platform configuration options will go here
-// Currently empty - all VirtIO transports are compiled in by default
+// MMIO region discovery from FDT
+// Maximum number of MMIO regions to discover and map
+#define KCONFIG_MAX_MMIO_REGIONS 64

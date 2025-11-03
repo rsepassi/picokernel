@@ -127,8 +127,8 @@ uint64_t timer_get_frequency(platform_t *platform) {
   return platform->timer_freq_hz;
 }
 
-// Get current time in milliseconds
-uint64_t timer_get_current_time_ms(platform_t *platform) {
+// Get current time in nanoseconds
+ktime_t timer_get_current_time_ns(platform_t *platform) {
   uint64_t counter_now = read_cntvct();
   uint64_t counter_elapsed = counter_now - platform->timer_start;
 
@@ -136,9 +136,12 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
     return 0;
   }
 
-  // Convert counter ticks to milliseconds
-  // ms = (ticks * 1000) / freq_hz
-  return (counter_elapsed * 1000) / platform->timer_freq_hz;
+  // Convert counter ticks to nanoseconds
+  // ns = (ticks * 1000000000) / freq_hz
+  // Split calculation to avoid overflow
+  uint64_t sec = counter_elapsed / platform->timer_freq_hz;
+  uint64_t rem = counter_elapsed % platform->timer_freq_hz;
+  return sec * 1000000000ULL + (rem * 1000000000ULL) / platform->timer_freq_hz;
 }
 
 // Cancel any pending timer

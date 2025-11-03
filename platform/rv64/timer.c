@@ -1,10 +1,12 @@
 // RISC-V SBI Timer Driver
 // Uses SBI timer interface for one-shot timers
 
-#include "timer.h"
 #include "platform.h"
+#include "platform_impl.h"
+#include "timer.h"
 #include "printk.h"
 #include "sbi.h"
+#include "libfdt/libfdt.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -217,6 +219,24 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
   // Convert counter ticks to milliseconds
   // ms = (ticks * 1000) / freq_hz
   return (counter_elapsed * 1000) / platform->timebase_freq;
+}
+
+// Get current time in nanoseconds
+ktime_t timer_get_current_time_ns(platform_t *platform) {
+  if (!platform) {
+    return 0;
+  }
+
+  uint64_t counter_now = rdtime();
+  uint64_t counter_elapsed = counter_now - platform->timer_start;
+
+  if (platform->timebase_freq == 0) {
+    return 0;
+  }
+
+  // Convert counter ticks to nanoseconds
+  // ns = (ticks * 1000000000) / freq_hz
+  return (counter_elapsed * 1000000000ULL) / platform->timebase_freq;
 }
 
 // Cancel any pending timer

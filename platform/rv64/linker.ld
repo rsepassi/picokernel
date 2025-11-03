@@ -8,7 +8,6 @@ SECTIONS
 {
     /* Place kernel after OpenSBI firmware */
     . = 0x80200000;
-    _start = .;
 
     _text_start = .;
     .text : {

@@ -8,7 +8,7 @@
 // Parse boot context (device tree) to discover memory regions and devices
 // This is a stub implementation - full memory management not yet implemented
 // for RV32
-int platform_boot_context_parse(platform_t *platform, void *fdt) {
+static int platform_boot_context_parse(platform_t *platform, void *fdt) {
   (void)platform;
   (void)fdt;
 

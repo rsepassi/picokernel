@@ -56,12 +56,22 @@ typedef struct {
   volatile void *device_cfg; // Device-specific configuration
   uint64_t notify_base;
   uint32_t notify_off_multiplier;
+
+  // MSI-X configuration (0xFFFF = no MSI-X, use legacy INTx)
+  uint16_t msix_config_vector;  // Vector for config changes
+  uint16_t msix_queue_vector;   // Vector for queue interrupts
 } virtio_pci_transport_t;
 
 // Initialize PCI transport (parses capabilities)
 // Returns 0 on success, -1 on failure
 int virtio_pci_init(virtio_pci_transport_t *pci, struct platform *platform,
                     uint8_t bus, uint8_t slot, uint8_t func);
+
+// Configure MSI-X vectors (must be called before device init if using MSI-X)
+// config_vector: MSI-X vector for device config changes (or 0xFFFF for no MSI-X)
+// queue_vector: MSI-X vector for queue interrupts (or 0xFFFF for no MSI-X)
+void virtio_pci_set_msix_vectors(virtio_pci_transport_t *pci,
+                                  uint16_t config_vector, uint16_t queue_vector);
 
 // Device control
 void virtio_pci_reset(virtio_pci_transport_t *pci);

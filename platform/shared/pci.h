@@ -45,3 +45,17 @@
 // PCI BAR types
 #define PCI_BAR_TYPE_MMIO 0
 #define PCI_BAR_TYPE_IO 1
+
+// MSI-X configuration functions (x64-specific)
+#ifdef __x86_64__
+// Forward declaration
+typedef struct platform platform_t;
+
+void pci_configure_msix_vector(platform_t *platform, uint8_t bus, uint8_t slot,
+                                uint8_t func, uint16_t vector_idx,
+                                uint8_t cpu_vector, uint8_t apic_id);
+void pci_enable_msix(platform_t *platform, uint8_t bus, uint8_t slot,
+                     uint8_t func);
+void pci_disable_intx(platform_t *platform, uint8_t bus, uint8_t slot,
+                      uint8_t func);
+#endif

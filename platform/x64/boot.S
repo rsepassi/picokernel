@@ -110,13 +110,15 @@ _start:
     loop .Lmap_pd2
 
     // Fill PD3 (3-4GB): 512 × 2MB huge pages
+    // This range contains MMIO regions (PCI BARs, LAPIC, IOAPIC, VirtIO MMIO)
+    // Must use cache-disabled (PCD) flag for proper MSI-X interrupt delivery
     mov %ebx, %edi
     add $0x5000, %edi           // PD3 at offset 20480
     mov $0xC0000000, %eax       // Start at 3GB
     mov $512, %ecx
 .Lmap_pd3:
     mov %eax, %edx
-    or $0x83, %edx
+    or $0x93, %edx              // Present | Writable | PCD | Huge
     mov %edx, (%edi)
     add $8, %edi
     add $0x200000, %eax

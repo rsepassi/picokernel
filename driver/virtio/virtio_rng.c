@@ -78,35 +78,52 @@ int virtio_rng_init_mmio(virtio_rng_dev_t *rng, virtio_mmio_transport_t *mmio,
 // Initialize RNG with PCI transport
 int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
                         virtqueue_memory_t *queue_memory, kernel_t *kernel) {
+  printk("[RNG] Initializing PCI transport...\n");
   rng->transport = pci;
   rng->transport_type = VIRTIO_TRANSPORT_PCI;
   rng->kernel = kernel;
 
   // Reset
   virtio_pci_reset(pci);
+  printk("[RNG] Device reset\n");
 
   // Acknowledge
   virtio_pci_set_status(pci, VIRTIO_STATUS_ACKNOWLEDGE);
+  printk("[RNG] ACKNOWLEDGE status set\n");
 
   // Driver
   virtio_pci_set_status(pci, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
+  printk("[RNG] DRIVER status set\n");
 
   // Feature negotiation (RNG needs no features)
   virtio_pci_set_features(pci, 0, 0);
+  printk("[RNG] Features negotiated\n");
 
   // Features OK
   uint8_t status = VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER |
                    VIRTIO_STATUS_FEATURES_OK;
   virtio_pci_set_status(pci, status);
+  printk("[RNG] FEATURES_OK status set\n");
 
   // Verify features OK
-  if (!(virtio_pci_get_status(pci) & VIRTIO_STATUS_FEATURES_OK)) {
+  uint8_t actual_status = virtio_pci_get_status(pci);
+  printk("[RNG] Device status readback: 0x");
+  printk_hex8(actual_status);
+  printk("\n");
+  if (!(actual_status & VIRTIO_STATUS_FEATURES_OK)) {
+    printk("[RNG] ERROR: Device rejected FEATURES_OK (status=0x");
+    printk_hex8(actual_status);
+    printk(")\n");
     return -1;
   }
+  printk("[RNG] FEATURES_OK verified\n");
 
-  // Configure device to use legacy interrupts (not MSI-X)
-  // Use platform MMIO function to ensure proper memory barrier
-  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
+  // Write MSI-X config vector to device (if configured by platform code)
+  // This must be done AFTER reset but BEFORE DRIVER_OK
+  platform_mmio_write16(&pci->common_cfg->msix_config, pci->msix_config_vector);
+  printk("[RNG] MSI-X config vector written: 0x");
+  printk_hex16(pci->msix_config_vector);
+  printk("\n");
 
   // Setup queue
   rng->vq_memory = queue_memory;
@@ -114,13 +131,19 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
   if (rng->queue_size > VIRTIO_RNG_MAX_REQUESTS) {
     rng->queue_size = VIRTIO_RNG_MAX_REQUESTS;
   }
+  printk("[RNG] Queue size: ");
+  printk_dec(rng->queue_size);
+  printk("\n");
 
   virtqueue_init(&rng->vq, rng->queue_size, queue_memory);
+  printk("[RNG] Virtqueue initialized\n");
   virtio_pci_setup_queue(pci, 0, &rng->vq, rng->queue_size);
+  printk("[RNG] Queue setup complete\n");
 
   // Driver OK
   status |= VIRTIO_STATUS_DRIVER_OK;
   virtio_pci_set_status(pci, status);
+  printk("[RNG] DRIVER_OK status set\n");
 
   // Clear request tracking and outstanding counter
   rng->outstanding_requests = 0;
@@ -128,6 +151,7 @@ int virtio_rng_init_pci(virtio_rng_dev_t *rng, virtio_pci_transport_t *pci,
     rng->active_requests[i] = NULL;
   }
 
+  printk("[RNG] Initialization complete\n");
   return 0;
 }
 

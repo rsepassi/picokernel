@@ -34,7 +34,7 @@ uint32_t platform_mmio_read32(volatile uint32_t *addr) {
   return val;
 }
 
-uint64_t platform_mmio_read64(volatile uint64_t *addr) {
+__attribute__((unused)) uint64_t platform_mmio_read64(volatile uint64_t *addr) {
   uint64_t val = *addr;
   mmio_barrier();
   return val;
@@ -58,7 +58,7 @@ void platform_mmio_write32(volatile uint32_t *addr, uint32_t val) {
   mmio_barrier();
 }
 
-void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
+__attribute__((unused)) void platform_mmio_write64(volatile uint64_t *addr, uint64_t val) {
   *addr = val;
   mmio_barrier();
 }

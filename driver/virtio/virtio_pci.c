@@ -5,6 +5,7 @@
 #include "kbase.h"
 #include "platform.h"
 #include "platform_impl.h"
+#include "printk.h"
 
 // PCI config space register offsets
 #define PCI_REG_COMMAND 0x04
@@ -15,10 +16,19 @@
 
 // Find and map VirtIO PCI capabilities
 static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
+  printk("[VIRTIO_PCI] Finding capabilities for ");
+  printk_dec(pci->bus);
+  printk(":");
+  printk_dec(pci->slot);
+  printk(".");
+  printk_dec(pci->func);
+  printk("\n");
+
   uint8_t cap_offset = platform_pci_config_read8(
       pci->platform, pci->bus, pci->slot, pci->func, PCI_REG_CAPABILITIES);
 
   if (cap_offset == 0) {
+    printk("[VIRTIO_PCI] ERROR: No capabilities list\n");
     return -1; // No capabilities
   }
 
@@ -40,18 +50,46 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
                                                 pci->slot, pci->func, bar);
 
       if (cfg_type == VIRTIO_PCI_CAP_COMMON_CFG) {
+        printk("[VIRTIO_PCI] COMMON_CFG in BAR");
+        printk_dec(bar);
+        printk(" at offset 0x");
+        printk_hex32(offset);
+        printk(" (BAR base=0x");
+        printk_hex64(bar_base);
+        printk(")\n");
         pci->common_cfg =
             (volatile virtio_pci_common_cfg_t *)(bar_base + offset);
         found_common = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
+        printk("[VIRTIO_PCI] NOTIFY_CFG in BAR");
+        printk_dec(bar);
+        printk(" at offset 0x");
+        printk_hex32(offset);
+        printk(" (BAR base=0x");
+        printk_hex64(bar_base);
+        printk(")\n");
         pci->notify_base = bar_base + offset;
         pci->notify_off_multiplier = platform_pci_config_read32(
             pci->platform, pci->bus, pci->slot, pci->func, cap_offset + 16);
         found_notify = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_ISR_CFG) {
+        printk("[VIRTIO_PCI] ISR_CFG in BAR");
+        printk_dec(bar);
+        printk(" at offset 0x");
+        printk_hex32(offset);
+        printk(" (BAR base=0x");
+        printk_hex64(bar_base);
+        printk(")\n");
         pci->isr_status = (volatile uint8_t *)(bar_base + offset);
         found_isr = 1;
       } else if (cfg_type == VIRTIO_PCI_CAP_DEVICE_CFG) {
+        printk("[VIRTIO_PCI] DEVICE_CFG in BAR");
+        printk_dec(bar);
+        printk(" at offset 0x");
+        printk_hex32(offset);
+        printk(" (BAR base=0x");
+        printk_hex64(bar_base);
+        printk(")\n");
         pci->device_cfg = (volatile void *)(bar_base + offset);
         found_device = 1;
       }
@@ -64,6 +102,13 @@ static int virtio_find_capabilities(virtio_pci_transport_t *pci) {
 
   // Device config is optional (RNG doesn't have it)
   (void)found_device;
+  printk("[VIRTIO_PCI] Found capabilities: common=");
+  printk_dec(found_common);
+  printk(" notify=");
+  printk_dec(found_notify);
+  printk(" isr=");
+  printk_dec(found_isr);
+  printk("\n");
   return (found_common && found_notify && found_isr) ? 0 : -1;
 }
 
@@ -74,6 +119,10 @@ int virtio_pci_init(virtio_pci_transport_t *pci, platform_t *platform,
   pci->bus = bus;
   pci->slot = slot;
   pci->func = func;
+
+  // Default to no MSI-X (legacy INTx mode)
+  pci->msix_config_vector = 0xFFFF;
+  pci->msix_queue_vector = 0xFFFF;
 
   // Enable PCI bus mastering and memory access, disable interrupt masking
   uint16_t command =
@@ -89,6 +138,17 @@ int virtio_pci_init(virtio_pci_transport_t *pci, platform_t *platform,
   }
 
   return 0;
+}
+
+// Configure MSI-X vectors
+// Note: This only stores the values in the transport struct.
+// The actual device registers (msix_config and queue_msix_vector) must be
+// written AFTER device reset but BEFORE DRIVER_OK status.
+void virtio_pci_set_msix_vectors(virtio_pci_transport_t *pci,
+                                  uint16_t config_vector,
+                                  uint16_t queue_vector) {
+  pci->msix_config_vector = config_vector;
+  pci->msix_queue_vector = queue_vector;
 }
 
 // Reset device
@@ -148,8 +208,24 @@ int virtio_pci_setup_queue(virtio_pci_transport_t *pci, uint16_t queue_idx,
       platform_mmio_read16(&pci->common_cfg->queue_notify_off);
   vq->notify_offset = notify_off;
 
-  // Disable MSI-X for this queue (use legacy interrupts)
-  platform_mmio_write16(&pci->common_cfg->queue_msix_vector, 0xFFFF);
+  // Configure MSI-X vector for this queue
+  // Use the MSI-X vector number configured via virtio_pci_set_msix_vectors()
+  // If MSI-X is disabled (0xFFFF), use legacy INTx
+  platform_mmio_write16(&pci->common_cfg->queue_msix_vector,
+                        pci->msix_queue_vector);
+
+  // Verify that device accepted the MSI-X vector
+  uint16_t actual_vector = platform_mmio_read16(&pci->common_cfg->queue_msix_vector);
+  printk("[VIRTIO_PCI] Queue ");
+  printk_dec(queue_idx);
+  printk(": wrote msix_vec=0x");
+  printk_hex16(pci->msix_queue_vector);
+  printk(" read=0x");
+  printk_hex16(actual_vector);
+  if (actual_vector == 0xFFFF) {
+    printk(" [REJECTED]");
+  }
+  printk("\n");
 
   // Enable queue
   platform_mmio_write16(&pci->common_cfg->queue_enable, 1);

@@ -1,14 +1,15 @@
-// x32 Device Enumeration using ACPI
-// Uses ACPI tables to dynamically discover devices on x32 platforms
-// x32 version uses 32-bit pointers
+// x64 Device Enumeration using ACPI
+// Uses ACPI tables to dynamically discover devices on x64 platforms
 
 #include "acpi.h"
+#include "mem_debug.h"
 #include "platform.h"
 #include "platform_impl.h"
 #include "printk.h"
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef KDEBUG
 // Parse and display MADT (Multiple APIC Description Table)
 static void parse_madt(platform_t *platform) {
   struct acpi_table_header *header = acpi_find_table(platform, ACPI_SIG_MADT);
@@ -105,13 +106,13 @@ static void parse_madt(platform_t *platform) {
   printk(" I/O APIC(s)\n\n");
 }
 
-// x32-specific device enumeration
+// x64-specific device enumeration
 // This function provides the same interface as platform_fdt_dump() but
-// enumerates x32 devices using ACPI tables
+// enumerates x64 devices using ACPI tables
 void platform_fdt_dump(platform_t *platform, void *fdt) {
-  (void)fdt; // Unused for x32
+  (void)fdt; // Unused for x64
 
-  printk("=== x32 Device Enumeration ===\n\n");
+  printk("=== x64 Device Enumeration ===\n\n");
 
   // Dump available ACPI tables (ACPI already initialized in platform_init)
   acpi_dump_tables(platform);
@@ -121,7 +122,7 @@ void platform_fdt_dump(platform_t *platform, void *fdt) {
   // Get platform information from ACPI
   struct acpi_table_header *fadt = acpi_find_table(platform, ACPI_SIG_FADT);
 
-  printk("Platform: x86_64-x32 (ILP32)\n");
+  printk("Platform: x86_64\n");
   printk("Device Discovery: ACPI\n");
   if (fadt != NULL) {
     printk("Firmware OEM: ");
@@ -136,10 +137,10 @@ void platform_fdt_dump(platform_t *platform, void *fdt) {
   printk("\n");
 
   printk("/ {\n");
-  printk("  model = \"x86_64-x32\";\n");
-  printk("  compatible = \"intel,x86_64-x32\";\n");
-  printk("  #address-cells = <1>;\n");
-  printk("  #size-cells = <1>;\n\n");
+  printk("  model = \"x86_64\";\n");
+  printk("  compatible = \"intel,x86_64\";\n");
+  printk("  #address-cells = <2>;\n");
+  printk("  #size-cells = <2>;\n\n");
 
   // Parse MADT for CPU and interrupt controller information
   parse_madt(platform);
@@ -148,17 +149,13 @@ void platform_fdt_dump(platform_t *platform, void *fdt) {
   uint64_t ram_size = fw_cfg_read_ram_size();
   printk("  memory@0 {\n");
   printk("    device_type = \"memory\";\n");
-  printk("    reg = <0x00000000 ");
-  // x32: For simplicity, just print the lower 32 bits if > 4GB
-  if (ram_size > 0xFFFFFFFF) {
-    printk_hex32(0xFFFFFFFF);
-    printk(">; // RAM size limited to 4GB in x32\n");
-  } else {
-    printk_hex32((uint32_t)ram_size);
-    printk(">; // ");
-    printk_dec((uint32_t)(ram_size / (1024 * 1024)));
-    printk(" MiB\n");
-  }
+  printk("    reg = <0x00000000 0x00000000 0x");
+  printk_hex32((uint32_t)(ram_size >> 32));
+  printk(" ");
+  printk_hex32((uint32_t)ram_size);
+  printk(">; // ");
+  printk_dec((uint32_t)(ram_size / (1024 * 1024)));
+  printk(" MiB\n");
   printk("  };\n\n");
 
   // Serial console - detect from I/O port probe
@@ -190,3 +187,4 @@ void platform_fdt_dump(platform_t *platform, void *fdt) {
 
   printk("=== End Device Enumeration ===\n\n");
 }
+#endif

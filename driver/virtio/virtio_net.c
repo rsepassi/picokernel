@@ -154,9 +154,9 @@ int virtio_net_init_pci(virtio_net_dev_t *net, virtio_pci_transport_t *pci,
         platform_mmio_read8((volatile uint8_t *)(void *)&config->mac[i]);
   }
 
-  // Configure device to use legacy interrupts (not MSI-X)
-  // Use platform MMIO function to ensure proper memory barrier
-  platform_mmio_write16(&pci->common_cfg->msix_config, 0xFFFF);
+  // Write MSI-X config vector to device (if configured by platform code)
+  // This must be done AFTER reset but BEFORE DRIVER_OK
+  platform_mmio_write16(&pci->common_cfg->msix_config, pci->msix_config_vector);
 
   // Setup RX queue (queue 0)
   net->rx_vq_memory = rx_queue_memory;

@@ -4,8 +4,10 @@
 
 #include "platform_mem.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 #include "pvh.h"
+#include "kbase.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -72,10 +74,10 @@ static void print_reserved_regions(uintptr_t kernel_start, uintptr_t kernel_end,
 
 // Subtract a reserved region from available regions (may split regions)
 // Returns: number of output regions
-static int subtract_reserved_region(const mem_region_t *input_regions,
+static int subtract_reserved_region(const kregion_t *input_regions,
                                     int num_input, uintptr_t reserved_base,
                                     uintptr_t reserved_end,
-                                    mem_region_t *output_regions,
+                                    kregion_t *output_regions,
                                     int max_output) {
   int num_output = 0;
 
@@ -149,8 +151,8 @@ static int subtract_reserved_region(const mem_region_t *input_regions,
 }
 
 // Build free region list by subtracting all reserved areas from RAM regions
-static int build_free_regions(const mem_region_t *ram_regions,
-                              int num_ram_regions, mem_region_t *free_regions,
+static int build_free_regions(const kregion_t *ram_regions,
+                              int num_ram_regions, kregion_t *free_regions,
                               int max_free_regions,
                               struct hvm_start_info *pvh_info) {
   // Get reserved region boundaries (using linker symbols)
@@ -166,8 +168,8 @@ static int build_free_regions(const mem_region_t *ram_regions,
                          pt_start, pt_end, pvh_info);
 
   // Use double buffering to avoid overwriting input during subtraction
-  mem_region_t temp_regions_a[KCONFIG_MAX_MEM_REGIONS];
-  mem_region_t temp_regions_b[KCONFIG_MAX_MEM_REGIONS];
+  kregion_t temp_regions_a[KCONFIG_MAX_MEM_REGIONS];
+  kregion_t temp_regions_b[KCONFIG_MAX_MEM_REGIONS];
 
   // Copy initial RAM regions to temp buffer
   int num_regions = num_ram_regions;
@@ -233,7 +235,7 @@ int platform_mem_init(platform_t *platform, void *pvh_info_ptr) {
   }
 
   // Save a copy of the RAM regions before subtraction
-  mem_region_t ram_regions[KCONFIG_MAX_MEM_REGIONS];
+  kregion_t ram_regions[KCONFIG_MAX_MEM_REGIONS];
   int num_ram_regions = platform->num_mem_regions;
   for (int i = 0; i < num_ram_regions; i++) {
     ram_regions[i] = platform->mem_regions[i];
@@ -269,13 +271,28 @@ int platform_mem_init(platform_t *platform, void *pvh_info_ptr) {
   printk_dec(total_free >> 20);
   printk(" MiB\n");
 
+  // Build linked list from array for platform_mem_regions() API
+  if (platform->num_mem_regions > 0) {
+    platform->mem_regions_head = &platform->mem_regions[0];
+    platform->mem_regions_tail = &platform->mem_regions[platform->num_mem_regions - 1];
+
+    for (int i = 0; i < platform->num_mem_regions; i++) {
+      platform->mem_regions[i].prev = (i > 0) ? &platform->mem_regions[i - 1] : NULL;
+      platform->mem_regions[i].next = (i < platform->num_mem_regions - 1) ? &platform->mem_regions[i + 1] : NULL;
+    }
+  } else {
+    platform->mem_regions_head = NULL;
+    platform->mem_regions_tail = NULL;
+  }
+
   return 0;
 }
 
 // API: Get memory regions for kernel allocators
-mem_region_list_t platform_mem_regions(platform_t *platform) {
-  mem_region_list_t list;
-  list.regions = platform->mem_regions;
+kregions_t platform_mem_regions(platform_t *platform) {
+  kregions_t list;
+  list.head = platform->mem_regions_head;
+  list.tail = platform->mem_regions_tail;
   list.count = platform->num_mem_regions;
   return list;
 }

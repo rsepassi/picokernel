@@ -5,8 +5,9 @@
 
 #include <stdint.h>
 
-// Forward declaration (must match platform_impl.h exactly)
-typedef struct platform_t platform_t;
+// Forward declaration (complete type defined in platform_impl.h)
+struct platform;
+typedef struct platform platform_t;
 
 // Initialize interrupt handling (set up trap vector)
 void interrupt_init(platform_t *platform);

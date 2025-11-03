@@ -1,4 +1,6 @@
 * Memory mapping
+* Rm x64 ifdefs
+* pragma once
 * Reliability
 * Memory debugging
 * smp 2; setup thread-local (kernel, platform, ...)

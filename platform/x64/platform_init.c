@@ -36,6 +36,10 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // Initialize PCI BAR allocator to match boot.S PCI MMIO mapping
   platform->pci_next_bar_addr = PCI_MMIO_BASE;
 
+  // Initialize VirtIO MMIO base
+  // QEMU microvm places first VirtIO MMIO device at base + 0x2A00
+  platform->virtio_mmio_base = VIRTIO_MMIO_BASE + 0x2A00;
+
   // Initialize IRQ ring buffer
   kirq_ring_init(&platform->irq_ring);
   platform->last_overflow_count = 0;
@@ -82,15 +86,23 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // Dump page tables for debugging
   platform_mem_dump_pagetables();
 
+  // Test LAPIC interrupt delivery (self-IPI test)
+  // Note: This runs BEFORE interrupts are enabled globally, so we need to
+  // temporarily enable them for the test
+  printk("\n");
+  __asm__ volatile("sti"); // Enable interrupts for test
+  test_lapic_self_ipi(platform);
+  __asm__ volatile("cli"); // Disable interrupts again
+
   printk("\nPlatform initialization complete.\n\n");
 }
 
 // Wait for interrupt with timeout
-// timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
-// Returns: current time in milliseconds
-uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
-  if (timeout_ms == 0) {
-    return timer_get_current_time_ms(platform);
+// timeout_ns: timeout in nanoseconds (UINT64_MAX = wait forever)
+// Returns: current time in nanoseconds
+ktime_t platform_wfi(platform_t *platform, ktime_t timeout_ns) {
+  if (timeout_ns == 0) {
+    return timer_get_current_time_ns(platform);
   }
 
   // Disable interrupts atomically
@@ -99,11 +111,14 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   // Check if an interrupt has already fired (ring buffer not empty)
   if (!kirq_ring_is_empty(&platform->irq_ring)) {
     __asm__ volatile("sti");
-    return timer_get_current_time_ms(platform);
+    return timer_get_current_time_ns(platform);
   }
 
   // Set timeout timer if not UINT64_MAX
-  if (timeout_ms != UINT64_MAX) {
+  if (timeout_ns != UINT64_MAX) {
+    // Convert nanoseconds to milliseconds for timer_set_oneshot_ms
+    uint64_t timeout_ms = timeout_ns / 1000000ULL;
+    // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
     timer_set_oneshot_ms(platform, timeout_ms_32, wfi_timer_callback);
@@ -113,11 +128,11 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   __asm__ volatile("sti; hlt");
 
   // Cancel timer if it was set
-  if (timeout_ms != UINT64_MAX) {
+  if (timeout_ns != UINT64_MAX) {
     timer_cancel(platform);
   }
 
-  return timer_get_current_time_ms(platform);
+  return timer_get_current_time_ns(platform);
 }
 
 // Abort system execution (shutdown/halt)

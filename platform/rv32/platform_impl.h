@@ -32,7 +32,7 @@ typedef struct {
 #define MAX_IRQS 128
 
 // rv32 platform-specific state
-typedef struct platform_t {
+struct platform {
   // Timer state
   uint64_t timer_freq;             // Timer frequency in Hz (from devicetree)
   uint64_t ticks_per_ms;           // Precomputed ticks per millisecond
@@ -80,7 +80,17 @@ typedef struct platform_t {
 
   // Back-pointer to kernel
   kernel_t *kernel;
-} platform_t;
+
+  // Device addresses (discovered from FDT)
+  uint32_t uart_base;        // UART base address
+  uint32_t plic_base;        // PLIC base address
+  uint32_t clint_base;       // CLINT base address
+  uint32_t pci_ecam_base;    // PCI ECAM base address
+  uint32_t pci_ecam_size;    // PCI ECAM size
+  uint32_t pci_mmio_base;    // PCI MMIO base address
+  uint32_t pci_mmio_size;    // PCI MMIO size
+  uint32_t virtio_mmio_base; // VirtIO MMIO base address
+};
 
 // RV32 RNG request platform-specific fields (VirtIO)
 typedef struct {

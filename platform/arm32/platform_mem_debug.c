@@ -3,6 +3,7 @@
 
 #include "mem_debug.h"
 #include "platform.h"
+#include "platform_impl.h"
 #include "printk.h"
 
 #ifdef KDEBUG

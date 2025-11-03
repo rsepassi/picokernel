@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "kconfig_platform.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -31,8 +32,14 @@ typedef struct {
 // Maximum number of IRQs supported by GICv2
 #define MAX_IRQS 1024
 
+// MMIO region descriptor (discovered from FDT)
+typedef struct {
+  uint32_t base; // Physical base address (32-bit for ARM32)
+  uint32_t size; // Size in bytes (aligned to ARM32_PAGE_SIZE)
+} mmio_region_t;
+
 // ARM32 platform-specific state
-typedef struct platform_t {
+struct platform {
   // Timer state
   uint64_t timer_freq_hz;          // Timer frequency from CNTFRQ
   uint64_t timer_start;            // Start time counter value
@@ -78,7 +85,41 @@ typedef struct platform_t {
 
   // Back-pointer to kernel
   void *kernel;
-} platform_t;
+
+  // Memory management (discovered at init)
+  kregion_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
+  int num_mem_regions;                            // Number of free regions
+  kregion_t *mem_regions_head;                    // Head of free region list
+  kregion_t *mem_regions_tail;                    // Tail of free region list
+  uintptr_t fdt_base; // Device tree base (to reserve)
+  size_t fdt_size;    // Device tree size (from header)
+
+  // MMIO regions (discovered from FDT)
+  mmio_region_t mmio_regions[KCONFIG_MAX_MMIO_REGIONS]; // Device MMIO regions
+  int num_mmio_regions; // Number of MMIO regions
+
+  // Interrupt controller addresses (discovered from FDT)
+  uintptr_t gic_dist_base; // GIC Distributor base address
+  uintptr_t gic_cpu_base;  // GIC CPU Interface base address
+
+  // UART address (discovered from FDT)
+  uintptr_t uart_base; // UART base address
+
+  // PCI ECAM address (discovered from FDT, if USE_PCI=1)
+  uintptr_t pci_ecam_base;   // PCI ECAM base address
+  size_t pci_ecam_size;      // PCI ECAM size
+  uint64_t pci_mmio_base;    // PCI MMIO range for BAR allocation
+  uint64_t pci_mmio_size;    // PCI MMIO range size
+  uint64_t virtio_mmio_base; // VirtIO MMIO device base
+
+  // MMU page tables (ARM32 with 4KB pages, short-descriptor format)
+  // L1 table: 4096 entries, each covers 1 MB
+  uint32_t page_table_l1[4096] __attribute__((aligned(16384)));
+  // Pool of L2 tables (each covers 1 MB, 256 entries per table)
+  uint32_t page_table_l2_pool[KCONFIG_ARM32_MAX_L2_TABLES][256]
+      __attribute__((aligned(1024)));
+  int next_l2_table; // L2 allocation counter
+};
 
 // ARM32 RNG request platform-specific fields (VirtIO)
 typedef struct {
@@ -106,6 +147,13 @@ typedef struct {
 } knet_send_req_platform_t;
 
 // ============================================================================
+// Platform-specific functions
+// ============================================================================
+
+// Initialize UART with address from FDT (called after FDT parsing)
+void platform_uart_init(platform_t *platform);
+
+// ============================================================================
 // Platform-specific hooks for shared platform code
 // ============================================================================
 
@@ -125,22 +173,24 @@ static inline void platform_mmio_barrier(void) {
   __asm__ volatile("dsb sy" ::: "memory");
 }
 
-// 64-bit MMIO read for ARM32 (direct read with barrier)
+// 64-bit MMIO read for ARM32 (split into two 32-bit reads)
 static inline uint64_t platform_mmio_read64(volatile uint64_t *addr) {
-  uint64_t val = *addr;
+  // On ARM32, 64-bit reads must be done as two 32-bit reads
+  // Read low word first, then high word
+  volatile uint32_t *addr32 = (volatile uint32_t *)addr;
+  uint32_t low = addr32[0];
+  uint32_t high = addr32[1];
   platform_mmio_barrier();
-  return val;
+  return ((uint64_t)high << 32) | low;
 }
 
-// 64-bit MMIO write for ARM32 (split into two 32-bit writes with double
-// barrier)
+// 64-bit MMIO write for ARM32 (split into two 32-bit writes)
 static inline void platform_mmio_write64(volatile uint64_t *addr,
                                          uint64_t val) {
-  // Write as two 32-bit stores (low first, then high) for compatibility
-  // This ensures proper ordering on 32-bit architectures
+  // On ARM32, 64-bit writes must be done as two 32-bit writes
+  // Write low word first, then high word
   volatile uint32_t *addr32 = (volatile uint32_t *)addr;
-  addr32[0] = (uint32_t)(val & 0xFFFFFFFF);
-  platform_mmio_barrier();
+  addr32[0] = (uint32_t)val;
   addr32[1] = (uint32_t)(val >> 32);
   platform_mmio_barrier();
 }

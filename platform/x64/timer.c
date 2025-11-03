@@ -1,4 +1,4 @@
-// x32 Local APIC Timer Driver
+// x64 Local APIC Timer Driver
 // Uses the CPU's Local APIC timer for one-shot and periodic timers
 
 #include "timer.h"
@@ -68,7 +68,7 @@ void lapic_timer_handler(platform_t *platform) {
 
   // Call the user's callback if set
   if (platform->timer_callback) {
-    void (*cb)(void) = platform->timer_callback;
+    timer_callback_t cb = platform->timer_callback;
     platform->timer_callback = NULL; // Clear before calling
     cb();
   }
@@ -207,12 +207,22 @@ void timer_init(platform_t *platform) {
   // Bit 8 = APIC Software Enable, Vector = 0xFF
   lapic_write(platform->lapic_base, LAPIC_SPURIOUS, 0x1FF);
 
+  // Set Task Priority Register to 0 to accept all interrupt priorities
+  // TPR at offset 0x80 - setting to 0 allows all interrupts
+  lapic_write(platform->lapic_base, 0x80, 0);
+
   // Set timer divisor to 16 (bits 0-1 = 0b11, bits 2-3 = 0b00)
   lapic_write(platform->lapic_base, LAPIC_TIMER_DIV, 0x3);
 
-  printk("Local APIC timer initialized (LAPIC ID 0x");
-  printk_hex32(lapic_read(platform->lapic_base, LAPIC_ID));
-  printk(")\n");
+  // Read and extract LAPIC ID (bits 24-31 of LAPIC ID register)
+  uint32_t lapic_id_reg = lapic_read(platform->lapic_base, LAPIC_ID);
+  platform->lapic_id = (lapic_id_reg >> 24) & 0xFF;
+
+  printk("Local APIC timer initialized (LAPIC ID ");
+  printk_dec(platform->lapic_id);
+  printk(" [reg=0x");
+  printk_hex32(lapic_id_reg);
+  printk("])\n");
 
   // Calibrate timer frequency
   calibrate_timer(platform);
@@ -231,7 +241,7 @@ void timer_init(platform_t *platform) {
 
 // Set a one-shot timer to fire after specified milliseconds
 void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
-                          void (*callback)(void)) {
+                          timer_callback_t callback) {
   if (callback == NULL) {
     printk("timer_set_oneshot_ms: NULL callback\n");
     return;
@@ -258,8 +268,8 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
   printk(" ticks)\n");
 }
 
-// Get current time in milliseconds
-uint64_t timer_get_current_time_ms(platform_t *platform) {
+// Get current time in nanoseconds
+ktime_t timer_get_current_time_ns(platform_t *platform) {
   uint64_t tsc_now = read_tsc();
   uint64_t tsc_elapsed = tsc_now - platform->timer_start;
 
@@ -267,9 +277,12 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
     return 0;
   }
 
-  // Convert TSC ticks to milliseconds
-  // ms = (ticks * 1000) / freq_hz
-  return (tsc_elapsed * 1000) / platform->tsc_freq;
+  // Convert TSC ticks to nanoseconds
+  // ns = (ticks * 1000000000) / freq_hz
+  // Split calculation to avoid overflow
+  uint64_t sec = tsc_elapsed / platform->tsc_freq;
+  uint64_t rem = tsc_elapsed % platform->tsc_freq;
+  return sec * 1000000000ULL + (rem * 1000000000ULL) / platform->tsc_freq;
 }
 
 // Cancel any pending timer

@@ -3,6 +3,8 @@
 
 #include "kconfig.h"
 #include "platform.h"
+#include "platform_impl.h"
+#include "platform_mem.h"
 #include "printk.h"
 #include "pvh.h"
 #include <stddef.h>
