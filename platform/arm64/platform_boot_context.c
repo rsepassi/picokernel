@@ -19,27 +19,25 @@ static int str_equal(const char *a, const char *b) {
 
 // Parse FDT boot context and populate platform with memory regions
 // Returns: 0 on success, negative on error
-int platform_boot_context_parse(platform_t *platform, void *boot_context) {
+void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   void *fdt = boot_context;
 
   printk("platform_boot_context_parse: ARM64 FDT parsing\n");
 
-  if (!fdt || !platform) {
-    printk("platform_boot_context_parse: NULL parameter\n");
-    return -1;
-  }
+  KASSERT(fdt, "FDT is NULL");
 
   printk("platform_boot_context_parse: reading header\n");
   struct fdt_header *header = (struct fdt_header *)fdt;
 
+  platform->fdt_base = (uintptr_t)fdt;
+  platform->fdt_size = kbe32toh(header->totalsize);
+  KLOG("FDT size: %u bytes", platform->fdt_size);
+  // Align size up to 64KB page boundary
+  platform->fdt_size = KALIGN(platform->fdt_size, ARM64_PAGE_SIZE);
+
   // Verify magic number
   uint32_t magic = kbe32toh(header->magic);
-  if (magic != FDT_MAGIC) {
-    printk("Error: Invalid FDT magic: 0x");
-    printk_hex32(magic);
-    printk("\n");
-    return -1;
-  }
+  KASSERT(magic == FDT_MAGIC, "Invalid FDT magic");
 
   // Initialize platform memory regions
   platform->num_mem_regions = 0;
@@ -49,6 +47,8 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   platform->gic_cpu_base = 0;
   platform->pci_ecam_base = 0;
   platform->pci_ecam_size = 0;
+  platform->pci_mmio_base = 0;
+  platform->pci_mmio_size = 0;
 
   // Stack-local storage for UART address (used for debug logging only)
   uintptr_t uart_base = 0;
@@ -138,6 +138,38 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
         // Check for PCI ECAM
         if (str_equal(compat, "pci-host-ecam-generic")) {
           in_pci_node = 1;
+        }
+      }
+
+      // Parse PCI ranges property to get MMIO region for BAR allocation
+      if (in_pci_node && str_equal(prop_name, "ranges") && len >= 28) {
+        // PCI ranges format: (child-addr, parent-addr, size) tuples
+        // Each tuple is 7 cells (28 bytes):
+        //   3 cells (12 bytes): child address (flags + addr)
+        //   2 cells (8 bytes):  parent address
+        //   2 cells (8 bytes):  size
+        // We want 64-bit MMIO space (flags = 0x03000000 or 0x02000000)
+        for (uint32_t offset = 0; offset + 28 <= len; offset += 28) {
+          const volatile uint8_t *entry = value + offset;
+
+          // Read child address flags (first 4 bytes)
+          uint32_t flags = kload_be32(entry);
+
+          // Read parent address (bytes 12-19)
+          uint64_t parent_addr = kload_be64(entry + 12);
+
+          // Read size (bytes 20-27)
+          uint64_t size = kload_be64(entry + 20);
+
+          // Check if this is 64-bit MMIO space (0x03000000 = prefetchable,
+          // 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit non-prefetchable)
+          uint32_t space_code = flags & 0x03000000;
+          if (space_code == 0x03000000 || space_code == 0x02000000) {
+            // Found MMIO space - use this for BAR allocation
+            platform->pci_mmio_base = parent_addr;
+            platform->pci_mmio_size = size;
+            break; // Use the first MMIO range we find
+          }
         }
       }
 
@@ -245,7 +277,15 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     printk(")\n");
   }
 
-  printk("\n");
+  if (platform->pci_mmio_base != 0) {
+    printk("  PCI MMIO: 0x");
+    printk_hex64(platform->pci_mmio_base);
+    printk(" (size: 0x");
+    printk_hex64(platform->pci_mmio_size);
+    printk(")\n");
+  }
+  platform->pci_next_bar_addr =
+      platform->pci_mmio_base ? platform->pci_mmio_base : 0x10000000;
 
-  return 0;
+  printk("\n");
 }

@@ -225,6 +225,8 @@ void interrupt_init(platform_t *platform) {
   // Store platform pointer for exception handler access
   g_current_platform = platform;
 
+  kirq_ring_init(&platform->irq_ring);
+
   // Install exception vector table
   // VBAR_EL1 holds the base address of exception vectors
   uint64_t vbar = (uint64_t)exception_vector_table;

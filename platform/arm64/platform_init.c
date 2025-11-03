@@ -11,44 +11,45 @@
 // Forward declarations
 extern void pci_scan_devices(platform_t *platform);
 extern void mmio_scan_devices(platform_t *platform);
-extern void platform_mem_init(platform_t *platform, void *fdt);
+extern void platform_mem_init(platform_t *platform);
 
 static void wfi_timer_callback(void) {}
 
 // Platform-specific initialization
 void platform_init(platform_t *platform, void *fdt, void *kernel) {
+  KLOG("arm64 init...");
+
+  memset(platform, 0, sizeof(platform_t));
   platform->kernel = kernel;
-  platform->virtio_rng_ptr = NULL;
-  platform->virtio_blk_ptr = NULL;
-  platform->has_block_device = false;
 
-  // Initialize PCI BAR allocator (QEMU ARM64 virt: PCI MMIO at 0x10000000)
-  platform->pci_next_bar_addr = 0x10000000;
+  KLOG("fdt parse...");
+  platform_boot_context_parse(platform, fdt);
+  KLOG("fdt parse ok");
 
-  // Initialize IRQ ring buffer
-  kirq_ring_init(&platform->irq_ring);
-  platform->last_overflow_count = 0;
+  KLOG("uart init...");
+  platform_uart_init(platform);
+  KLOG("uart init ok");
 
-  printk("Initializing ARM64 platform...\n");
+  KLOG("mem init...");
+  platform_mem_init(platform);
+  KLOG("mem init ok");
 
-  // Initialize memory management and MMU (must be done early)
-  platform_mem_init(platform, fdt);
-
-  // Initialize exception vectors and GIC
+  KLOG("interrupt init...");
   interrupt_init(platform);
+  KLOG("interrupt init ok");
 
-  // Initialize ARM Generic Timer
+  KLOG("timer init...");
   timer_init(platform);
+  KLOG("timer init ok");
 
-  // Parse and display device tree
-  platform_fdt_dump(platform, fdt);
+  KDEBUG_VALIDATE(platform_fdt_dump(platform, fdt));
 
-  // Scan for VirtIO devices via both PCI and MMIO
-  printk("=== Starting VirtIO Device Scan ===\n\n");
+  KLOG("virtio scan...");
   pci_scan_devices(platform);
   mmio_scan_devices(platform);
+  KLOG("virtio scan ok");
 
-  printk("\nPlatform initialization complete.\n\n");
+  KLOG("arm64 init ok");
 }
 
 // Wait for interrupt with timeout

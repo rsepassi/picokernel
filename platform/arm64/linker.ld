@@ -21,7 +21,6 @@ SECTIONS
         _text_end = .;
     }
 
-    /* Align rodata to cache line boundary */
     . = ALIGN(64);
     .rodata : {
         _rodata_start = .;
@@ -29,7 +28,6 @@ SECTIONS
         _rodata_end = .;
     }
 
-    /* Align data section to cache line boundary */
     . = ALIGN(64);
     .data : {
         _data_start = .;
@@ -37,18 +35,14 @@ SECTIONS
         _data_end = .;
     }
 
-    /* Align BSS section to cache line boundary */
     . = ALIGN(64);
     .bss : {
-        __bss_start = .;
         _bss_start = .;
         *(.bss*)
         *(COMMON)
 
-        /* Stack symbols defined in boot.S but declared here for reference */
         /* stack_bottom and stack_top are in the .bss section (boot.S) */
 
-        __bss_end = .;
         _bss_end = .;
     }
 

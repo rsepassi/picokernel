@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 // Forward declarations
-void platform_mem_init(platform_t *platform, void *fdt);
+void platform_mem_init(platform_t *platform);
 void platform_mem_debug_mmu(void);
 void platform_uart_init(platform_t *platform);
 
@@ -17,6 +17,25 @@ extern uint8_t _start[];
 extern uint8_t _end[];
 extern uint8_t stack_bottom[];
 extern uint8_t stack_top[];
+
+// ARM64 MMU address breakdown (64KB granule, 48-bit VA)
+// Bits [15:0]:  Page offset (64 KB)
+// Bits [28:16]: L3 table index (13 bits, 8192 entries)
+// Bits [41:29]: L2 table index (13 bits, 8192 entries)
+// Bits [47:42]: L1 table index (6 bits, 64 entries)
+#define ARM64_L3_SHIFT 16
+#define ARM64_L2_SHIFT 29
+#define ARM64_L1_SHIFT 42
+
+#define ARM64_L3_COVERAGE (1ULL << ARM64_L2_SHIFT) // 512 MB (8192 * 64 KB)
+#define ARM64_L2_COVERAGE (1ULL << ARM64_L1_SHIFT) // 4 TB (8192 * 512 MB)
+#define ARM64_L1_COVERAGE (1ULL << 48)             // 256 TB (64 * 4 TB)
+
+#define ARM64_L1_INDEX(addr) (((addr) >> ARM64_L1_SHIFT) & 0x3F) // Bits [47:42]
+#define ARM64_L2_INDEX(addr)                                                   \
+  (((addr) >> ARM64_L2_SHIFT) & 0x1FFF) // Bits [41:29]
+#define ARM64_L3_INDEX(addr)                                                   \
+  (((addr) >> ARM64_L3_SHIFT) & 0x1FFF) // Bits [28:16]
 
 // Page table entry flags for ARM64 with 64KB granule
 #define PTE_VALID (1UL << 0)    // Valid entry
@@ -38,23 +57,12 @@ extern uint8_t stack_top[];
   (PTE_VALID | PTE_PAGE | PTE_AF | PTE_DEVICE | PTE_OUTER_SH)
 
 // ARM64 with 64KB granule, 48-bit address space:
-// - L1 table: 8192 entries, each covers 512 GB
-// - L2 table: 8192 entries, each covers 64 MB
-// - L3 table: 8192 entries, each covers 64 KB
+// - L1 table: 64 entries, each covers ARM64_L2_COVERAGE (4 TB)
+// - L2 table: 8192 entries, each covers ARM64_L3_COVERAGE (512 MB)
+// - L3 table: 8192 entries, each covers ARM64_PAGE_SIZE (64 KB)
 
-// Allocate page tables statically in BSS (aligned to 64KB)
-static uint64_t page_table_l1[8192] __attribute__((aligned(65536)));
-static uint64_t page_table_l2_ram[8192] __attribute__((aligned(65536)));
-static uint64_t page_table_l2_mmio[8192] __attribute__((aligned(65536)));
-static uint64_t page_table_l3_ram[8][8192]
-    __attribute__((aligned(65536))); // 8 L3 tables for RAM
-static uint64_t page_table_l3_mmio[2][8192]
-    __attribute__((aligned(65536))); // 2 L3 tables for MMIO
-
-// Additional page tables for PCI ECAM in high memory (above 4GB)
-static uint64_t page_table_l2_pci[8192] __attribute__((aligned(65536)));
-static uint64_t page_table_l3_pci[2][8192]
-    __attribute__((aligned(65536))); // 2 L3 tables for PCI ECAM (128 MB)
+// Page tables are now allocated in platform_t structure
+// Pool sizes defined in kconfig_platform.h
 
 // Helper: Check if two memory ranges overlap
 static int ranges_overlap(uintptr_t base1, size_t size1, uintptr_t base2,
@@ -120,161 +128,113 @@ static void subtract_reserved_region(mem_region_t *regions, int *count,
   }
 }
 
+// Helper: Allocate an L2 table from the pool
+static uint64_t *get_l2_table(platform_t *platform) {
+  KASSERT(platform->next_l2_table < KCONFIG_ARM64_MAX_L2_TABLES,
+          "L2 table pool exhausted");
+  return platform->page_table_l2_pool[platform->next_l2_table++];
+}
+
+// Helper: Allocate an L3 table from the pool
+static uint64_t *get_l3_table(platform_t *platform) {
+  KASSERT(platform->next_l3_table < KCONFIG_ARM64_MAX_L3_TABLES,
+          "L3 table pool exhausted");
+  return platform->page_table_l3_pool[platform->next_l3_table++];
+}
+
+// Helper: Map a single 64KB page with identity mapping
+static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
+  uint32_t l1_idx = ARM64_L1_INDEX(phys_addr);
+  uint32_t l2_idx = ARM64_L2_INDEX(phys_addr);
+  uint32_t l3_idx = ARM64_L3_INDEX(phys_addr);
+
+  // Ensure L1 → L2 mapping exists
+  if (!(platform->page_table_l1[l1_idx] & PTE_VALID)) {
+    uint64_t *l2_table = get_l2_table(platform);
+    platform->page_table_l1[l1_idx] = ((uint64_t)l2_table) | PTE_L1_TABLE;
+  }
+
+  // Get L2 table and ensure L2 → L3 mapping exists
+  uint64_t *l2_table =
+      (uint64_t *)(platform->page_table_l1[l1_idx] & ~0xFFFFULL);
+  if (!(l2_table[l2_idx] & PTE_VALID)) {
+    uint64_t *l3_table = get_l3_table(platform);
+    l2_table[l2_idx] = ((uint64_t)l3_table) | PTE_L2_TABLE;
+  }
+
+  // Map the page in L3 table
+  uint64_t *l3_table = (uint64_t *)(l2_table[l2_idx] & ~0xFFFFULL);
+  l3_table[l3_idx] = phys_addr | flags;
+}
+
+// Helper: Map a range of pages with the same flags
+static void map_page_range(platform_t *platform, uint64_t base, uint64_t size,
+                           uint64_t flags) {
+  for (uint64_t addr = base; addr < base + size; addr += ARM64_PAGE_SIZE) {
+    map_page(platform, addr, flags);
+  }
+}
+
 // Setup MMU with identity mapping
-static void setup_mmu(platform_t *platform) {
-  printk("Setting up ARM64 MMU (64KB pages, 48-bit address space)...\n");
+// NOTE: noinline to prevent load hoisting from platform after
+// platform_boot_context_parse
+__attribute__((noinline)) static void setup_mmu(platform_t *platform) {
+  KLOG("Setting up ARM64 MMU (64KB pages, 48-bit address space)...");
+
+  // Reset allocation counters
+  platform->next_l2_table = 0;
+  platform->next_l3_table = 0;
 
   // Clear all page tables
-  for (int i = 0; i < 8192; i++) {
-    page_table_l1[i] = 0;
-    page_table_l2_ram[i] = 0;
-    page_table_l2_mmio[i] = 0;
-    page_table_l2_pci[i] = 0;
+  for (int i = 0; i < 64; i++) {
+    platform->page_table_l1[i] = 0;
   }
-  for (int t = 0; t < 8; t++) {
+  for (int t = 0; t < KCONFIG_ARM64_MAX_L2_TABLES; t++) {
     for (int i = 0; i < 8192; i++) {
-      page_table_l3_ram[t][i] = 0;
+      platform->page_table_l2_pool[t][i] = 0;
     }
   }
-  for (int t = 0; t < 2; t++) {
+  for (int t = 0; t < KCONFIG_ARM64_MAX_L3_TABLES; t++) {
     for (int i = 0; i < 8192; i++) {
-      page_table_l3_mmio[t][i] = 0;
-      page_table_l3_pci[t][i] = 0;
+      platform->page_table_l3_pool[t][i] = 0;
     }
   }
 
-  // L1 table setup (covers entire address space)
-  // Entry 0: 0x00000000-0x7FFFFFFFFF (first 512 GB) - points to L2 MMIO
-  // Entry for RAM region (0x40000000 is in first 512 GB)
-  page_table_l1[0] = ((uint64_t)page_table_l2_mmio) | PTE_L1_TABLE;
-
-  // L2 MMIO table: map low MMIO regions and RAM
-  // Each L2 entry covers 64 MB
-  // 0x00000000-0x0FFFFFFF: MMIO regions (GIC, UART, VirtIO)
-  // 0x40000000-0x4FFFFFFF: RAM region
-
-  // Map MMIO region (0x08000000-0x0FFFFFFF, 128 MB) using L3 tables
-  // L2 index = address / 64MB
-  // 0x08000000 / 0x4000000 = 2
-  // 0x0C000000 / 0x4000000 = 3
-  page_table_l2_mmio[2] =
-      ((uint64_t)page_table_l3_mmio[0]) | PTE_L2_TABLE; // 0x08000000-0x0BFFFFFF
-  page_table_l2_mmio[3] =
-      ((uint64_t)page_table_l3_mmio[1]) | PTE_L2_TABLE; // 0x0C000000-0x0FFFFFFF
-
-  // Map RAM region (0x40000000-0x47FFFFFF, 128 MB) using L3 tables
-  // 0x40000000 / 0x4000000 = 16
-  // 0x44000000 / 0x4000000 = 17
-  for (int i = 0; i < 8 && (16 + i) < 8192; i++) {
-    page_table_l2_mmio[16 + i] =
-        ((uint64_t)page_table_l3_ram[i]) | PTE_L2_TABLE;
-  }
-
-  // L3 MMIO tables: Map MMIO devices (64KB pages)
+  // Map MMIO region (0x08000000-0x0FFFFFFF, 128 MB)
   // Note: These MMIO ranges are hardcoded for the QEMU virt machine layout.
-  // While the exact device addresses are discovered from FDT (and used by drivers),
-  // we map a broad MMIO region here to ensure all devices are accessible before
-  // device discovery completes. This is a common pattern in embedded systems.
-  // Typical devices in this range:
+  // While the exact device addresses are discovered from FDT (and used by
+  // drivers), we map a broad MMIO region here to ensure all devices are
+  // accessible before device discovery completes. This is a common pattern in
+  // embedded systems. Typical devices in this range:
   //   GIC: 0x08000000-0x08020000 (128 KB)
   //   UART: 0x09000000-0x09001000 (4 KB)
   //   VirtIO MMIO: 0x0A000000-0x0A200000 (2 MB)
+  KLOG("Mapping MMIO region: 0x08000000 - 0x0FFFFFFF (128 MB)");
+  map_page_range(platform, 0x08000000ULL, 0x08000000ULL, PTE_L3_PAGE_DEVICE);
 
-  // Map 0x08000000-0x0BFFFFFF (64 MB) as device memory
-  for (int i = 0; i < 1024; i++) { // 64 MB / 64 KB = 1024 pages
-    uint64_t page_addr = 0x08000000ULL + (i * 0x10000ULL);
-    page_table_l3_mmio[0][i] = page_addr | PTE_L3_PAGE_DEVICE;
-  }
-
-  // Map 0x0C000000-0x0FFFFFFF (64 MB) as device memory
-  for (int i = 0; i < 1024; i++) {
-    uint64_t page_addr = 0x0C000000ULL + (i * 0x10000ULL);
-    page_table_l3_mmio[1][i] = page_addr | PTE_L3_PAGE_DEVICE;
-  }
-
-  // L3 RAM tables: Map discovered RAM regions as normal memory
   // Map all discovered RAM regions
   for (int r = 0; r < platform->num_mem_regions; r++) {
-    uintptr_t ram_base = platform->mem_regions[r].base;
-    size_t ram_size = platform->mem_regions[r].size;
+    uint64_t ram_base = platform->mem_regions[r].base;
+    uint64_t ram_size = platform->mem_regions[r].size;
 
-    printk("  Mapping RAM region ");
-    printk_dec(r);
-    printk(": 0x");
-    printk_hex64(ram_base);
-    printk(" - 0x");
-    printk_hex64(ram_base + ram_size);
-    printk(" (");
-    printk_dec(ram_size / 1024 / 1024);
-    printk(" MB)\n");
+    KLOG("Mapping RAM region %d: 0x%llx - 0x%llx (%llu MB)", r,
+         (unsigned long long)ram_base,
+         (unsigned long long)(ram_base + ram_size),
+         (unsigned long long)(ram_size / 1024 / 1024));
 
-    // Map RAM as 64KB pages
-    uintptr_t addr = ram_base;
-    while (addr < ram_base + ram_size) {
-      // Calculate L2 and L3 indices
-      uint32_t l2_idx = (addr >> 26) & 0x1FFF; // Bits [38:26]
-      uint32_t l3_idx = (addr >> 16) & 0x1FFF; // Bits [25:16]
-
-      // Determine which L3 table to use (0-7 for RAM region starting at
-      // 0x40000000)
-      int l3_table_num = l2_idx - 16; // RAM starts at L2 index 16
-
-      if (l3_table_num >= 0 && l3_table_num < 8) {
-        page_table_l3_ram[l3_table_num][l3_idx] = addr | PTE_L3_PAGE_NORMAL;
-      }
-
-      addr += 0x10000; // Next 64KB page
-    }
+    map_page_range(platform, ram_base, ram_size, PTE_L3_PAGE_NORMAL);
   }
 
   // Map PCI ECAM region if discovered from FDT
   if (platform->pci_ecam_base != 0 && platform->pci_ecam_size != 0) {
-    printk("  Mapping PCI ECAM: 0x");
-    printk_hex64(platform->pci_ecam_base);
-    printk(" - 0x");
-    printk_hex64(platform->pci_ecam_base + platform->pci_ecam_size);
-    printk(" (");
-    printk_dec(platform->pci_ecam_size / 1024 / 1024);
-    printk(" MB)\n");
+    KLOG(
+        "Mapping PCI ECAM: 0x%llx - 0x%llx (%llu MB)",
+        (unsigned long long)platform->pci_ecam_base,
+        (unsigned long long)(platform->pci_ecam_base + platform->pci_ecam_size),
+        (unsigned long long)(platform->pci_ecam_size / 1024 / 1024));
 
-    // PCI ECAM is typically at 0x4010000000 (256 GB offset)
-    // Calculate L1 index: bits [47:39] = (0x4010000000 >> 39) & 0x1FFF
-    uint32_t l1_idx = (platform->pci_ecam_base >> 39) & 0x1FFF;
-
-    // Set up L1 entry to point to L2 PCI table
-    page_table_l1[l1_idx] = ((uint64_t)page_table_l2_pci) | PTE_L1_TABLE;
-
-    // Calculate L2 index for PCI ECAM base within the 512 GB region
-    // Each L2 entry covers 64 MB
-    uint32_t l2_base_idx = (platform->pci_ecam_base >> 26) & 0x1FFF;
-
-    // Set up L2 entries to point to L3 PCI tables
-    // Map up to 128 MB (2 L3 tables)
-    page_table_l2_pci[l2_base_idx] =
-        ((uint64_t)page_table_l3_pci[0]) | PTE_L2_TABLE;
-    page_table_l2_pci[l2_base_idx + 1] =
-        ((uint64_t)page_table_l3_pci[1]) | PTE_L2_TABLE;
-
-    // Map PCI ECAM as device memory (64KB pages)
-    uintptr_t addr = platform->pci_ecam_base;
-    uintptr_t end = platform->pci_ecam_base + platform->pci_ecam_size;
-
-    // Cap at 128 MB (our L3 table allocation)
-    if (end > platform->pci_ecam_base + (128 * 1024 * 1024)) {
-      end = platform->pci_ecam_base + (128 * 1024 * 1024);
-    }
-
-    while (addr < end) {
-      // Calculate L2 and L3 indices within the mapped region
-      uint32_t l2_idx = ((addr >> 26) & 0x1FFF) - l2_base_idx;
-      uint32_t l3_idx = (addr >> 16) & 0x1FFF;
-
-      if (l2_idx < 2) { // We have 2 L3 tables
-        page_table_l3_pci[l2_idx][l3_idx] = addr | PTE_L3_PAGE_DEVICE;
-      }
-
-      addr += 0x10000; // Next 64KB page
-    }
+    map_page_range(platform, platform->pci_ecam_base, platform->pci_ecam_size,
+                   PTE_L3_PAGE_DEVICE);
   }
 
   // Configure MAIR_EL1 (Memory Attribute Indirection Register)
@@ -302,17 +262,37 @@ static void setup_mmu(platform_t *platform) {
   __asm__ volatile("msr tcr_el1, %0" : : "r"(tcr));
 
   // Set TTBR0_EL1 (Translation Table Base Register)
-  uint64_t ttbr0 = (uint64_t)page_table_l1;
+  uint64_t ttbr0 = (uint64_t)platform->page_table_l1;
   __asm__ volatile("msr ttbr0_el1, %0" : : "r"(ttbr0));
 
-  // Ensure all writes are complete
+  // Flush writes
+  __asm__ volatile("dsb sy" ::: "memory");
+
+  // Invalidate TLB (Translation Lookaside Buffer) - ensure clean state
+  __asm__ volatile("tlbi vmalle1" ::: "memory");
+  __asm__ volatile("dsb sy" ::: "memory");
+
+  // Invalidate entire instruction cache to PoU (Point of Unification)
+  // Ensures no stale instructions are cached with wrong translations
+  __asm__ volatile("ic iallu" ::: "memory");
   __asm__ volatile("dsb sy" ::: "memory");
   __asm__ volatile("isb" ::: "memory");
 
-  // Enable MMU via SCTLR_EL1
+  KLOG("x");
+
+  // Check if MMU is already enabled
   uint64_t sctlr;
   __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-  sctlr |= (1 << 0);  // M: Enable MMU
+  KASSERT((sctlr & 1) == 0, "MMU expected to be disabled");
+
+  KLOG("x");
+  // First enable just the MMU
+  sctlr |= (1 << 0); // M: Enable MMU
+  __asm__ volatile("msr sctlr_el1, %0" : : "r"(sctlr));
+  KLOG("x");
+  __asm__ volatile("isb" ::: "memory");
+
+  // Now enable caches
   sctlr |= (1 << 2);  // C: Enable data cache
   sctlr |= (1 << 12); // I: Enable instruction cache
   __asm__ volatile("msr sctlr_el1, %0" : : "r"(sctlr));
@@ -322,32 +302,27 @@ static void setup_mmu(platform_t *platform) {
 }
 
 // Build free memory region list
-// initial_num_regions: number of discovered RAM regions (before subtraction)
-static void build_free_regions(platform_t *platform, int initial_num_regions) {
+// NOTE: noinline to prevent load hoisting from platform after
+// platform_boot_context_parse
+__attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   printk("\nBuilding free memory region list...\n");
+  int initial_num_regions = platform->num_mem_regions;
 
   // Print initial discovered RAM regions
   for (int i = 0; i < initial_num_regions; i++) {
-    printk("  Initial region ");
-    printk_dec(i);
-    printk(": 0x");
-    printk_hex64(platform->mem_regions[i].base);
-    printk(" - 0x");
-    printk_hex64(platform->mem_regions[i].base + platform->mem_regions[i].size);
-    printk(" (");
-    printk_dec(platform->mem_regions[i].size / 1024 / 1024);
-    printk(" MB)\n");
+    KLOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", i,
+         (unsigned long long)platform->mem_regions[i].base,
+         (unsigned long long)(platform->mem_regions[i].base +
+                              platform->mem_regions[i].size),
+         (unsigned long long)(platform->mem_regions[i].size / 1024 / 1024));
   }
 
   // Reserve DTB region
   if (platform->fdt_base != 0 && platform->fdt_size != 0) {
-    printk("  Reserving DTB: 0x");
-    printk_hex64(platform->fdt_base);
-    printk(" - 0x");
-    printk_hex64(platform->fdt_base + platform->fdt_size);
-    printk(" (");
-    printk_dec(platform->fdt_size / 1024);
-    printk(" KB)\n");
+    KLOG("Reserving DTB: 0x%llx - 0x%llx (%llu KB)",
+         (unsigned long long)platform->fdt_base,
+         (unsigned long long)(platform->fdt_base + platform->fdt_size),
+         (unsigned long long)(platform->fdt_size / 1024));
     subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
                              platform->fdt_base, platform->fdt_size);
   }
@@ -358,13 +333,10 @@ static void build_free_regions(platform_t *platform, int initial_num_regions) {
   uintptr_t kernel_base = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
   size_t kernel_size = kernel_end - kernel_base;
-  printk("  Reserving kernel: 0x");
-  printk_hex64(kernel_base);
-  printk(" - 0x");
-  printk_hex64(kernel_end);
-  printk(" (");
-  printk_dec(kernel_size / 1024);
-  printk(" KB, includes stack and page tables in .bss)\n");
+  KLOG("Reserving kernel: 0x%llx - 0x%llx (%llu KB, includes stack and page "
+       "tables in .bss)",
+       (unsigned long long)kernel_base, (unsigned long long)kernel_end,
+       (unsigned long long)(kernel_size / 1024));
   subtract_reserved_region(platform->mem_regions, &platform->num_mem_regions,
                            kernel_base, kernel_size);
 
@@ -372,82 +344,22 @@ static void build_free_regions(platform_t *platform, int initial_num_regions) {
   printk("\nFree memory regions:\n");
   size_t total_free = 0;
   for (int i = 0; i < platform->num_mem_regions; i++) {
-    printk("  Region ");
-    printk_dec(i);
-    printk(": 0x");
-    printk_hex64(platform->mem_regions[i].base);
-    printk(" - 0x");
-    printk_hex64(platform->mem_regions[i].base + platform->mem_regions[i].size);
-    printk(" (");
-    printk_dec(platform->mem_regions[i].size / 1024 / 1024);
-    printk(" MB)\n");
+    KLOG("Region %d: 0x%llx - 0x%llx (%llu MB)", i,
+         (unsigned long long)platform->mem_regions[i].base,
+         (unsigned long long)(platform->mem_regions[i].base +
+                              platform->mem_regions[i].size),
+         (unsigned long long)(platform->mem_regions[i].size / 1024 / 1024));
     total_free += platform->mem_regions[i].size;
   }
-  printk("Total free memory: ");
-  printk_dec(total_free / 1024 / 1024);
-  printk(" MB\n\n");
+  KLOG("Total free memory: %llu MB\n",
+       (unsigned long long)(total_free / 1024 / 1024));
 }
 
 // Initialize memory management and MMU
-void platform_mem_init(platform_t *platform, void *fdt) {
-  printk("=== ARM64 Memory Management Initialization ===\n");
-
-  printk("FDT pointer: 0x");
-  printk_hex64((uint64_t)fdt);
-  printk("\n");
-
-  // Get FDT base and size
-  platform->fdt_base = (uintptr_t)fdt;
-  if (fdt) {
-    printk("Reading FDT header...\n");
-    struct fdt_header *header = (struct fdt_header *)fdt;
-    platform->fdt_size = kbe32toh(header->totalsize);
-
-    printk("FDT size: ");
-    printk_dec(platform->fdt_size);
-    printk(" bytes\n");
-
-    // Align size up to 64KB
-    platform->fdt_size = (platform->fdt_size + 0xFFFF) & ~0xFFFF;
-  } else {
-    printk("WARNING: FDT pointer is NULL\n");
-    platform->fdt_size = 0;
-  }
-
-  platform->kernel_end = (uintptr_t)_end;
-
-  // Check if MMU is already enabled
-  uint64_t sctlr;
-  __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
-  printk("Current SCTLR_EL1: 0x");
-  printk_hex64(sctlr);
-  printk(" (MMU ");
-  printk(sctlr & 1 ? "enabled" : "disabled");
-  printk(")\n");
-
-  printk("Parsing FDT...\n");
-  // Parse FDT to discover all memory regions and device addresses
-  if (platform_boot_context_parse(platform, fdt) != 0) {
-    printk("ERROR: Failed to parse boot context\n");
-    return;
-  }
-
-  // Update UART base address from FDT discovery
-  platform_uart_init(platform);
-
-  // Save initial region count before subtraction
-  int initial_num_regions = platform->num_mem_regions;
-
-  // Setup MMU with identity mapping
+void platform_mem_init(platform_t *platform) {
   setup_mmu(platform);
-
-  // Build free memory region list (subtracts reserved regions in-place)
-  build_free_regions(platform, initial_num_regions);
-
-  // Debug: Verify MMU configuration
-  platform_mem_debug_mmu();
-
-  printk("=== Memory Management Initialization Complete ===\n\n");
+  build_free_regions(platform);
+  KDEBUG_VALIDATE(platform_mem_debug_mmu());
 }
 
 // Get list of available memory regions

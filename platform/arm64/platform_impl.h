@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "kconfig_platform.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -82,9 +83,8 @@ struct platform_t {
   // Memory management (discovered at init)
   mem_region_t mem_regions[KCONFIG_MAX_MEM_REGIONS]; // Free memory regions
   int num_mem_regions;                               // Number of free regions
-  uintptr_t fdt_base;   // Device tree base (to reserve)
-  size_t fdt_size;      // Device tree size (from header)
-  uintptr_t kernel_end; // End of kernel (from linker symbol _end)
+  uintptr_t fdt_base; // Device tree base (to reserve)
+  size_t fdt_size;    // Device tree size (from header)
 
   // Interrupt controller addresses (discovered from FDT)
   uintptr_t gic_dist_base; // GIC Distributor base address
@@ -94,9 +94,23 @@ struct platform_t {
   uintptr_t uart_base; // UART base address
 
   // PCI ECAM address (discovered from FDT, if USE_PCI=1)
-  uintptr_t pci_ecam_base; // PCI ECAM base address
-  size_t pci_ecam_size;    // PCI ECAM size
+  uintptr_t pci_ecam_base;   // PCI ECAM base address
+  size_t pci_ecam_size;      // PCI ECAM size
+  uint64_t pci_mmio_base;    // PCI MMIO range for BAR allocation
+  uint64_t pci_mmio_size;    // PCI MMIO range size
   uint64_t virtio_mmio_base; // VirtIO MMIO device base
+
+  // MMU page tables (ARM64 64KB granule, 48-bit address space)
+  // L1 table: 64 entries, each covers 4 TB
+  uint64_t page_table_l1[64] __attribute__((aligned(65536)));
+  // Pool of L2 tables (each covers 4 TB, 8192 entries per table)
+  uint64_t page_table_l2_pool[KCONFIG_ARM64_MAX_L2_TABLES][8192]
+      __attribute__((aligned(65536)));
+  int next_l2_table; // L2 allocation counter
+  // Pool of L3 tables (each covers 512 MB, 8192 entries per table)
+  uint64_t page_table_l3_pool[KCONFIG_ARM64_MAX_L3_TABLES][8192]
+      __attribute__((aligned(65536)));
+  int next_l3_table; // L3 allocation counter
 };
 typedef struct platform_t platform_t;
 
