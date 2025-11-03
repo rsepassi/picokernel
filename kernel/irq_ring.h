@@ -37,12 +37,6 @@ bool kirq_ring_is_empty(const kirq_ring_t *ring);
 // Get overflow counter (number of dropped interrupts)
 uint32_t kirq_ring_overflow_count(const kirq_ring_t *ring);
 
-// Select implementation: 0 = volatile+barriers, 1 = C11 atomics
-#ifndef KIRQ_RING_USE_ATOMICS
-#define KIRQ_RING_USE_ATOMICS 0
-#endif
-
-#if KIRQ_RING_USE_ATOMICS
 #include <stdatomic.h>
 struct kirq_ring {
   void *items[KIRQ_RING_SIZE];
@@ -50,11 +44,3 @@ struct kirq_ring {
   _Atomic uint32_t read_pos;       // platform_tick reads (consumer)
   _Atomic uint32_t overflow_count; // Dropped interrupt counter
 };
-#else
-struct kirq_ring {
-  void *items[KIRQ_RING_SIZE];
-  volatile uint32_t write_pos;      // ISR writes (producer)
-  volatile uint32_t read_pos;       // platform_tick reads (consumer)
-  volatile uint32_t overflow_count; // Dropped interrupt counter
-};
-#endif
