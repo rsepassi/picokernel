@@ -45,6 +45,7 @@ echo "|--------------------|---------|---------|----------|---------|"
 
 # Directories to analyze
 declare -a dirs=(
+    "libc"
     "kernel"
     "driver"
     "platform/shared"
