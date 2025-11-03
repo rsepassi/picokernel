@@ -10,28 +10,19 @@
 // Forward declarations for types defined elsewhere
 typedef struct kernel kernel_t;
 typedef struct kwork kwork_t;
+typedef struct platform platform_t;
 
 // Memory region descriptor (needed by platform_impl.h)
 typedef struct {
   uintptr_t base; // Base physical address
   size_t size;    // Size in bytes
 } mem_region_t;
+
 // Each platform implements platform_impl.h with platform-specific types
-#include "platform_impl.h"
+// #include "platform_impl.h"
 
 // ===========================================================================
-// SECTION 1: Device Tree (FDT) - Flattened Device Tree structures/functions
-// ===========================================================================
-
-// VirtIO MMIO device info
-typedef struct {
-  uint64_t base_addr;
-  uint64_t size;
-  uint32_t irq;
-} virtio_mmio_device_t;
-
-// ===========================================================================
-// SECTION 1A: Memory Management - Memory region discovery and management
+// SECTION 1: Memory Management - Memory region discovery and management
 // ===========================================================================
 
 // Memory region list (returned by platform_mem_regions)
@@ -96,13 +87,15 @@ uint64_t platform_pci_read_bar(platform_t *platform, uint8_t bus, uint8_t slot,
 uint8_t platform_mmio_read8(volatile uint8_t *addr);
 uint16_t platform_mmio_read16(volatile uint16_t *addr);
 uint32_t platform_mmio_read32(volatile uint32_t *addr);
-uint64_t platform_mmio_read64(volatile uint64_t *addr);
+static inline uint64_t platform_mmio_read64(volatile uint64_t *addr);
 
 // Write to MMIO registers
 void platform_mmio_write8(volatile uint8_t *addr, uint8_t val);
 void platform_mmio_write16(volatile uint16_t *addr, uint16_t val);
 void platform_mmio_write32(volatile uint32_t *addr, uint32_t val);
-void platform_mmio_write64(volatile uint64_t *addr, uint64_t val);
+static inline void platform_mmio_write64(volatile uint64_t *addr, uint64_t val);
+
+static inline void platform_mmio_barrier(void);
 
 // ===========================================================================
 // SECTION 3: Platform Lifecycle

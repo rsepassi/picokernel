@@ -155,13 +155,13 @@ typedef enum {
 } kdevice_type_t;
 
 // Forward declarations
-struct platform_t;
+struct platform;
 struct kernel;
 
 // Common device header (MUST be first field in all device structures)
 typedef struct {
   kdevice_type_t device_type;  // Device type tag
-  struct platform_t *platform; // Back-pointer for ISR access
+  struct platform *platform; // Back-pointer for ISR access
   void (*process_irq)(void *dev, struct kernel *k); // Virtual dispatch function
   bool (*ack_isr)(void *dev); // Acknowledge ISR, returns true if interrupt
                               // should be processed

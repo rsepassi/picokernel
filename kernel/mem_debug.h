@@ -1,13 +1,9 @@
 #ifndef MEM_DEBUG_H
 #define MEM_DEBUG_H
 
-#include "kbase.h"
+#include "platform.h"
 
 #ifdef KDEBUG
-
-// Forward declarations for platform-specific types
-struct platform_t;
-typedef struct platform_t platform_t;
 
 // Generic memory debugging (all platforms must implement)
 void platform_mem_validate_critical(void);
@@ -39,9 +35,8 @@ uint32_t kmem_crc32(const void *data, uint32_t len);
 uint32_t kmem_checksum_section(const void *start, const void *end);
 
 #else
+
 // Compiled out in release builds
-struct platform_t;
-typedef struct platform_t platform_t;
 static inline void platform_mem_validate_critical(void) {}
 static inline void platform_mem_validate_post_init(platform_t *platform,
                                                    void *fdt) {

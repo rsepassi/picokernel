@@ -4,6 +4,7 @@
 #include "virtio_pci.h"
 #include "kbase.h"
 #include "platform.h"
+#include "platform_impl.h"
 
 // PCI config space register offsets
 #define PCI_REG_COMMAND 0x04

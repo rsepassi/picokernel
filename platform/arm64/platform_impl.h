@@ -39,7 +39,7 @@ typedef struct {
 } mmio_region_t;
 
 // ARM64 platform-specific state
-struct platform_t {
+struct platform {
   // Timer state
   uint64_t timer_freq_hz;          // Timer frequency from CNTFRQ_EL0
   uint64_t timer_start;            // Start time counter value
@@ -122,7 +122,6 @@ struct platform_t {
       __attribute__((aligned(65536)));
   int next_l3_table; // L3 allocation counter
 };
-typedef struct platform_t platform_t;
 
 // ARM64 RNG request platform-specific fields (VirtIO)
 typedef struct {

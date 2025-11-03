@@ -17,7 +17,7 @@ typedef uint64_t ktime_t;
 
 // Kernel state
 struct kernel {
-  platform_t platform;
+  struct platform platform;
 
   // Work queues
   kwork_t *submit_queue_head; // Doubly-linked: pending submission

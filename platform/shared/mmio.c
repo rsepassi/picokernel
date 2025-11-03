@@ -3,7 +3,7 @@
 // Platform must provide platform_mmio_barrier() inline function
 
 #include "platform.h"
-#include <stdint.h>
+#include "platform_impl.h"
 
 // MMIO read functions with barriers
 // Barrier AFTER read ensures read completes before next operation

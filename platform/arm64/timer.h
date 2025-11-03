@@ -4,9 +4,7 @@
 #pragma once
 
 #include "platform.h"
-#include <stdint.h>
-
-// timer_callback_t is defined in platform_impl.h
+#include "platform_impl.h"
 
 // Initialize the Generic Timer
 void timer_init(platform_t *platform);

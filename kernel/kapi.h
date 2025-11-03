@@ -4,6 +4,7 @@
 #pragma once
 
 #include "platform.h"
+#include "platform_impl.h"
 
 // Forward declarations
 typedef struct kwork kwork_t;

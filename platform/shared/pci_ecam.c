@@ -3,7 +3,7 @@
 // Platform must populate pci_ecam_base in platform_t from FDT
 
 #include "pci.h"
-#include <stdint.h>
+#include "platform_impl.h"
 
 // Calculate ECAM address for PCI configuration space access
 // ECAM layout: [bus:8][device:5][function:3][offset:12]

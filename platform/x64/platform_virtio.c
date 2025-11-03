@@ -5,6 +5,7 @@
 #include "kbase.h"
 #include "kernel.h"
 #include "pci.h"
+#include "platform.h"
 #include "platform_config.h"
 #include "platform_impl.h"
 #include "printk.h"
