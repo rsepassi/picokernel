@@ -11,8 +11,7 @@ PLATFORM_CFLAGS = -mgeneral-regs-only
 PLATFORM_LDFLAGS =
 
 # Platform-specific sources
-PLATFORM_C_SRCS = uart.c platform_init.c interrupt.c timer.c platform_debug.c platform_mem_debug.c \
-                  platform_mem.c platform_boot_context.c \
+PLATFORM_C_SRCS = uart.c platform_core.c interrupt.c timer.c platform_debug.c \
                   ../shared/devicetree.c ../shared/pci_ecam.c ../shared/platform_virtio.c \
                   ../shared/mmio.c ../shared/platform_checksums.c
 PLATFORM_S_SRCS = boot.S vectors.S

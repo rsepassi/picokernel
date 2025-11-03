@@ -225,22 +225,15 @@ void interrupt_init(platform_t *platform) {
   // Store platform pointer for exception handler access
   g_current_platform = platform;
 
-  kirq_ring_init(&platform->irq_ring);
-
   // Install exception vector table
   // VBAR_EL1 holds the base address of exception vectors
   uint64_t vbar = (uint64_t)exception_vector_table;
   __asm__ volatile("msr vbar_el1, %0" : : "r"(vbar));
   __asm__ volatile("isb");
+  KLOG("Exception vectors installed at %llx", vbar);
 
-  printk("Exception vectors installed at 0x");
-  printk_hex64(vbar);
-  printk("\n");
-
-  // Initialize GIC
   gic_init(platform);
-
-  // Register timer interrupt with platform context
+  kirq_ring_init(&platform->irq_ring);
   irq_register(platform, TIMER_IRQ, generic_timer_handler, platform);
 }
 

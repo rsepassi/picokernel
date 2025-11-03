@@ -32,6 +32,12 @@ typedef struct {
 // Maximum number of IRQs supported by GICv2
 #define MAX_IRQS 1024
 
+// MMIO region descriptor (discovered from FDT)
+typedef struct {
+  uint64_t base; // Physical base address
+  uint64_t size; // Size in bytes (aligned to ARM64_PAGE_SIZE)
+} mmio_region_t;
+
 // ARM64 platform-specific state
 struct platform_t {
   // Timer state
@@ -85,6 +91,10 @@ struct platform_t {
   int num_mem_regions;                               // Number of free regions
   uintptr_t fdt_base; // Device tree base (to reserve)
   size_t fdt_size;    // Device tree size (from header)
+
+  // MMIO regions (discovered from FDT)
+  mmio_region_t mmio_regions[KCONFIG_MAX_MMIO_REGIONS]; // Device MMIO regions
+  int num_mmio_regions;                                  // Number of MMIO regions
 
   // Interrupt controller addresses (discovered from FDT)
   uintptr_t gic_dist_base; // GIC Distributor base address
