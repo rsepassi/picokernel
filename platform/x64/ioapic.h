@@ -30,7 +30,7 @@ typedef struct ioapic_t ioapic_t;
 void ioapic_init(platform_t *platform);
 
 // Route an IRQ to a vector with specified trigger mode and polarity
-// trigger: 0 = edge-triggered (MMIO), 1 = level-triggered (PCI INTx)
+// trigger: 0 = edge-triggered, 1 = level-triggered (PCI INTx, MMIO)
 // polarity: 0 = active-high, 1 = active-low
 void ioapic_route_irq(platform_t *platform, uint8_t irq, uint8_t vector,
                       uint8_t apic_id, uint8_t trigger, uint8_t polarity);

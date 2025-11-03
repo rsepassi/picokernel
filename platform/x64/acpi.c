@@ -29,6 +29,9 @@ struct fw_cfg_file {
   char name[56];
 } __attribute__((packed));
 
+// Cache for DSDT pointer (DSDT is excluded from RSDT but we still need access)
+static struct acpi_table_header *cached_dsdt = NULL;
+
 
 // Calculate checksum for ACPI tables
 static uint8_t acpi_checksum(void *addr, uint32_t length) {
@@ -143,6 +146,11 @@ static void *fw_cfg_find_rsdp(void) {
         break;
       }
 
+      // Cache DSDT for later retrieval (it's not added to RSDT)
+      if (memcmp(header->signature, "DSDT", 4) == 0) {
+        cached_dsdt = header;
+      }
+
       // Skip FACS, DSDT (referenced from FADT), and RSDT (we'll build our own)
       if (memcmp(header->signature, "FACS", 4) != 0 &&
           memcmp(header->signature, "DSDT", 4) != 0 &&
@@ -198,48 +206,10 @@ static void *fw_cfg_find_rsdp(void) {
   return (rsdp && tables_size > 0) ? rsdp : NULL;
 }
 
-// Find RSDP by searching BIOS memory regions (for traditional BIOS boot)
-static void *bios_find_rsdp(void) {
-  // Search EBDA (Extended BIOS Data Area)
-  // The EBDA base address (segment) is stored at physical address 0x40E
-  uint16_t ebda_seg = *(uint16_t *)0x40E;
-  if (ebda_seg != 0) {
-    uintptr_t ebda_base = (uintptr_t)ebda_seg << 4;
-    // Search first 1KB of EBDA
-    for (uintptr_t addr = ebda_base; addr < ebda_base + 1024; addr += 16) {
-      if (memcmp((void *)addr, "RSD PTR ", 8) == 0) {
-        struct acpi_rsdp *rsdp = (struct acpi_rsdp *)addr;
-        // Verify checksum (first 20 bytes for ACPI 1.0)
-        if (acpi_checksum(rsdp, 20) == 0) {
-          return rsdp;
-        }
-      }
-    }
-  }
-
-  // Search BIOS read-only memory area (0xE0000 - 0xFFFFF)
-  for (uintptr_t addr = 0xE0000; addr < 0x100000; addr += 16) {
-    if (memcmp((void *)addr, "RSD PTR ", 8) == 0) {
-      struct acpi_rsdp *rsdp = (struct acpi_rsdp *)addr;
-      // Verify checksum (first 20 bytes for ACPI 1.0)
-      if (acpi_checksum(rsdp, 20) == 0) {
-        return rsdp;
-      }
-    }
-  }
-
-  return NULL;
-}
-
-// Find RSDP using multiple methods (for QEMU boot)
+// Find RSDP using fw_cfg (for QEMU microvm)
 void *acpi_find_rsdp(void) {
-  // Try BIOS memory search first (for q35 with SeaBIOS)
-  void *rsdp = bios_find_rsdp();
-  if (rsdp) {
-    return rsdp;
-  }
-
-  // Fall back to fw_cfg (for microvm direct kernel boot)
+  // Use fw_cfg only - no BIOS memory scanning
+  // This ensures we load ACPI tables from fw_cfg which includes DSDT caching
   return fw_cfg_find_rsdp();
 }
 
@@ -248,6 +218,11 @@ struct acpi_table_header *acpi_find_table(platform_t *platform,
                                           const char *signature) {
   if (platform->rsdp == NULL) {
     return NULL;
+  }
+
+  // Special case: Return cached DSDT (not in RSDT)
+  if (memcmp(signature, ACPI_SIG_DSDT, 4) == 0) {
+    return cached_dsdt;
   }
 
   // x32: Only use RSDT (32-bit pointers), no XSDT support
@@ -309,6 +284,23 @@ void acpi_init(platform_t *platform) {
     printk_putc(c >= 32 && c <= 126 ? c : '?');
   }
   printk(")\n\n");
+
+  // Cache DSDT from FADT (for BIOS path where fw_cfg isn't used)
+  struct acpi_table_header *fadt = acpi_find_table(platform, ACPI_SIG_FADT);
+  if (fadt != NULL) {
+    struct acpi_fadt *fadt_table = (struct acpi_fadt *)fadt;
+    printk("[ACPI] FADT found, dsdt field = ");
+    printk_hex32(fadt_table->dsdt);
+    printk("\n");
+    if (fadt_table->dsdt != 0) {
+      cached_dsdt = (struct acpi_table_header *)(uintptr_t)fadt_table->dsdt;
+      printk("[ACPI] DSDT cached at ");
+      printk_hex32((uint32_t)(uintptr_t)cached_dsdt);
+      printk("\n");
+    }
+  } else {
+    printk("[ACPI] FADT not found in RSDT\n");
+  }
 }
 
 // Helper to dump detailed MADT info
@@ -458,4 +450,98 @@ uint32_t fw_cfg_read_nb_cpus(void) {
   }
 
   return cpus;
+}
+
+// Find virtio-mmio devices in ACPI DSDT
+// Searches for "LNRO0005" devices and extracts MMIO base/size and IRQ
+int acpi_find_virtio_mmio_devices(platform_t *platform,
+                                   acpi_virtio_mmio_device_t *devices,
+                                   int max_devices) {
+  // Get DSDT table
+  struct acpi_table_header *dsdt = acpi_find_table(platform, ACPI_SIG_DSDT);
+  if (dsdt == NULL) {
+    printk("[ACPI] DSDT not found\n");
+    return 0;
+  }
+
+  printk("[ACPI] Scanning DSDT for virtio-mmio devices (LNRO0005)...\n");
+
+  uint8_t *data = (uint8_t *)dsdt;
+  uint32_t length = dsdt->length;
+  int device_count = 0;
+
+  // Search for "LNRO0005" string in DSDT
+  for (uint32_t i = 0; i < length - 8 && device_count < max_devices; i++) {
+    // Look for the HID string "LNRO0005"
+    if (memcmp(&data[i], "LNRO0005", 8) == 0) {
+      printk("[ACPI]   Found LNRO0005 at offset ");
+      printk_hex32(i);
+      printk("\n");
+
+      // Search forward for Memory32Fixed resource (0x86 opcode)
+      // and Interrupt resource (0x89 opcode)
+      uint64_t mmio_base = 0;
+      uint32_t mmio_size = 0;
+      uint32_t irq = 0;
+      bool found_memory = false;
+      bool found_interrupt = false;
+
+      // Search next 512 bytes for resource descriptors
+      for (uint32_t j = i; j < i + 512 && j < length - 10; j++) {
+        // Memory32Fixed: 0x86 followed by 9 bytes
+        // Format: 0x86 <len_lo> <len_hi> <flags> <base_lo> <base_hi> <size_lo> <size_hi>
+        if (data[j] == 0x86 && !found_memory) {
+          // Extract base address (little-endian, 32-bit)
+          mmio_base = data[j + 4] | (data[j + 5] << 8) | (data[j + 6] << 16) |
+                      ((uint32_t)data[j + 7] << 24);
+          // Extract size (little-endian, 32-bit)
+          mmio_size = data[j + 8] | (data[j + 9] << 8) | (data[j + 10] << 16) |
+                      ((uint32_t)data[j + 11] << 24);
+          found_memory = true;
+          printk("[ACPI]     Memory32Fixed: base=0x");
+          printk_hex64(mmio_base);
+          printk(" size=0x");
+          printk_hex32(mmio_size);
+          printk("\n");
+        }
+
+        // Extended Interrupt Descriptor: 0x89 followed by variable length
+        // Format: 0x89 <len_lo> <len_hi> <flags> <int_count> <int_value>...
+        if (data[j] == 0x89 && !found_interrupt) {
+          // Skip 2 bytes (length field), 1 byte (flags), 1 byte (int count)
+          // IRQ number is at offset j+5 (32-bit little-endian)
+          if (j + 8 < length) {
+            irq = data[j + 5] | (data[j + 6] << 8) | (data[j + 7] << 16) |
+                  ((uint32_t)data[j + 8] << 24);
+            found_interrupt = true;
+            printk("[ACPI]     Interrupt: IRQ ");
+            printk_dec(irq);
+            printk("\n");
+          }
+        }
+
+        // If we found both, we're done with this device
+        if (found_memory && found_interrupt) {
+          devices[device_count].mmio_base = mmio_base;
+          devices[device_count].mmio_size = mmio_size;
+          devices[device_count].irq = irq;
+          devices[device_count].valid = true;
+          device_count++;
+          break;
+        }
+      }
+
+      // Warn if we found device but not all resources
+      if (found_memory && !found_interrupt) {
+        printk("[ACPI]     WARNING: Found memory but no interrupt resource\n");
+      } else if (!found_memory && found_interrupt) {
+        printk("[ACPI]     WARNING: Found interrupt but no memory resource\n");
+      }
+    }
+  }
+
+  printk("[ACPI] Found ");
+  printk_dec(device_count);
+  printk(" virtio-mmio device(s)\n");
+  return device_count;
 }

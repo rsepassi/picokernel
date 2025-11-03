@@ -136,7 +136,8 @@ struct platform {
   struct acpi_rsdp *rsdp;
 
   // I/O APIC state
-  ioapic_t ioapic;
+  ioapic_t ioapic[2]; // Support 2 IOAPICs (GSI 0-47)
+  uint8_t num_ioapics; // Number of IOAPICs discovered (1 or 2)
 
   // IRQ ring buffer for device interrupts
   kirq_ring_t irq_ring;
@@ -217,11 +218,13 @@ static inline uint32_t platform_pci_irq_swizzle(platform_t *platform,
 static inline uint32_t platform_mmio_irq_number(platform_t *platform,
                                                 int index) {
   (void)platform;
+  // QEMU creates devices in this order: RNG, Block, Net
   // Devices appear in memory as: Net (slot 0), Block (slot 1), RNG (slot 2)
-  // But QEMU assigns IRQs in creation order: RNG=5, Block=6, Net=7
-  // So we need to map: slot 0 (Net) -> IRQ 7, slot 1 (Block) -> IRQ 6, slot 2 (RNG) -> IRQ 5
-  if (index == 0) return 7; // Net
-  if (index == 1) return 6; // Block
-  if (index == 2) return 5; // RNG
-  return 5 + index; // Fallback for other slots
+  // QEMU microvm assigns IRQs by creation order, not slot order:
+  //   - RNG (created 1st) -> IRQ 5
+  //   - Block (created 2nd) -> IRQ 6
+  //   - Net (created 3rd) -> IRQ 7
+  // So we need to map: slot 0 (Net) -> 7, slot 1 (Block) -> 6, slot 2 (RNG) -> 5
+  const uint32_t slot_to_irq[3] = {7, 6, 5}; // [Net, Block, RNG]
+  return slot_to_irq[index];
 }

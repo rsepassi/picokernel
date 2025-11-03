@@ -53,7 +53,7 @@ extern void isr_stub_31(void);
 // Timer interrupt (vector 32)
 extern void isr_stub_32(void);
 
-// IRQ interrupts (vectors 33-55)
+// IRQ interrupts (vectors 33-79)
 extern void isr_stub_33(void);
 extern void isr_stub_34(void);
 extern void isr_stub_35(void);
@@ -77,6 +77,30 @@ extern void isr_stub_52(void);
 extern void isr_stub_53(void);
 extern void isr_stub_54(void);
 extern void isr_stub_55(void);
+extern void isr_stub_56(void);
+extern void isr_stub_57(void);
+extern void isr_stub_58(void);
+extern void isr_stub_59(void);
+extern void isr_stub_60(void);
+extern void isr_stub_61(void);
+extern void isr_stub_62(void);
+extern void isr_stub_63(void);
+extern void isr_stub_64(void);
+extern void isr_stub_65(void);
+extern void isr_stub_66(void);
+extern void isr_stub_67(void);
+extern void isr_stub_68(void);
+extern void isr_stub_69(void);
+extern void isr_stub_70(void);
+extern void isr_stub_71(void);
+extern void isr_stub_72(void);
+extern void isr_stub_73(void);
+extern void isr_stub_74(void);
+extern void isr_stub_75(void);
+extern void isr_stub_76(void);
+extern void isr_stub_77(void);
+extern void isr_stub_78(void);
+extern void isr_stub_79(void);
 
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
@@ -190,30 +214,23 @@ void interrupt_init(platform_t *platform) {
   // Install timer interrupt handler (vector 32)
   idt_set_gate(platform->idt, 32, (uint64_t)(uintptr_t)isr_stub_32, 0x08, 0x8E);
 
-  // Install IRQ interrupt handlers (vectors 33-55)
-  idt_set_gate(platform->idt, 33, (uint64_t)(uintptr_t)isr_stub_33, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 34, (uint64_t)(uintptr_t)isr_stub_34, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 35, (uint64_t)(uintptr_t)isr_stub_35, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 36, (uint64_t)(uintptr_t)isr_stub_36, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 37, (uint64_t)(uintptr_t)isr_stub_37, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 38, (uint64_t)(uintptr_t)isr_stub_38, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 39, (uint64_t)(uintptr_t)isr_stub_39, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 40, (uint64_t)(uintptr_t)isr_stub_40, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 41, (uint64_t)(uintptr_t)isr_stub_41, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 42, (uint64_t)(uintptr_t)isr_stub_42, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 43, (uint64_t)(uintptr_t)isr_stub_43, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 44, (uint64_t)(uintptr_t)isr_stub_44, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 45, (uint64_t)(uintptr_t)isr_stub_45, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 46, (uint64_t)(uintptr_t)isr_stub_46, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 47, (uint64_t)(uintptr_t)isr_stub_47, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 48, (uint64_t)(uintptr_t)isr_stub_48, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 49, (uint64_t)(uintptr_t)isr_stub_49, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 50, (uint64_t)(uintptr_t)isr_stub_50, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 51, (uint64_t)(uintptr_t)isr_stub_51, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 52, (uint64_t)(uintptr_t)isr_stub_52, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 53, (uint64_t)(uintptr_t)isr_stub_53, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 54, (uint64_t)(uintptr_t)isr_stub_54, 0x08, 0x8E);
-  idt_set_gate(platform->idt, 55, (uint64_t)(uintptr_t)isr_stub_55, 0x08, 0x8E);
+  // Install IRQ interrupt handlers (vectors 33-79)
+  void (*irq_handlers[])(void) = {
+      isr_stub_33, isr_stub_34, isr_stub_35, isr_stub_36, isr_stub_37,
+      isr_stub_38, isr_stub_39, isr_stub_40, isr_stub_41, isr_stub_42,
+      isr_stub_43, isr_stub_44, isr_stub_45, isr_stub_46, isr_stub_47,
+      isr_stub_48, isr_stub_49, isr_stub_50, isr_stub_51, isr_stub_52,
+      isr_stub_53, isr_stub_54, isr_stub_55, isr_stub_56, isr_stub_57,
+      isr_stub_58, isr_stub_59, isr_stub_60, isr_stub_61, isr_stub_62,
+      isr_stub_63, isr_stub_64, isr_stub_65, isr_stub_66, isr_stub_67,
+      isr_stub_68, isr_stub_69, isr_stub_70, isr_stub_71, isr_stub_72,
+      isr_stub_73, isr_stub_74, isr_stub_75, isr_stub_76, isr_stub_77,
+      isr_stub_78, isr_stub_79
+  };
+  for (int i = 0; i < 47; i++) {
+    idt_set_gate(platform->idt, 33 + i, (uint64_t)(uintptr_t)irq_handlers[i],
+                 0x08, 0x8E);
+  }
 
   // Install spurious interrupt handler (vector 255)
   idt_set_gate(platform->idt, 255, (uint64_t)(uintptr_t)isr_stub_255, 0x08,
@@ -249,8 +266,8 @@ void irq_register(platform_t *platform, uint8_t irq_num,
   // MSI-X: No IOAPIC routing - messages go directly to LAPIC
 }
 
-// Register MMIO IRQ handler (edge-triggered, routes through IOAPIC)
-// irq_line: The IRQ line from the device (0-23)
+// Register MMIO IRQ handler (may route through IOAPIC or direct to LAPIC)
+// irq_line: The IRQ line from the device (ACPI GSI number)
 // handler/context: Handler to call when interrupt fires
 // Note: IRQ table storage is handled by caller (platform_irq_register)
 void irq_register_mmio(platform_t *platform, uint8_t irq_line,
@@ -261,9 +278,9 @@ void irq_register_mmio(platform_t *platform, uint8_t irq_line,
   // Convert IRQ line to interrupt vector
   uint8_t vector = 32 + irq_line;
 
-  // Route IRQ line through IOAPIC to CPU vector
-  // MMIO: edge-triggered (trigger=0), active-high (polarity=0)
-  ioapic_route_irq(platform, irq_line, vector, 0, 0, 0);
+  // Route through IOAPIC (supports multiple IOAPICs via GSI mapping)
+  // MMIO: level-triggered (trigger=1), active-high (polarity=0)
+  ioapic_route_irq(platform, irq_line, vector, platform->lapic_id, 1, 0);
 }
 
 // Register PCI IRQ handler (level-triggered, routes through IOAPIC)
@@ -285,15 +302,14 @@ void irq_register_pci(platform_t *platform, uint8_t irq_line,
 
 // Enable (unmask) a specific IRQ
 void irq_enable(platform_t *platform, uint8_t irq_num) {
-  // Unmask in IOAPIC for MMIO devices
-  // MSI-X devices don't go through IOAPIC, so this is harmless for them
+  // Unmask in IOAPIC (supports multiple IOAPICs via GSI mapping)
   ioapic_unmask_irq(platform, irq_num);
 }
 
 // Global variable for debugging interrupts (printk not safe in IRQ context)
-static volatile uint32_t g_last_irq_vector = 0;
-static volatile uint32_t g_irq_count = 0;
-volatile uint32_t g_msix_irq_count = 0; // Non-static for external access
+volatile uint32_t g_last_irq_vector = 0;  // Non-static for external access
+volatile uint32_t g_irq_count = 0;        // Non-static for external access
+volatile uint32_t g_msix_irq_count = 0;   // Non-static for external access
 static volatile uint32_t g_self_ipi_fired = 0; // Self-IPI test flag
 
 // Dispatch IRQ (called from exception handler)

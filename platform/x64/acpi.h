@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // ACPI table signatures (4-character codes)
@@ -12,6 +13,7 @@
 #define ACPI_SIG_RSDT "RSDT" // Root System Description Table
 #define ACPI_SIG_MADT "APIC" // Multiple APIC Description Table
 #define ACPI_SIG_FADT "FACP" // Fixed ACPI Description Table
+#define ACPI_SIG_DSDT "DSDT" // Differentiated System Description Table
 
 // RSDP (Root System Description Pointer)
 // This is the first structure we find by scanning BIOS memory
@@ -48,6 +50,15 @@ struct acpi_table_header {
 struct acpi_rsdt {
   struct acpi_table_header header;
   uint32_t entry[1]; // Array of physical addresses (variable length)
+} __attribute__((packed));
+
+// FADT (Fixed ACPI Description Table)
+// Contains DSDT pointer and other system info
+struct acpi_fadt {
+  struct acpi_table_header header;
+  uint32_t firmware_ctrl;  // Physical address of FACS
+  uint32_t dsdt;           // Physical address of DSDT (32-bit)
+  // ... rest of FADT fields not needed for our purpose
 } __attribute__((packed));
 
 // MADT (Multiple APIC Description Table)
@@ -100,6 +111,15 @@ struct acpi_madt_interrupt_override {
   uint16_t flags;      // Polarity and trigger mode
 } __attribute__((packed));
 
+// VirtIO MMIO device information from ACPI
+#define MAX_VIRTIO_MMIO_DEVICES 8
+typedef struct {
+  uint64_t mmio_base;
+  uint32_t mmio_size;
+  uint32_t irq;
+  bool valid;
+} acpi_virtio_mmio_device_t;
+
 // Forward declaration
 typedef struct platform platform_t;
 
@@ -109,6 +129,9 @@ struct acpi_table_header *acpi_find_table(platform_t *platform,
                                           const char *signature);
 void acpi_init(platform_t *platform);
 void acpi_dump_tables(platform_t *platform);
+int acpi_find_virtio_mmio_devices(platform_t *platform,
+                                   acpi_virtio_mmio_device_t *devices,
+                                   int max_devices);
 
 // fw_cfg accessors
 uint64_t fw_cfg_read_ram_size(void);

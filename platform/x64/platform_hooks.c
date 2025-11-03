@@ -8,12 +8,11 @@
 #include <stddef.h>
 
 // IRQ registration for devices
-// On x64, IRQ numbers (0-23) are IOAPIC IRQ lines that need to be
+// On x64, IRQ numbers (0-23+) are IOAPIC IRQ lines that need to be
 // mapped to interrupt vectors (32+). This function handles both:
 // 1. Routing the IRQ line through IOAPIC to CPU vector (with correct trigger type)
 // 2. Registering the handler for that vector
-// PCI devices (IRQ >= 16) use level-triggered interrupts
-// MMIO/ISA devices (IRQ < 16) use edge-triggered interrupts
+// All VirtIO devices (both PCI and MMIO) use level-triggered, active-high interrupts
 int platform_irq_register(platform_t *platform, uint32_t irq_num,
                           void (*handler)(void *), void *context) {
   // Convert IRQ line to interrupt vector (vectors start at 32)
@@ -24,22 +23,16 @@ int platform_irq_register(platform_t *platform, uint32_t irq_num,
   printk_dec(irq_num);
   printk(" -> vector ");
   printk_dec(vector);
-  printk(" (");
-  printk(irq_num >= 16 ? "PCI/level" : "MMIO/edge");
-  printk(")\n");
+  printk(" (MMIO/level)\n");
 
   // Register handler for this vector
   platform->irq_table[vector].handler = handler;
   platform->irq_table[vector].context = context;
 
-  // Route IRQ line through IOAPIC to vector with appropriate trigger type
-  // PCI devices (IRQ >= 16) need level-triggered interrupts for INTx
-  // MMIO/ISA devices (IRQ < 16) use edge-triggered interrupts
-  if (irq_num >= 16) {
-    irq_register_pci(platform, (uint8_t)irq_num, handler, context);
-  } else {
-    irq_register_mmio(platform, (uint8_t)irq_num, handler, context);
-  }
+  // Route IRQ line through IOAPIC with level-triggered, active-high
+  // VirtIO devices (both PCI and MMIO variants) use these settings
+  irq_register_mmio(platform, (uint8_t)irq_num, handler, context);
+
   return 0;
 }
 

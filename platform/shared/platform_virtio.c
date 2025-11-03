@@ -3,6 +3,9 @@
 // Platform must provide: platform_pci_irq_swizzle(),
 // platform_mmio_irq_number(), and VIRTIO_MMIO_* defines
 
+#ifdef __x86_64__
+#include "acpi.h"
+#endif
 #include "interrupt.h"
 #include "kernel.h"
 #include "pci.h"
@@ -668,6 +671,19 @@ void platform_tick(platform_t *platform, kernel_t *k) {
     printk("\n");
     last_msix_count = g_msix_irq_count;
   }
+
+  // Log ALL interrupt count for debugging MMIO (x64 only)
+  extern volatile uint32_t g_irq_count;
+  extern volatile uint32_t g_last_irq_vector;
+  static uint32_t last_irq_count = 0;
+  if (g_irq_count != last_irq_count) {
+    printk("[DEBUG] Total IRQs: ");
+    printk_dec(g_irq_count);
+    printk(" (last vector: ");
+    printk_dec(g_last_irq_vector);
+    printk(")\n");
+    last_irq_count = g_irq_count;
+  }
 #endif
 
   // Check for IRQ ring overflows (dropped interrupts)
@@ -856,21 +872,24 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 void mmio_scan_devices(platform_t *platform) {
   KDEBUG_LOG("Probing for VirtIO MMIO devices...");
 
-  // Use discovered VirtIO MMIO base from platform_t
-  // If not discovered, fall back to VIRTIO_MMIO_BASE (compile-time default)
-  uint64_t mmio_base = platform->virtio_mmio_base;
-  if (mmio_base == 0) {
-    mmio_base = VIRTIO_MMIO_BASE;
-  }
+#ifdef __x86_64__
+  // x64: Use ACPI DSDT to discover virtio-mmio devices
+  acpi_virtio_mmio_device_t acpi_devices[MAX_VIRTIO_MMIO_DEVICES];
+  int acpi_device_count = acpi_find_virtio_mmio_devices(
+      platform, acpi_devices, MAX_VIRTIO_MMIO_DEVICES);
 
-  int devices_found = 0;
   int rng_initialized = 0;
   int blk_initialized = 0;
   int net_initialized = 0;
 
-  // Scan for devices
-  for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
-    uint64_t base = mmio_base + (i * VIRTIO_MMIO_DEVICE_STRIDE);
+  // Process each ACPI-discovered device
+  for (int i = 0; i < acpi_device_count; i++) {
+    if (!acpi_devices[i].valid) {
+      continue;
+    }
+
+    uint64_t base = acpi_devices[i].mmio_base;
+    uint32_t irq_num = acpi_devices[i].irq;
 
     // Read magic value
     volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
@@ -893,6 +912,64 @@ void mmio_scan_devices(platform_t *platform) {
          virtio_mmio_device_name(device_id), (unsigned long long)base,
          device_id);
 
+    // Initialize RNG device if found and not already initialized
+    if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
+        platform->virtio_rng_ptr == NULL) {
+      virtio_rng_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      rng_initialized = 1;
+    }
+
+    // Initialize BLK device if found and not already initialized
+    if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
+        platform->virtio_blk_ptr == NULL) {
+      virtio_blk_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      blk_initialized = 1;
+    }
+
+    // Initialize NET device if found and not already initialized
+    if (device_id == VIRTIO_ID_NET && !net_initialized &&
+        platform->virtio_net_ptr == NULL) {
+      virtio_net_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      net_initialized = 1;
+    }
+  }
+
+  KLOG("Initialized %d virtio-mmio device(s) from ACPI", acpi_device_count);
+#else
+  // Non-x64 platforms: Use hardcoded MMIO base and IRQ mapping
+  uint64_t mmio_base = platform->virtio_mmio_base;
+  if (mmio_base == 0) {
+    mmio_base = VIRTIO_MMIO_BASE;
+  }
+
+  int devices_found = 0;
+  int rng_initialized = 0;
+  int blk_initialized = 0;
+  int net_initialized = 0;
+
+  // Scan for devices
+  for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
+    uint64_t base = mmio_base + (i * VIRTIO_MMIO_DEVICE_STRIDE);
+
+    // Read magic value
+    volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
+    uint32_t magic = *magic_ptr;
+
+    if (magic != VIRTIO_MMIO_MAGIC) {
+      continue; // No device at this address
+    }
+
+    // Read device ID
+    volatile uint32_t *device_id_ptr =
+        (volatile uint32_t *)(base + VIRTIO_MMIO_DEVICE_ID);
+    uint32_t device_id = *device_id_ptr;
+
+    if (device_id == 0) {
+      continue; // No device
+    }
+
+    KLOG("Found %s at MMIO 0x%llx (device ID %d)", get_virtio_device_name(device_id),
+         (unsigned long long)base, device_id);
     devices_found++;
 
     // Initialize RNG device if found and not already initialized
@@ -925,4 +1002,5 @@ void mmio_scan_devices(platform_t *platform) {
   } else {
     KLOG("Found %d VirtIO MMIO device(s) total", devices_found);
   }
+#endif
 }
