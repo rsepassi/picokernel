@@ -1,364 +1,176 @@
-// Device Tree parsing for ARM64
+// Device Tree parsing using libfdt
 // Parses the FDT (Flattened Device Tree) passed by the bootloader
 
 #include "kbase.h"
+
+#ifdef KDEBUG
+#include "kstrings.h"
 #include "platform.h"
 #include "printk.h"
+#include "mem_debug.h"
 #include <stdint.h>
+#include <libfdt/libfdt.h>
 
 // Helper to print indentation
 static void print_indent(int depth) {
-  for (int i = 0; i < depth * 2; i++) {
-    printk_putc(' ');
+  for (int i = 0; i < depth; i++) {
+    printk("  ");
   }
 }
 
-// Helper to print property data as hex bytes
-static void print_prop_data(const uint8_t *data, uint32_t len) {
+// Helper to determine if a property value is printable as a string
+static bool is_printable_string(const char *data, int len) {
+  if (len == 0)
+    return false;
+
+  // Check if it's a valid null-terminated string
+  if (data[len - 1] != '\0')
+    return false;
+
+  // Check if all characters are printable (or null terminators for string lists)
+  for (int i = 0; i < len - 1; i++) {
+    if (data[i] == '\0') {
+      // Allow null terminators in string lists
+      continue;
+    }
+    if (data[i] < 0x20 || data[i] > 0x7E) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Helper to print property value
+static void print_property_value(const void *data, int len) {
   if (len == 0) {
     printk("<empty>");
     return;
   }
 
-  // Check if it's a string (null-terminated printable ASCII)
-  int is_string = 1;
-  for (uint32_t i = 0; i < len - 1; i++) {
-    if (data[i] == 0) {
-      // Null in middle or multiple strings
-      if (i < len - 2) {
-        is_string = 0;
-        break;
-      }
-    } else if (data[i] < 32 || data[i] > 126) {
-      is_string = 0;
+  // Try to interpret as string(s)
+  if (is_printable_string(data, len)) {
+    const char *str = (const char *)data;
+    printk("\"");
+    int pos = 0;
+    while (pos < len - 1) {
+      if (pos > 0)
+        printk("\", \"");
+      printk("%s", str + pos);
+      pos += str_len(str + pos) + 1;
+    }
+    printk("\"");
+    return;
+  }
+
+  // Try to interpret as 32-bit cells
+  if (len % 4 == 0) {
+    const uint32_t *cells = (const uint32_t *)data;
+    int ncells = len / 4;
+    printk("<");
+    for (int i = 0; i < ncells; i++) {
+      if (i > 0)
+        printk(" ");
+      printk("0x%08x", fdt32_ld(&cells[i]));
+    }
+    printk(">");
+    return;
+  }
+
+  // Fall back to byte array
+  const uint8_t *bytes = (const uint8_t *)data;
+  printk("[");
+  for (int i = 0; i < len; i++) {
+    if (i > 0)
+      printk(" ");
+    printk("%02x", bytes[i]);
+    if (i >= 15 && len > 16) {
+      printk(" ... (%d more bytes)", len - i - 1);
       break;
     }
   }
-  if (is_string && data[len - 1] == 0) {
-    printk_putc('"');
-    printk((const char *)data);
-    printk_putc('"');
-    return;
-  }
-
-  // Try to print as cells (32-bit values) if length is multiple of 4
-  if (len % 4 == 0 && len <= 16) {
-    printk_putc('<');
-    for (uint32_t i = 0; i < len; i += 4) {
-      if (i > 0)
-        printk_putc(' ');
-      uint32_t cell = kload_be32(data + i);
-      printk_hex32(cell);
-    }
-    printk_putc('>');
-    return;
-  }
-
-  // Otherwise print as hex bytes
-  printk_putc('[');
-  for (uint32_t i = 0; i < len && i < 32; i++) {
-    if (i > 0)
-      printk_putc(' ');
-    const char hex[] = "0123456789abcdef";
-    printk_putc(hex[data[i] >> 4]);
-    printk_putc(hex[data[i] & 0xf]);
-  }
-  if (len > 32) {
-    printk("...");
-  }
-  printk_putc(']');
+  printk("]");
 }
 
-// Walk and print the device tree structure
-static const uint8_t *fdt_walk_node(const uint8_t *p, const char *strings,
-                                    int depth) {
-  const uint32_t *ptr = KALIGN_CAST(const uint32_t *, p);
-  uint32_t token = kbe32toh(*ptr++);
-
-  if (token != FDT_BEGIN_NODE) {
-    return (const uint8_t *)ptr;
+// Recursively dump device tree nodes
+static void dump_fdt_node(const void *fdt, int node, int depth) {
+  int len;
+  const char *name = fdt_get_name(fdt, node, &len);
+  if (!name) {
+    return;
   }
 
-  // Get node name
-  const char *name = (const char *)ptr;
   print_indent(depth);
   if (name[0] == '\0') {
-    printk("/ {\n");
+    printk("/"); // Root node
   } else {
-    printk(name);
-    printk(" {\n");
+    printk("%s {", name);
   }
+  printk("\n");
 
-  // Skip name (null-terminated, 4-byte aligned)
-  const uint8_t *name_ptr = (const uint8_t *)ptr;
-  while (*name_ptr != 0) {
-    name_ptr++;
-  }
-  name_ptr++; // Skip the null terminator
-  // Align to 4-byte boundary
-  ptr = (uint32_t *)(((uint64_t)name_ptr + 3) & ~3);
+  // Print all properties
+  int prop_offset = fdt_first_property_offset(fdt, node);
+  while (prop_offset >= 0) {
+    const char *prop_name;
+    const void *prop_data = fdt_getprop_by_offset(fdt, prop_offset, &prop_name, &len);
 
-  // Process properties and child nodes
-  while (1) {
-    token = kbe32toh(*ptr++);
-
-    if (token == FDT_PROP) {
-      uint32_t len = kbe32toh(*ptr++);
-      uint32_t nameoff = kbe32toh(*ptr++);
-      const uint8_t *value = (const uint8_t *)ptr;
-
+    if (prop_data && prop_name) {
       print_indent(depth + 1);
-      printk(strings + nameoff);
-      if (len > 0) {
-        printk(" = ");
-        print_prop_data(value, len);
-      }
+      printk("%s = ", prop_name);
+      print_property_value(prop_data, len);
       printk(";\n");
-
-      ptr = KALIGN_CAST(const uint32_t *,
-                        (const uint8_t *)(((uint64_t)value + len + 3) & ~3));
-
-    } else if (token == FDT_BEGIN_NODE) {
-      // Process child node recursively
-      ptr = KALIGN_CAST(uint32_t *, fdt_walk_node((const uint8_t *)ptr - 4,
-                                                  strings, depth + 1));
-
-    } else if (token == FDT_END_NODE) {
-      print_indent(depth);
-      printk("}\n");
-      break;
-
-    } else if (token == FDT_NOP) {
-      continue;
-
-    } else if (token == FDT_END) {
-      break;
-
-    } else {
-      printk("Unknown token: ");
-      printk_hex32(token);
-      printk("\n");
-      break;
     }
+
+    prop_offset = fdt_next_property_offset(fdt, prop_offset);
   }
 
-  return (const uint8_t *)ptr;
-}
-
-// Scan memory for FDT magic number
-static void *fdt_find(void) {
-  // QEMU typically places DTB at end of RAM or specific locations
-  // Try multiple ranges with different alignments
-
-  printk("Scanning for device tree...\n");
-
-  // First, try common high addresses (QEMU often places DTB near end of RAM)
-  // 128 MB RAM = 0x08000000, so end is at 0x48000000
-  uint64_t ranges[][3] = {
-      {0x44000000, 0x48000000, 0x1000}, // Last 64 MB, 4KB align
-      {0x40000000, 0x44000000, 0x1000}, // First 64 MB, 4KB align
-      {0, 0, 0}};
-
-  for (int r = 0; ranges[r][2] != 0; r++) {
-    uint64_t start = ranges[r][0];
-    uint64_t end = ranges[r][1];
-    uint32_t align = ranges[r][2];
-
-    for (uint64_t addr = start; addr < end; addr += align) {
-      uint32_t *ptr = (uint32_t *)addr;
-      uint32_t magic = kbe32toh(ptr[0]);
-
-      if (magic == FDT_MAGIC) {
-        printk("Found FDT at ");
-        printk_hex64(addr);
-        printk("\n");
-        return (void *)addr;
-      }
-    }
+  // Recursively process child nodes
+  int child;
+  fdt_for_each_subnode(child, fdt, node) {
+    dump_fdt_node(fdt, child, depth + 1);
   }
 
-  printk("Device tree not found in memory scan\n");
-  return 0;
+  print_indent(depth);
+  printk("};\n");
+  if (depth == 0)
+    printk("\n");
 }
 
 // Main function to dump the device tree
 void platform_fdt_dump(platform_t *platform, void *fdt) {
-  (void)platform; // Unused parameter
-  // If fdt is NULL, try to find it in memory
+  (void)platform;
+
   if (!fdt) {
-    printk("Warning: NULL device tree pointer, scanning memory...\n");
-    fdt = fdt_find();
-    if (!fdt) {
-      printk("Error: Could not locate device tree\n");
-      return;
-    }
-  }
-
-  struct fdt_header *header = (struct fdt_header *)fdt;
-
-  // Verify magic number
-  uint32_t magic = kbe32toh(header->magic);
-  if (magic != FDT_MAGIC) {
-    printk("Error: Invalid FDT magic: ");
-    printk_hex32(magic);
-    printk("\n");
+    printk("platform_fdt_dump: no FDT provided\n");
     return;
   }
 
-  printk("\n=== Device Tree ===\n");
-  printk("FDT at ");
-  printk_hex64((uint64_t)fdt);
-  printk("\n");
-
-  uint32_t totalsize = kbe32toh(header->totalsize);
-  uint32_t version = kbe32toh(header->version);
-
-  printk("Total size: ");
-  printk_dec(totalsize);
-  printk(" bytes\n");
-
-  printk("Version: ");
-  printk_dec(version);
-  printk("\n\n");
-
-  // Get offsets
-  uint32_t off_struct = kbe32toh(header->off_dt_struct);
-  uint32_t off_strings = kbe32toh(header->off_dt_strings);
-
-  // Walk the structure
-  const uint8_t *struct_block = (const uint8_t *)fdt + off_struct;
-  const char *strings = (const char *)fdt + off_strings;
-  fdt_walk_node(struct_block, strings, 0);
-
-  printk("\n=== End of Device Tree ===\n\n");
-}
-
-// Helper: Compare string with null-terminated string
-static int str_equal(const char *a, const char *b) {
-  while (*a && *b) {
-    if (*a != *b)
-      return 0;
-    a++;
-    b++;
+  // Validate FDT header
+  int err = fdt_check_header(fdt);
+  if (err != 0) {
+    printk("platform_fdt_dump: invalid FDT header: %s\n", fdt_strerror(err));
+    return;
   }
-  return *a == *b;
-}
 
-// Simpler approach: iterate through all "virtio,mmio" compatible strings
-// and extract their properties
-static int fdt_count_virtio_devices(void *fdt, virtio_mmio_device_t *devices,
-                                    int max_devices) {
-  struct fdt_header *header = (struct fdt_header *)fdt;
+  printk("=== Device Tree ===\n\n");
 
-  uint32_t off_struct = kbe32toh(header->off_dt_struct);
-  uint32_t off_strings = kbe32toh(header->off_dt_strings);
-  uint32_t size_struct = kbe32toh(header->size_dt_struct);
-
-  const uint8_t *struct_start = (const uint8_t *)fdt + off_struct;
-  const uint8_t *struct_end = struct_start + size_struct;
-  const char *strings = (const char *)fdt + off_strings;
-
-  int count = 0;
-  uint64_t current_reg_addr = 0;
-  uint64_t current_reg_size = 0;
-  uint32_t current_irq = 0;
-  int in_virtio_node = 0;
-
-  const uint8_t *p = struct_start;
-
-  while (p < struct_end && count < max_devices) {
-    const uint32_t *ptr = KALIGN_CAST(const uint32_t *, p);
-    uint32_t token = kbe32toh(*ptr++);
-
-    if (token == FDT_BEGIN_NODE) {
-      // Reset state for new node
-      in_virtio_node = 0;
-      current_reg_addr = 0;
-      current_reg_size = 0;
-      current_irq = 0;
-
-      // Skip node name
-      const char *name = KALIGN_CAST(const char *, ptr);
-      while (*name)
-        name++;
-      name++;
-      ptr = KALIGN_CAST(const uint32_t *,
-                        (const uint8_t *)(((uintptr_t)name + 3) & ~3));
-
-    } else if (token == FDT_PROP) {
-      uint32_t len = kbe32toh(*ptr++);
-      uint32_t nameoff = kbe32toh(*ptr++);
-      const volatile uint8_t *value = (const volatile uint8_t *)ptr;
-      const char *prop_name = strings + nameoff;
-
-      // Check if this is a virtio,mmio node
-      if (str_equal(prop_name, "compatible") && len >= 11) {
-        if (str_equal((const char *)value, "virtio,mmio")) {
-          in_virtio_node = 1;
-        }
+  // Dump memory reservations
+  int num_rsv = fdt_num_mem_rsv(fdt);
+  if (num_rsv > 0) {
+    printk("Memory Reservations:\n");
+    for (int i = 0; i < num_rsv; i++) {
+      uint64_t addr, size;
+      if (fdt_get_mem_rsv(fdt, i, &addr, &size) == 0) {
+        printk("  [%d] addr=0x%016llx size=0x%016llx\n", i,
+               (unsigned long long)addr, (unsigned long long)size);
       }
-
-      // Collect reg property (regardless of compatible - we'll check later)
-      if (str_equal(prop_name, "reg") && len >= 16) {
-        current_reg_addr = kload_be64(value);
-        current_reg_size = kload_be64(value + 8);
-      }
-
-      // Collect interrupts property (regardless of compatible - we'll check
-      // later)
-      if (str_equal(prop_name, "interrupts") && len >= 12) {
-        uint32_t irq_type = kload_be32(value);
-        uint32_t irq_num = kload_be32(value + 4);
-
-        if (irq_type == 0) { // SPI
-          current_irq = 32 + irq_num;
-        }
-      }
-
-      ptr = KALIGN_CAST(const uint32_t *,
-                        (const uint8_t *)(((uintptr_t)value + len + 3) & ~3));
-
-    } else if (token == FDT_END_NODE) {
-      // If this was a virtio,mmio node and we collected required info, save it
-      if (in_virtio_node && current_reg_addr != 0) {
-        devices[count].base_addr = current_reg_addr;
-        devices[count].size = current_reg_size;
-        devices[count].irq = current_irq;
-        count++;
-      }
-      // Reset for next node
-      in_virtio_node = 0;
-
-    } else if (token == FDT_NOP) {
-      // Skip NOPs
-      continue;
-
-    } else if (token == FDT_END) {
-      break;
     }
-
-    p = KALIGN_CAST(const uint8_t *, ptr);
+    printk("\n");
   }
 
-  return count;
+  // Dump the device tree structure
+  dump_fdt_node(fdt, 0, 0);
+
+  printk("=== End Device Tree ===\n\n");
 }
-
-// Find VirtIO MMIO devices in device tree
-int platform_fdt_find_virtio_mmio(platform_t *platform, void *fdt,
-                                  virtio_mmio_device_t *devices,
-                                  int max_devices) {
-  (void)platform; // Platform not needed for FDT parsing
-  if (!fdt || !devices || max_devices <= 0) {
-    return 0;
-  }
-
-  struct fdt_header *header = (struct fdt_header *)fdt;
-
-  // Verify magic number
-  uint32_t magic = kbe32toh(header->magic);
-  if (magic != FDT_MAGIC) {
-    return 0;
-  }
-
-  return fdt_count_virtio_devices(fdt, devices, max_devices);
-}
+#endif  // KDEBUG
