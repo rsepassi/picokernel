@@ -4,7 +4,6 @@
 #include "kbase.h"
 
 #ifdef KDEBUG
-#include "kstrings.h"
 #include "mem_debug.h"
 #include "platform.h"
 #include "printk.h"

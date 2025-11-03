@@ -114,6 +114,9 @@ struct platform {
   // PCI BAR allocator (for bare-metal BAR assignment)
   uint64_t pci_next_bar_addr; // Next available BAR address
 
+  // MSI-X vector allocator (vectors 128-255 used for MSI-X)
+  uint8_t pci_next_msix_vector; // Next available MSI-X CPU vector
+
   // VirtIO MMIO base address (discovered from ACPI or using default)
   uint64_t virtio_mmio_base; // VirtIO MMIO device base
 

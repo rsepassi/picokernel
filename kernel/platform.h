@@ -187,3 +187,40 @@ void platform_tick(platform_t *platform, kernel_t *k);
 // buffer_index: which buffer to release (0 to num_buffers-1)
 void platform_net_buffer_release(platform_t *platform, void *req,
                                  size_t buffer_index);
+
+// ===========================================================================
+// SECTION 9: Device Discovery - Platform-specific hardware enumeration
+// ===========================================================================
+
+// Platform-independent MMIO device descriptor
+// Returned by platform_discover_mmio_devices() for VirtIO device discovery
+typedef struct {
+  uint64_t mmio_base;   // MMIO base address
+  uint32_t mmio_size;   // Size of MMIO region
+  uint32_t irq_num;     // Platform IRQ number
+  uint32_t device_id;   // VirtIO device ID (VIRTIO_ID_*)
+  bool valid;           // Whether this device entry is valid
+} platform_mmio_device_t;
+
+// Discover MMIO devices (ACPI on x64, FDT on ARM/RISC-V, hardcoded on others)
+// Probes hardware enumeration mechanism and returns discovered devices
+// platform: platform state structure
+// devices: output array to fill with discovered devices
+// max_devices: maximum number of devices to return
+// Returns: number of valid devices found
+int platform_discover_mmio_devices(platform_t *platform,
+                                   platform_mmio_device_t *devices,
+                                   int max_devices);
+
+// Configure PCI device interrupts and return IRQ/vector number
+// On x64: Configures MSI-X, disables INTx, returns CPU vector number
+// On others: Reads interrupt pin, calculates swizzled IRQ, returns IRQ number
+// platform: platform state structure
+// bus: PCI bus number
+// slot: PCI slot number
+// func: PCI function number
+// transport: pointer to VirtIO PCI transport structure (for MSI-X configuration)
+// Returns: IRQ number or CPU vector to register (negative on error)
+int platform_pci_setup_interrupts(platform_t *platform, uint8_t bus,
+                                  uint8_t slot, uint8_t func,
+                                  void *transport);

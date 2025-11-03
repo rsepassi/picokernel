@@ -3,9 +3,6 @@
 // Platform must provide: platform_pci_irq_swizzle(),
 // platform_mmio_irq_number(), and VIRTIO_MMIO_* defines
 
-#ifdef __x86_64__
-#include "acpi.h"
-#endif
 #include "interrupt.h"
 #include "kernel.h"
 #include "pci.h"
@@ -232,19 +229,12 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
-#ifdef __x86_64__
-  // x64: Use MSI-X interrupts
-  uint8_t cpu_vector = 33;
-  uint8_t apic_id = 0;
-
-  // Configure MSI-X in PCI config space (vector 0: queue interrupts)
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-  pci_disable_intx(platform, bus, slot, func);
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Configure VirtIO device to use MSI-X vectors
-  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_rng, 0xFFFF, 0);
-#endif
+  // Configure PCI interrupts (MSI-X on x64, INTx on others)
+  int irq_or_vector = platform_pci_setup_interrupts(
+      platform, bus, slot, func, &platform->virtio_pci_transport_rng);
+  if (irq_or_vector < 0) {
+    return;
+  }
 
   // Initialize RNG device
   if (virtio_rng_init_pci(
@@ -259,20 +249,10 @@ static void virtio_rng_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_rng.base.process_irq = virtio_rng_process_irq_dispatch;
   platform->virtio_rng.base.ack_isr = virtio_rng_ack_isr;
 
-#ifdef __x86_64__
-  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
-  irq_register(platform, cpu_vector, virtio_irq_handler,
-               &platform->virtio_rng);
-#else
-  // Other platforms: Setup interrupt using platform-specific IRQ calculation
-  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
-                                              PCI_REG_INTERRUPT_PIN);
-  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
-
-  platform_irq_register(platform, irq_num, virtio_irq_handler,
+  // Register interrupt handler (MSI-X vector on x64, INTx IRQ on others)
+  platform_irq_register(platform, irq_or_vector, virtio_irq_handler,
                         &platform->virtio_rng);
-  platform_irq_enable(platform, irq_num);
-#endif
+  platform_irq_enable(platform, irq_or_vector);
 
   // Store pointer to active RNG device
   platform->virtio_rng_ptr = &platform->virtio_rng;
@@ -337,19 +317,12 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
-#ifdef __x86_64__
-  // x64: Use MSI-X interrupts
-  uint8_t cpu_vector = 34;
-  uint8_t apic_id = 0;
-
-  // Configure MSI-X in PCI config space (vector 0: queue interrupts)
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-  pci_disable_intx(platform, bus, slot, func);
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Configure VirtIO device to use MSI-X vectors
-  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_blk, 0xFFFF, 0);
-#endif
+  // Configure PCI interrupts (MSI-X on x64, INTx on others)
+  int irq_or_vector = platform_pci_setup_interrupts(
+      platform, bus, slot, func, &platform->virtio_pci_transport_blk);
+  if (irq_or_vector < 0) {
+    return;
+  }
 
   // Initialize BLK device
   if (virtio_blk_init_pci(
@@ -364,20 +337,10 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_blk.base.process_irq = virtio_blk_process_irq_dispatch;
   platform->virtio_blk.base.ack_isr = virtio_blk_ack_isr;
 
-#ifdef __x86_64__
-  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
-  irq_register(platform, cpu_vector, virtio_irq_handler,
-               &platform->virtio_blk);
-#else
-  // Other platforms: Setup interrupt using platform-specific IRQ calculation
-  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
-                                              PCI_REG_INTERRUPT_PIN);
-  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
-
-  platform_irq_register(platform, irq_num, virtio_irq_handler,
+  // Register interrupt handler (MSI-X vector on x64, INTx IRQ on others)
+  platform_irq_register(platform, irq_or_vector, virtio_irq_handler,
                         &platform->virtio_blk);
-  platform_irq_enable(platform, irq_num);
-#endif
+  platform_irq_enable(platform, irq_or_vector);
 
   // Store device info
   platform->virtio_blk_ptr = &platform->virtio_blk;
@@ -464,21 +427,12 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
     return;
   }
 
-#ifdef __x86_64__
-  // x64: Use MSI-X interrupts
-  uint8_t cpu_vector = 35;
-  uint8_t apic_id = 0;
-
-  // Configure MSI-X in PCI config space
-  // Vector 0: RX queue, Vector 1: TX queue (both use same CPU vector)
-  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
-  pci_configure_msix_vector(platform, bus, slot, func, 1, cpu_vector, apic_id);
-  pci_disable_intx(platform, bus, slot, func);
-  pci_enable_msix(platform, bus, slot, func);
-
-  // Configure VirtIO device to use MSI-X vectors
-  virtio_pci_set_msix_vectors(&platform->virtio_pci_transport_net, 0xFFFF, 0);
-#endif
+  // Configure PCI interrupts (MSI-X on x64, INTx on others)
+  int irq_or_vector = platform_pci_setup_interrupts(
+      platform, bus, slot, func, &platform->virtio_pci_transport_net);
+  if (irq_or_vector < 0) {
+    return;
+  }
 
   KDEBUG_LOG("[NET] Initializing NET device...");
   // Initialize NET device
@@ -498,20 +452,10 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->virtio_net.base.process_irq = virtio_net_process_irq_dispatch;
   platform->virtio_net.base.ack_isr = virtio_net_ack_isr;
 
-#ifdef __x86_64__
-  // x64: Register MSI-X interrupt handler (goes directly to LAPIC, no IOAPIC routing)
-  irq_register(platform, cpu_vector, virtio_irq_handler,
-               &platform->virtio_net);
-#else
-  // Other platforms: Setup interrupt using platform-specific IRQ calculation
-  uint8_t irq_pin = platform_pci_config_read8(platform, bus, slot, func,
-                                              PCI_REG_INTERRUPT_PIN);
-  uint32_t irq_num = platform_pci_irq_swizzle(platform, slot, irq_pin);
-
-  platform_irq_register(platform, irq_num, virtio_irq_handler,
+  // Register interrupt handler (MSI-X vector on x64, INTx IRQ on others)
+  platform_irq_register(platform, irq_or_vector, virtio_irq_handler,
                         &platform->virtio_net);
-  platform_irq_enable(platform, irq_num);
-#endif
+  platform_irq_enable(platform, irq_or_vector);
 
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
@@ -659,36 +603,7 @@ void pci_scan_devices(platform_t *platform) {
 }
 
 // Process deferred interrupt work (called from ktick before callbacks)
-// External debug counters (x64 only)
-#ifdef __x86_64__
-extern volatile uint32_t g_msix_irq_count;
-#endif
-
 void platform_tick(platform_t *platform, kernel_t *k) {
-#ifdef __x86_64__
-  // Log MSI-X interrupt count for debugging (x64 only)
-  static uint32_t last_msix_count = 0;
-  if (g_msix_irq_count != last_msix_count) {
-    printk("[DEBUG] MSI-X interrupts: ");
-    printk_dec(g_msix_irq_count);
-    printk("\n");
-    last_msix_count = g_msix_irq_count;
-  }
-
-  // Log ALL interrupt count for debugging MMIO (x64 only)
-  extern volatile uint32_t g_irq_count;
-  extern volatile uint32_t g_last_irq_vector;
-  static uint32_t last_irq_count = 0;
-  if (g_irq_count != last_irq_count) {
-    printk("[DEBUG] Total IRQs: ");
-    printk_dec(g_irq_count);
-    printk(" (last vector: ");
-    printk_dec(g_last_irq_vector);
-    printk(")\n");
-    last_irq_count = g_irq_count;
-  }
-#endif
-
   // Check for IRQ ring overflows (dropped interrupts)
   uint32_t current_overflow = kirq_ring_overflow_count(&platform->irq_ring);
   if (current_overflow > platform->last_overflow_count) {
@@ -856,157 +771,63 @@ void platform_net_buffer_release(platform_t *platform, void *req,
   virtio_net_buffer_release(platform->virtio_net_ptr, req, buffer_index);
 }
 
-// Helper to get VirtIO device type name from device ID
-#ifdef __x86_64__
-// x64-specific device name helper (for ACPI-discovered devices)
-static const char *virtio_mmio_device_name(uint32_t device_id) {
-  switch (device_id) {
-  case VIRTIO_ID_NET:
-    return "VirtIO-Net";
-  case VIRTIO_ID_BLOCK:
-    return "VirtIO-Block";
-  case VIRTIO_ID_RNG:
-    return "VirtIO-RNG";
-  default:
-    return "VirtIO-Unknown";
-  }
-}
-#endif
+// Maximum number of VirtIO MMIO devices to discover
+#define MMIO_DEVICE_DISCOVERY_MAX 32
 
 // Probe for VirtIO MMIO devices at known addresses
-// Platform must populate virtio_mmio_base in platform_t from FDT
+// Uses platform_discover_mmio_devices() for platform-agnostic device discovery
 void mmio_scan_devices(platform_t *platform) {
   KDEBUG_LOG("Probing for VirtIO MMIO devices...");
 
-#ifdef __x86_64__
-  // x64: Use ACPI DSDT to discover virtio-mmio devices
-  acpi_virtio_mmio_device_t acpi_devices[MAX_VIRTIO_MMIO_DEVICES];
-  int acpi_device_count = acpi_find_virtio_mmio_devices(
-      platform, acpi_devices, MAX_VIRTIO_MMIO_DEVICES);
+  // Discover MMIO devices using platform-specific mechanism
+  platform_mmio_device_t devices[MMIO_DEVICE_DISCOVERY_MAX];
+  int device_count = platform_discover_mmio_devices(platform, devices,
+                                                    MMIO_DEVICE_DISCOVERY_MAX);
 
   int rng_initialized = 0;
   int blk_initialized = 0;
   int net_initialized = 0;
 
-  // Process each ACPI-discovered device
-  for (int i = 0; i < acpi_device_count; i++) {
-    if (!acpi_devices[i].valid) {
+  // Process each discovered device
+  for (int i = 0; i < device_count; i++) {
+    if (!devices[i].valid) {
       continue;
     }
 
-    uint64_t base = acpi_devices[i].mmio_base;
-    uint32_t irq_num = acpi_devices[i].irq;
-
-    // Read magic value
-    volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
-    uint32_t magic = *magic_ptr;
-
-    if (magic != VIRTIO_MMIO_MAGIC) {
-      continue; // No device at this slot
-    }
-
-    // Read device ID at offset 0x08
-    volatile uint32_t *device_id_ptr = (volatile uint32_t *)(base + 0x08);
-    uint32_t device_id = *device_id_ptr;
-
-    // Device ID 0 means empty slot
-    if (device_id == 0) {
-      continue;
-    }
+    uint64_t base = devices[i].mmio_base;
+    uint32_t mmio_size = devices[i].mmio_size;
+    uint32_t irq_num = devices[i].irq_num;
+    uint32_t device_id = devices[i].device_id;
 
     KLOG("Found %s at MMIO 0x%llx (device ID %u)",
-         virtio_mmio_device_name(device_id), (unsigned long long)base,
+         virtio_device_name(device_id), (unsigned long long)base,
          device_id);
 
     // Initialize RNG device if found and not already initialized
     if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
         platform->virtio_rng_ptr == NULL) {
-      virtio_rng_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      virtio_rng_mmio_setup(platform, base, mmio_size, irq_num);
       rng_initialized = 1;
     }
 
     // Initialize BLK device if found and not already initialized
     if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
         platform->virtio_blk_ptr == NULL) {
-      virtio_blk_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      virtio_blk_mmio_setup(platform, base, mmio_size, irq_num);
       blk_initialized = 1;
     }
 
     // Initialize NET device if found and not already initialized
     if (device_id == VIRTIO_ID_NET && !net_initialized &&
         platform->virtio_net_ptr == NULL) {
-      virtio_net_mmio_setup(platform, base, acpi_devices[i].mmio_size, irq_num);
+      virtio_net_mmio_setup(platform, base, mmio_size, irq_num);
       net_initialized = 1;
     }
   }
 
-  KLOG("Initialized %d virtio-mmio device(s) from ACPI", acpi_device_count);
-#else
-  // Non-x64 platforms: Use hardcoded MMIO base and IRQ mapping
-  uint64_t mmio_base = platform->virtio_mmio_base;
-  if (mmio_base == 0) {
-    mmio_base = VIRTIO_MMIO_BASE;
-  }
-
-  int devices_found = 0;
-  int rng_initialized = 0;
-  int blk_initialized = 0;
-  int net_initialized = 0;
-
-  // Scan for devices
-  for (int i = 0; i < VIRTIO_MMIO_MAX_DEVICES; i++) {
-    uint64_t base = mmio_base + (i * VIRTIO_MMIO_DEVICE_STRIDE);
-
-    // Read magic value
-    volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
-    uint32_t magic = *magic_ptr;
-
-    if (magic != VIRTIO_MMIO_MAGIC) {
-      continue; // No device at this address
-    }
-
-    // Read device ID
-    volatile uint32_t *device_id_ptr =
-        (volatile uint32_t *)(base + VIRTIO_MMIO_DEVICE_ID);
-    uint32_t device_id = *device_id_ptr;
-
-    if (device_id == 0) {
-      continue; // No device
-    }
-
-    KLOG("Found %s at MMIO 0x%llx (device ID %d)", virtio_device_name(device_id),
-         (unsigned long long)base, device_id);
-    devices_found++;
-
-    // Initialize RNG device if found and not already initialized
-    if (device_id == VIRTIO_ID_RNG && !rng_initialized &&
-        platform->virtio_rng_ptr == NULL) {
-      uint32_t irq_num = platform_mmio_irq_number(platform, i);
-      virtio_rng_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
-      rng_initialized = 1;
-    }
-
-    // Initialize BLK device if found and not already initialized
-    if (device_id == VIRTIO_ID_BLOCK && !blk_initialized &&
-        platform->virtio_blk_ptr == NULL) {
-      uint32_t irq_num = platform_mmio_irq_number(platform, i);
-      virtio_blk_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
-      blk_initialized = 1;
-    }
-
-    // Initialize NET device if found and not already initialized
-    if (device_id == VIRTIO_ID_NET && !net_initialized &&
-        platform->virtio_net_ptr == NULL) {
-      uint32_t irq_num = platform_mmio_irq_number(platform, i);
-      virtio_net_mmio_setup(platform, base, VIRTIO_MMIO_DEVICE_STRIDE, irq_num);
-      net_initialized = 1;
-    }
-  }
-
-  if (devices_found == 0) {
+  if (device_count == 0) {
     KDEBUG_LOG("No VirtIO MMIO devices found");
   } else {
-    KLOG("Found %d VirtIO MMIO device(s) total", devices_found);
+    KLOG("Found %d VirtIO MMIO device(s) total", device_count);
   }
-#endif
 }

@@ -36,6 +36,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   // Initialize PCI BAR allocator to match boot.S PCI MMIO mapping
   platform->pci_next_bar_addr = PCI_MMIO_BASE;
 
+  // Initialize MSI-X vector allocator (vectors 128-255 for MSI-X)
+  platform->pci_next_msix_vector = 128;
+
   // Initialize VirtIO MMIO base
   // QEMU microvm places first VirtIO MMIO device at base + 0x2A00
   platform->virtio_mmio_base = VIRTIO_MMIO_BASE + 0x2A00;

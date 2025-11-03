@@ -545,3 +545,55 @@ int acpi_find_virtio_mmio_devices(platform_t *platform,
   printk(" virtio-mmio device(s)\n");
   return device_count;
 }
+
+// Discover MMIO devices via ACPI (platform.h contract)
+// Probes ACPI DSDT for virtio-mmio devices and reads their device IDs
+int platform_discover_mmio_devices(platform_t *platform,
+                                   platform_mmio_device_t *devices,
+                                   int max_devices) {
+  // Use ACPI to find virtio-mmio device descriptors
+  acpi_virtio_mmio_device_t acpi_devices[MAX_VIRTIO_MMIO_DEVICES];
+  int acpi_device_count = acpi_find_virtio_mmio_devices(
+      platform, acpi_devices,
+      max_devices < MAX_VIRTIO_MMIO_DEVICES ? max_devices : MAX_VIRTIO_MMIO_DEVICES);
+
+  int valid_count = 0;
+
+  // Probe each ACPI-discovered device and read its device ID from MMIO
+  for (int i = 0; i < acpi_device_count && valid_count < max_devices; i++) {
+    if (!acpi_devices[i].valid) {
+      continue;
+    }
+
+    uint64_t base = acpi_devices[i].mmio_base;
+    uint32_t irq_num = acpi_devices[i].irq;
+
+    // Read magic value at offset 0x00
+    volatile uint32_t *magic_ptr = (volatile uint32_t *)base;
+    uint32_t magic = *magic_ptr;
+
+    // VirtIO magic value is 0x74726976 ("virt" in little-endian)
+    if (magic != 0x74726976) {
+      continue; // Not a valid VirtIO device
+    }
+
+    // Read device ID at offset 0x08
+    volatile uint32_t *device_id_ptr = (volatile uint32_t *)(base + 0x08);
+    uint32_t device_id = *device_id_ptr;
+
+    // Device ID 0 means empty slot
+    if (device_id == 0) {
+      continue;
+    }
+
+    // Fill platform-independent device descriptor
+    devices[valid_count].mmio_base = base;
+    devices[valid_count].mmio_size = acpi_devices[i].mmio_size;
+    devices[valid_count].irq_num = irq_num;
+    devices[valid_count].device_id = device_id;
+    devices[valid_count].valid = true;
+    valid_count++;
+  }
+
+  return valid_count;
+}

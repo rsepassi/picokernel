@@ -3,9 +3,11 @@
 
 #include "interrupt.h"
 #include "ioapic.h"
+#include "pci.h"
 #include "platform.h"
 #include "platform_impl.h"
 #include "printk.h"
+#include "virtio/virtio_pci.h"
 #include <stdint.h>
 
 // Module-local platform pointer
@@ -101,6 +103,14 @@ extern void isr_stub_76(void);
 extern void isr_stub_77(void);
 extern void isr_stub_78(void);
 extern void isr_stub_79(void);
+
+// High vector IRQ stubs (80-254) - for MSI-X and extended IOAPIC
+extern void isr_stub_80(void);
+extern void isr_stub_128(void);
+extern void isr_stub_129(void);
+extern void isr_stub_130(void);
+extern void isr_stub_254(void);
+// (Other stubs 81-127, 131-253 exist but not explicitly declared - accessed via array)
 
 // Spurious interrupt (vector 255)
 extern void isr_stub_255(void);
@@ -232,6 +242,14 @@ void interrupt_init(platform_t *platform) {
                  0x08, 0x8E);
   }
 
+  // Install high vector IRQ handlers for MSI-X (vectors 128-130)
+  // We explicitly install only the vectors we use to avoid address calculation issues
+  idt_set_gate(platform->idt, 128, (uint64_t)(uintptr_t)isr_stub_128, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 129, (uint64_t)(uintptr_t)isr_stub_129, 0x08, 0x8E);
+  idt_set_gate(platform->idt, 130, (uint64_t)(uintptr_t)isr_stub_130, 0x08, 0x8E);
+  // Note: Additional vectors 80-127, 131-254 exist in isr.S but are not installed
+  // unless needed. Install them explicitly here if more MSI-X devices are added.
+
   // Install spurious interrupt handler (vector 255)
   idt_set_gate(platform->idt, 255, (uint64_t)(uintptr_t)isr_stub_255, 0x08,
                0x8E);
@@ -322,8 +340,8 @@ void irq_dispatch(uint8_t irq_num) {
   g_last_irq_vector = irq_num;
   g_irq_count++;
 
-  // Track MSI-X interrupts (vectors 33-47)
-  if (irq_num >= 33 && irq_num <= 47) {
+  // Track MSI-X interrupts (vectors 128-255)
+  if (irq_num >= 128 && irq_num <= 255) {
     g_msix_irq_count++;
   }
 
@@ -385,4 +403,32 @@ void test_lapic_self_ipi(platform_t *platform) {
   // Unregister test handler
   platform->irq_table[50].handler = NULL;
   platform->irq_table[50].context = NULL;
+}
+
+// ===========================================================================
+// PCI Interrupt Setup (platform.h contract)
+// ===========================================================================
+
+// Configure PCI device interrupts (x64: MSI-X)
+// Returns CPU vector number to use for interrupt registration
+// Uses high vector range (128-255) to distinguish from ACPI GSI numbers
+int platform_pci_setup_interrupts(platform_t *platform, uint8_t bus,
+                                  uint8_t slot, uint8_t func,
+                                  void *transport) {
+  // Allocate MSI-X CPU vectors from high range (128+) to avoid conflict with ACPI GSI
+  // ACPI GSI numbers for MMIO devices can be 0-127, so we use 128+ for MSI-X vectors
+  uint8_t cpu_vector = platform->pci_next_msix_vector++;
+  uint8_t apic_id = 0;
+
+  // Configure MSI-X in PCI config space (vector 0: queue interrupts)
+  pci_configure_msix_vector(platform, bus, slot, func, 0, cpu_vector, apic_id);
+  pci_disable_intx(platform, bus, slot, func);
+  pci_enable_msix(platform, bus, slot, func);
+
+  // Configure VirtIO device to use MSI-X vectors (if transport provided)
+  if (transport != NULL) {
+    virtio_pci_set_msix_vectors(transport, 0xFFFF, 0);
+  }
+
+  return (int)cpu_vector;
 }
