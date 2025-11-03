@@ -154,10 +154,14 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     uint32_t bar_type = (bar_val >> 1) & 0x3;
     if (bar_type == 0x2) {
       // 64-bit BAR - assign address
-      // Cast to uint64_t to support both 32-bit and 64-bit platforms
+      // Align address to BAR size (required by PCI spec)
+      platform->pci_next_bar_addr = (platform->pci_next_bar_addr + size - 1) & ~((uint64_t)size - 1);
       uint64_t bar_addr = platform->pci_next_bar_addr;
+      // Preserve BAR type bits (bits 3:0) when writing address
+      // Bit 0=0 (memory), bits 2:1=10 (64-bit), bit 3=prefetchable
+      uint32_t bar_flags = bar_val & 0xF;
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)bar_addr);
+                                  (uint32_t)bar_addr | bar_flags);
       platform_pci_config_write32(platform, bus, slot, func, bar_offset + 4,
                                   (uint32_t)(bar_addr >> 32));
 
@@ -177,9 +181,13 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
       i++; // Skip next BAR (high 32 bits)
     } else {
       // 32-bit BAR
+      // Align address to BAR size (required by PCI spec)
+      platform->pci_next_bar_addr = (platform->pci_next_bar_addr + size - 1) & ~((uint64_t)size - 1);
       uint64_t bar_addr = platform->pci_next_bar_addr;
+      // Preserve BAR type bits (bits 3:0) when writing address
+      uint32_t bar_flags = bar_val & 0xF;
       platform_pci_config_write32(platform, bus, slot, func, bar_offset,
-                                  (uint32_t)bar_addr);
+                                  (uint32_t)bar_addr | bar_flags);
 
       printk("[");
       printk(device_name);
