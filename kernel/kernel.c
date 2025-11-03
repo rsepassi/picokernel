@@ -145,9 +145,10 @@ static void expire_timers(kernel_t *k) {
 
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt) {
-  *k = (kernel_t){0};
+  memset(k, 0, sizeof(kernel_t));
 
   // Initialize platform
+  KLOG("Initializing platform");
   platform_init(&k->platform, fdt, k);
 
   // Initialize start time

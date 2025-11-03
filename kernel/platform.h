@@ -77,7 +77,7 @@ void platform_fdt_dump(platform_t *platform, void *fdt);
 // boot_context: FDT pointer on ARM/RISC-V, PVH start info on x64
 // CRITICAL: Call this EXACTLY ONCE during platform initialization
 // Returns: 0 on success, negative on error
-int platform_boot_context_parse(platform_t *platform, void *boot_context);
+void platform_boot_context_parse(platform_t *platform, void *boot_context);
 
 // Find VirtIO MMIO devices in device tree
 // Returns: number of devices found (up to max_devices)
