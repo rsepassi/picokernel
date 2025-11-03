@@ -110,7 +110,7 @@ void platform_submit(platform_t *platform, kwork_t *submissions,
 // Abort system execution (shutdown/halt)
 // Called when a fatal error occurs or assertion fails
 // This function does not return
-void platform_abort(void) __attribute__((noreturn));
+noreturn void platform_abort(void) ;
 
 // ===========================================================================
 // SECTION 3A: Platform Debug - Register and stack dumps

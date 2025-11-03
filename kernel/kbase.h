@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdnoreturn.h>
+#include <string.h>
 
 /* ===========================================================================
  * Foundation Types - Basic data structures
@@ -123,11 +125,8 @@ uint64_t kget_time_ms__logonly__(void);
 #define KDEBUG_VALIDATE(expr) ((void)0)
 #endif
 
-void *memcpy(void *dest, const void *src, size_t n);
-void *memset(void *s, int c, size_t n);
-
 /* Enhanced panic handler - dumps registers, stack, and debug info */
-void kpanic(const char *msg) __attribute__((noreturn));
+noreturn void kpanic(const char *msg);
 
 /* Work queue debugging (KDEBUG only) */
 #ifdef KDEBUG
