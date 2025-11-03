@@ -104,7 +104,7 @@ VENDOR_SOURCES = $(VENDOR_DIR)/monocypher/monocypher.c \
                  $(wildcard $(VENDOR_DIR)/libfdt/*.c)
 
 # Header files (all .o files depend on all headers)
-HEADERS = $(shell find $(KERNEL_DIR) $(DRIVER_DIR) $(APP_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
+HEADERS = $(shell find $(LIBC_DIR) $(KERNEL_DIR) $(DRIVER_DIR) $(APP_DIR) $(PLATFORM_DIR) -name '*.h' 2>/dev/null)
 
 # Object files in build directory (maintaining source tree structure)
 # Platform sources may include files from ../shared or ../x86, so we match from platform/ root

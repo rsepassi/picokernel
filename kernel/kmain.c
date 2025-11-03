@@ -6,7 +6,7 @@
 #include "printk.h"
 #include "user.h"
 
-#define MAX_TICK_TIMEOUT 2000
+#define MAX_TICK_TIMEOUT_NS (2000ULL * 1000000ULL) // 2000ms in nanoseconds
 
 static kernel_t g_kernel;
 static user_t g_user;
@@ -15,7 +15,7 @@ static user_t g_user;
 // DO NOT use this for general kernel access - pass kernel_t* explicitly
 kernel_t *kget_kernel__logonly__(void) { return &g_kernel; }
 
-uint64_t kget_time_ms__logonly__(void) { return g_kernel.current_time_ms; }
+ktime_t kget_time_ns__logonly__(void) { return g_kernel.current_time_ns; }
 
 void kmain(void *fdt) {
   printk("\n\n=== VMOS KMAIN ===\n\n");
@@ -42,11 +42,11 @@ void kmain(void *fdt) {
   KLOG("kloop...");
   while (1) {
     KLOG("[KLOOP] tick");
-    kmain_tick(k, k->current_time_ms);
-    uint64_t timeout = kmain_next_delay(k);
-    if (timeout > MAX_TICK_TIMEOUT)
-      timeout = MAX_TICK_TIMEOUT;
+    kmain_tick(k, k->current_time_ns);
+    ktime_t timeout = kmain_next_delay(k);
+    if (timeout > MAX_TICK_TIMEOUT_NS)
+      timeout = MAX_TICK_TIMEOUT_NS;
     KLOG("[KLOOP] wfi");
-    k->current_time_ms = platform_wfi(&k->platform, timeout);
+    k->current_time_ns = platform_wfi(&k->platform, timeout);
   }
 }

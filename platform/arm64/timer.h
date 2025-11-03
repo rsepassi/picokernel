@@ -16,8 +16,8 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
 // Get timer frequency in Hz
 uint64_t timer_get_frequency(platform_t *platform);
 
-// Get current time in milliseconds
-uint64_t timer_get_current_time_ms(platform_t *platform);
+// Get current time in nanoseconds
+ktime_t timer_get_current_time_ns(platform_t *platform);
 
 // Cancel any pending timer
 void timer_cancel(platform_t *platform);

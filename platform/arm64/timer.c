@@ -62,7 +62,7 @@ void timer_init(platform_t *platform) {
   // Disable timer initially
   write_cntp_ctl_el0(0);
 
-  // Capture start time for timer_get_current_time_ms()
+  // Capture start time for timer_get_current_time_ns()
   platform->timer_start = read_cntpct_el0();
 }
 
@@ -112,8 +112,8 @@ void timer_set_oneshot_ms(platform_t *platform, uint32_t milliseconds,
   write_cntp_ctl_el0(1); // Enable timer, interrupt unmasked
 }
 
-// Get current time in milliseconds
-uint64_t timer_get_current_time_ms(platform_t *platform) {
+// Get current time in nanoseconds
+ktime_t timer_get_current_time_ns(platform_t *platform) {
   uint64_t counter_now = read_cntpct_el0();
   uint64_t counter_elapsed = counter_now - platform->timer_start;
 
@@ -121,9 +121,12 @@ uint64_t timer_get_current_time_ms(platform_t *platform) {
     return 0;
   }
 
-  // Convert counter ticks to milliseconds
-  // ms = (ticks * 1000) / freq_hz
-  return (counter_elapsed * 1000) / platform->timer_freq_hz;
+  // Convert counter ticks to nanoseconds
+  // ns = (ticks * 1000000000) / freq_hz
+  // Split calculation to avoid overflow without needing 128-bit arithmetic
+  uint64_t sec = counter_elapsed / platform->timer_freq_hz;
+  uint64_t rem = counter_elapsed % platform->timer_freq_hz;
+  return sec * 1000000000ULL + (rem * 1000000000ULL) / platform->timer_freq_hz;
 }
 
 // Cancel any pending timer

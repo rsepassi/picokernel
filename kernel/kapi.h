@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <time.h>
+
 #include "platform.h"
 #include "platform_impl.h"
 
@@ -63,8 +65,8 @@ struct kwork {
 // Timer request structure
 typedef struct ktimer_req ktimer_req_t;
 struct ktimer_req {
-  kwork_t work;         // Embedded work item
-  uint64_t deadline_ms; // Absolute deadline
+  kwork_t work;        // Embedded work item
+  ktime_t deadline_ns; // Absolute deadline in nanoseconds
   ktimer_req_t *parent; // Intrusive heap parent
   ktimer_req_t *left;   // Intrusive heap left child
   ktimer_req_t *right;  // Intrusive heap right child
@@ -143,3 +145,37 @@ void kwork_init(kwork_t *work, uint32_t op, void *ctx,
 // Release a network receive buffer back to the ring
 void knet_buffer_release(kernel_t *k, knet_recv_req_t *req,
                          size_t buffer_index);
+
+// Time conversion utilities (ktime_t is uint64_t nanoseconds)
+
+// Convert ktime to timespec
+static inline struct timespec ktime_to_timespec(ktime_t kt) {
+  struct timespec ts;
+  ts.tv_sec = (time_t)(kt / NSEC_PER_SEC);
+  ts.tv_nsec = (long)(kt % NSEC_PER_SEC);
+  return ts;
+}
+
+// Convert timespec to ktime
+static inline ktime_t timespec_to_ktime(struct timespec ts) {
+  return (ktime_t)ts.tv_sec * NSEC_PER_SEC + (ktime_t)ts.tv_nsec;
+}
+
+// Add nanoseconds to ktime
+static inline ktime_t ktime_add_ns(ktime_t ktime, uint64_t ns) {
+  return ktime + ns;
+}
+
+// Subtract nanoseconds from ktime
+static inline ktime_t ktime_sub_ns(ktime_t ktime, uint64_t ns) {
+  return ktime - ns;
+}
+
+// Compare two ktimes: returns -1 if a < b, 0 if a == b, 1 if a > b
+static inline int ktime_cmp(ktime_t a, ktime_t b) {
+  if (a < b)
+    return -1;
+  if (a > b)
+    return 1;
+  return 0;
+}

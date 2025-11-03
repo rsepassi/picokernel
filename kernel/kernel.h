@@ -5,8 +5,6 @@
 
 #include "kapi.h"
 
-typedef uint64_t ktime_t;
-
 // Kernel state
 struct kernel {
   struct platform platform;
@@ -20,7 +18,7 @@ struct kernel {
   // Timer management
   ktimer_req_t *timer_heap_root; // Root of min-heap tree
   size_t timer_heap_size;        // Number of active timers
-  ktime_t current_time_ms;
+  ktime_t current_time_ns;       // Current monotonic time in nanoseconds
 
 #ifdef KDEBUG
   // Work transition history (debug builds only)
@@ -28,7 +26,7 @@ struct kernel {
     kwork_t *work;
     uint8_t from_state;
     uint8_t to_state;
-    uint64_t timestamp_ms;
+    ktime_t timestamp_ns; // Timestamp in nanoseconds
   } work_history[16];
   uint32_t work_history_idx;
 #endif
@@ -42,17 +40,17 @@ void kmain(void *fdt);
 // Get global kernel pointer (FOR LOGGING/DEBUG ONLY - do not use elsewhere)
 kernel_t *kget_kernel__logonly__(void);
 
-// Get current time (FOR LOGGING/DEBUG ONLY - do not use elsewhere)
-uint64_t kget_time_ms__logonly__(void);
+// Get current time in nanoseconds (FOR LOGGING/DEBUG ONLY - do not use elsewhere)
+ktime_t kget_time_ns__logonly__(void);
 
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt);
 
-// Get next timeout for platform_wfi
-uint64_t kmain_next_delay(kernel_t *k);
+// Get next timeout for platform_wfi (in nanoseconds)
+ktime_t kmain_next_delay(kernel_t *k);
 
 // Process kernel tick (expire timers, run callbacks, submit work)
-void kmain_tick(kernel_t *k, uint64_t current_time);
+void kmain_tick(kernel_t *k, ktime_t current_time);
 
 // Platform → Kernel Interface (called by platform code)
 

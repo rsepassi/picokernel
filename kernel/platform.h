@@ -97,9 +97,9 @@ void platform_init(platform_t *platform, void *fdt, void *kernel);
 
 // Wait for interrupt with timeout
 // platform: platform state structure
-// timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
-// Returns: current time in milliseconds after waking
-uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms);
+// timeout_ns: timeout in nanoseconds (UINT64_MAX = wait forever)
+// Returns: current time in nanoseconds after waking
+ktime_t platform_wfi(platform_t *platform, ktime_t timeout_ns);
 
 // Submit work and cancellations to platform (called from ktick)
 // submissions: singly-linked list of work to submit (or NULL)

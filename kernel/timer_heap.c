@@ -78,9 +78,9 @@ static ktimer_req_t *timer_heap_find_last(kernel_t *k) {
 // Swap the data (deadline and work) between two timer nodes
 static void timer_heap_swap(ktimer_req_t *a, ktimer_req_t *b) {
   // Swap deadline
-  uint64_t temp_deadline = a->deadline_ms;
-  a->deadline_ms = b->deadline_ms;
-  b->deadline_ms = temp_deadline;
+  uint64_t temp_deadline = a->deadline_ns;
+  a->deadline_ns = b->deadline_ns;
+  b->deadline_ns = temp_deadline;
 
   // Swap work item data (but not the next/prev list pointers)
   kwork_t temp_work = a->work;
@@ -91,7 +91,7 @@ static void timer_heap_swap(ktimer_req_t *a, ktimer_req_t *b) {
 // Bubble up to restore min-heap property
 static void timer_heap_bubble_up(ktimer_req_t *node) {
   while (node->parent != NULL &&
-         node->deadline_ms < node->parent->deadline_ms) {
+         node->deadline_ns < node->parent->deadline_ns) {
     timer_heap_swap(node, node->parent);
     node = node->parent;
   }
@@ -102,12 +102,12 @@ static void timer_heap_bubble_down(ktimer_req_t *node) {
   while (1) {
     ktimer_req_t *smallest = node;
 
-    if (node->left != NULL && node->left->deadline_ms < smallest->deadline_ms) {
+    if (node->left != NULL && node->left->deadline_ns < smallest->deadline_ns) {
       smallest = node->left;
     }
 
     if (node->right != NULL &&
-        node->right->deadline_ms < smallest->deadline_ms) {
+        node->right->deadline_ns < smallest->deadline_ns) {
       smallest = node->right;
     }
 
@@ -239,7 +239,7 @@ void timer_heap_delete(kernel_t *k, ktimer_req_t *timer) {
 
   // Restore heap property - try both up and down
   if (timer->parent != NULL &&
-      timer->deadline_ms < timer->parent->deadline_ms) {
+      timer->deadline_ns < timer->parent->deadline_ns) {
     timer_heap_bubble_up(timer);
   } else {
     timer_heap_bubble_down(timer);

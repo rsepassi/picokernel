@@ -4,9 +4,9 @@
 #include "platform.h"
 #include "printk.h"
 
-// Helper to get current timestamp
-static uint64_t get_timestamp_ms(user_t *user) {
-  return user->kernel->current_time_ms;
+// Helper to get current timestamp in nanoseconds
+static ktime_t get_timestamp_ns(user_t *user) {
+  return user->kernel->current_time_ns;
 }
 
 // Helper to write uint64_t to buffer (little-endian)
@@ -597,8 +597,8 @@ static void on_block_complete(kwork_t *work) {
     user->sector_buffer[2] = 0x4D;
     user->sector_buffer[3] = 0x56;
 
-    // Write current timestamp
-    uint64_t now = get_timestamp_ms(user);
+    // Write current timestamp (in nanoseconds)
+    ktime_t now = get_timestamp_ns(user);
     write_u64(&user->sector_buffer[4], now);
 
     // Submit write

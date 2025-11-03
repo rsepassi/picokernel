@@ -884,11 +884,11 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
 }
 
 // Wait for interrupt with timeout
-// timeout_ms: timeout in milliseconds (UINT64_MAX = wait forever)
-// Returns: current time in milliseconds
-uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
-  if (timeout_ms == 0) {
-    return timer_get_current_time_ms(platform);
+// timeout_ns: timeout in nanoseconds (UINT64_MAX = wait forever)
+// Returns: current time in nanoseconds
+ktime_t platform_wfi(platform_t *platform, ktime_t timeout_ns) {
+  if (timeout_ns == 0) {
+    return timer_get_current_time_ns(platform);
   }
 
   // Disable interrupts to check condition atomically
@@ -897,11 +897,13 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   // Check if an interrupt has already fired (ring buffer not empty)
   if (!kirq_ring_is_empty(&platform->irq_ring)) {
     __asm__ volatile("msr daifclr, #2" ::: "memory"); // Re-enable IRQs
-    return timer_get_current_time_ms(platform);
+    return timer_get_current_time_ns(platform);
   }
 
   // Set timeout timer if not UINT64_MAX
-  if (timeout_ms != UINT64_MAX) {
+  if (timeout_ns != UINT64_MAX) {
+    // Convert nanoseconds to milliseconds for timer_set_oneshot_ms
+    uint64_t timeout_ms = timeout_ns / 1000000ULL;
     // For timeouts > UINT32_MAX ms, cap at UINT32_MAX
     uint32_t timeout_ms_32 =
         (timeout_ms > UINT32_MAX) ? UINT32_MAX : (uint32_t)timeout_ms;
@@ -913,12 +915,12 @@ uint64_t platform_wfi(platform_t *platform, uint64_t timeout_ms) {
   __asm__ volatile("msr daifclr, #2" ::: "memory");
 
   // Cancel timer if it was set
-  if (timeout_ms != UINT64_MAX) {
+  if (timeout_ns != UINT64_MAX) {
     timer_cancel(platform);
   }
 
   // Return current time
-  return timer_get_current_time_ms(platform);
+  return timer_get_current_time_ns(platform);
 }
 
 // Abort system execution (shutdown/halt)

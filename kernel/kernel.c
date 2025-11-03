@@ -18,7 +18,7 @@ static void record_work_transition(kernel_t *k, kwork_t *work,
   k->work_history[idx].work = work;
   k->work_history[idx].from_state = (uint8_t)from_state;
   k->work_history[idx].to_state = (uint8_t)to_state;
-  k->work_history[idx].timestamp_ms = k->current_time_ms;
+  k->work_history[idx].timestamp_ns = k->current_time_ns;
   k->work_history_idx = (idx + 1) % 16;
 }
 
@@ -61,8 +61,8 @@ void kdebug_dump_work_history(void) {
     }
 
     printk(" @ ");
-    printk_dec(k->work_history[i].timestamp_ms);
-    printk("ms\n");
+    printk_dec(k->work_history[i].timestamp_ns);
+    printk("ns\n");
   }
 }
 
@@ -115,7 +115,7 @@ static void expire_timers(kernel_t *k) {
   while (1) {
     ktimer_req_t *timer = timer_heap_peek_min(k);
 
-    if (timer == NULL || timer->deadline_ms > k->current_time_ms) {
+    if (timer == NULL || timer->deadline_ns > k->current_time_ns) {
       break; // No more expired timers
     }
 
@@ -135,7 +135,7 @@ static void expire_timers(kernel_t *k) {
 void kmain_init(kernel_t *k, void *fdt) {
   memset(k, 0, sizeof(kernel_t));
   platform_init(&k->platform, fdt, k);
-  k->current_time_ms = platform_wfi(&k->platform, 0);
+  k->current_time_ns = platform_wfi(&k->platform, 0);
   platform_interrupt_enable(&k->platform);
   KLOG("interrupts enabled");
 }
@@ -220,24 +220,24 @@ void kwork_init(kwork_t *work, uint32_t op, void *ctx,
 }
 
 // Get next timeout for platform_wfi
-uint64_t kmain_next_delay(kernel_t *k) {
+ktime_t kmain_next_delay(kernel_t *k) {
   ktimer_req_t *timer = timer_heap_peek_min(k);
 
   if (timer == NULL) {
     return UINT64_MAX; // No timers, wait forever
   }
 
-  if (timer->deadline_ms <= k->current_time_ms) {
+  if (timer->deadline_ns <= k->current_time_ns) {
     return 0; // Already expired
   }
 
-  return timer->deadline_ms - k->current_time_ms;
+  return timer->deadline_ns - k->current_time_ns;
 }
 
 // Process kernel tick
-void kmain_tick(kernel_t *k, uint64_t current_time) {
+void kmain_tick(kernel_t *k, ktime_t current_time) {
   // Update kernel time
-  k->current_time_ms = current_time;
+  k->current_time_ns = current_time;
 
   // Expire timers
   expire_timers(k);

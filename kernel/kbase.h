@@ -12,6 +12,10 @@
  * Foundation Types - Basic data structures
  * ===========================================================================*/
 
+/* Kernel time type: monotonic nanoseconds since boot
+ * Wraps after ~584 years, which is acceptable for embedded/VM kernels */
+typedef uint64_t ktime_t;
+
 /* Physical memory/address region with intrusive doubly-linked list */
 typedef struct kregion {
   uintptr_t base;       // Base physical address
@@ -83,13 +87,15 @@ typedef struct {
 #define KTOSTRING(x) KSTRINGIFY(x)
 
 /* Forward declaration of time getter (defined in kernel.h) */
-uint64_t kget_time_ms__logonly__(void);
+ktime_t kget_time_ns__logonly__(void);
 
 #define KLOG(fmt, ...)                                                         \
   do {                                                                         \
-    uint64_t _time = kget_time_ms__logonly__();                                \
-    if (_time > 0) {                                                           \
-      printk("[%10lu][%s:%d] " fmt "\n", (unsigned long)_time, __FILE__,       \
+    ktime_t _time_ns = kget_time_ns__logonly__();                              \
+    if (_time_ns > 0) {                                                        \
+      unsigned long _sec = (unsigned long)(_time_ns / 1000000000ULL);          \
+      unsigned long _usec = (unsigned long)((_time_ns / 1000ULL) % 1000000ULL); \
+      printk("[%5lu.%06lu][%s:%d] " fmt "\n", _sec, _usec, __FILE__,           \
              __LINE__, ##__VA_ARGS__);                                         \
     } else {                                                                   \
       printk("[%s:%d] " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__);          \
