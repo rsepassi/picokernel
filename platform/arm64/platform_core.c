@@ -133,9 +133,7 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   platform->pci_ecam_size = 0;
   platform->pci_mmio_base = 0;
   platform->pci_mmio_size = 0;
-
-  // Stack-local storage for UART address (used for debug logging only)
-  uintptr_t uart_base = 0;
+  platform->uart_base = 0;
 
   KLOG("Traversing device tree");
 
@@ -170,11 +168,11 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
     }
 
     // Check for UART
-    if (uart_base == 0 && compatible_match(fdt, node, uart_compat)) {
+    if (platform->uart_base == 0 && compatible_match(fdt, node, uart_compat)) {
       int len;
       const void *reg = fdt_getprop(fdt, node, "reg", &len);
       if (reg && len >= 16) {
-        uart_base = kload_be64((const uint8_t *)reg);
+        platform->uart_base = kload_be64((const uint8_t *)reg);
       }
       continue;
     }
@@ -248,8 +246,8 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
     }
 
     // Generic MMIO region collection for all device nodes with reg property
-    // Only collect from nodes at depth 1 (direct children of root)
-    if (depth == 1 && platform->num_mmio_regions < KCONFIG_MAX_MMIO_REGIONS) {
+    // Only collect from nodes at depth 2 (direct children of root, since root is at depth 1)
+    if (depth == 2 && platform->num_mmio_regions < KCONFIG_MAX_MMIO_REGIONS) {
       // Skip memory nodes (already handled separately)
       if (memcmp(name, "memory@", 7) == 0 || strcmp(name, "memory") == 0) {
         continue;
@@ -295,8 +293,8 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
          (unsigned long long)(size / 1024 / 1024));
   }
 
-  if (uart_base != 0) {
-    KLOG("  UART: 0x%llx", (unsigned long long)uart_base);
+  if (platform->uart_base != 0) {
+    KLOG("  UART: 0x%llx", (unsigned long long)platform->uart_base);
   }
 
   if (platform->gic_dist_base != 0) {
@@ -419,6 +417,10 @@ static uint64_t *get_l3_table(platform_t *platform) {
 
 // Helper: Map a single 64KB page with identity mapping
 static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
+  // Physical address must be 64KB aligned for ARM64 64KB pages
+  KASSERT((phys_addr & 0xFFFFULL) == 0,
+          "Physical address must be 64KB aligned for mapping");
+
   uint32_t l1_idx = ARM64_L1_INDEX(phys_addr);
   uint32_t l2_idx = ARM64_L2_INDEX(phys_addr);
   uint32_t l3_idx = ARM64_L3_INDEX(phys_addr);
@@ -426,7 +428,9 @@ static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
   // Ensure L1 → L2 mapping exists
   if (!(platform->page_table_l1[l1_idx] & PTE_VALID)) {
     uint64_t *l2_table = get_l2_table(platform);
-    platform->page_table_l1[l1_idx] = ((uint64_t)l2_table) | PTE_L1_TABLE;
+    uint64_t l2_addr = (uint64_t)l2_table;
+    KASSERT((l2_addr & 0xFFFFULL) == 0, "L2 table must be 64KB aligned");
+    platform->page_table_l1[l1_idx] = l2_addr | PTE_L1_TABLE;
   }
 
   // Get L2 table and ensure L2 → L3 mapping exists
@@ -434,18 +438,37 @@ static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
       (uint64_t *)(platform->page_table_l1[l1_idx] & ~0xFFFFULL);
   if (!(l2_table[l2_idx] & PTE_VALID)) {
     uint64_t *l3_table = get_l3_table(platform);
-    l2_table[l2_idx] = ((uint64_t)l3_table) | PTE_L2_TABLE;
+    uint64_t l3_addr = (uint64_t)l3_table;
+    KASSERT((l3_addr & 0xFFFFULL) == 0, "L3 table must be 64KB aligned");
+    l2_table[l2_idx] = l3_addr | PTE_L2_TABLE;
   }
 
   // Map the page in L3 table
   uint64_t *l3_table = (uint64_t *)(l2_table[l2_idx] & ~0xFFFFULL);
+
+  // Skip if page is already mapped (handles overlapping regions from FDT)
+  if (l3_table[l3_idx] & PTE_VALID) {
+    // If already mapped, verify flags are the same
+    uint64_t existing_entry = l3_table[l3_idx];
+    uint64_t new_entry = phys_addr | flags;
+    KASSERT(existing_entry == new_entry, "Conflicting mapping flags");
+    return;
+  }
+
   l3_table[l3_idx] = phys_addr | flags;
 }
 
 // Helper: Map a range of pages with the same flags
 static void map_page_range(platform_t *platform, uint64_t base, uint64_t size,
                            uint64_t flags) {
-  for (uint64_t addr = base; addr < base + size; addr += ARM64_PAGE_SIZE) {
+  // Align base down to page boundary, and extend size to cover the range
+  uint64_t base_aligned = KALIGN_BACK(base, ARM64_PAGE_SIZE);
+  uint64_t end = base + size;
+  uint64_t end_aligned = KALIGN(end, ARM64_PAGE_SIZE);
+  uint64_t size_aligned = end_aligned - base_aligned;
+
+  for (uint64_t addr = base_aligned; addr < base_aligned + size_aligned;
+       addr += ARM64_PAGE_SIZE) {
     map_page(platform, addr, flags);
   }
 }
@@ -455,6 +478,12 @@ static void map_page_range(platform_t *platform, uint64_t base, uint64_t size,
 // platform_boot_context_parse
 __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
   KLOG("Setting up ARM64 MMU (64KB pages, 48-bit address space)...");
+
+  // Print kernel location for debugging
+  KLOG("Kernel location: _start=0x%llx, _end=0x%llx, size=%llu KB",
+       (unsigned long long)(uintptr_t)_start,
+       (unsigned long long)(uintptr_t)_end,
+       (unsigned long long)((uintptr_t)_end - (uintptr_t)_start) / 1024);
 
   // Reset allocation counters
   platform->next_l2_table = 0;
@@ -489,6 +518,24 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
          (unsigned long long)mmio_size);
 
     map_page_range(platform, mmio_base, mmio_size, PTE_L3_PAGE_DEVICE);
+  }
+
+  // Map UART explicitly (it's parsed from FDT but not in MMIO regions list)
+  if (platform->uart_base != 0) {
+    KLOG("Mapping UART: 0x%llx", (unsigned long long)platform->uart_base);
+    map_page_range(platform, platform->uart_base, 0x1000, PTE_L3_PAGE_DEVICE);
+  }
+
+  // Map GIC explicitly (parsed from FDT but not in MMIO regions list)
+  if (platform->gic_dist_base != 0) {
+    KLOG("Mapping GIC Distributor: 0x%llx",
+         (unsigned long long)platform->gic_dist_base);
+    map_page_range(platform, platform->gic_dist_base, 0x10000, PTE_L3_PAGE_DEVICE);
+  }
+  if (platform->gic_cpu_base != 0) {
+    KLOG("Mapping GIC CPU Interface: 0x%llx",
+         (unsigned long long)platform->gic_cpu_base);
+    map_page_range(platform, platform->gic_cpu_base, 0x10000, PTE_L3_PAGE_DEVICE);
   }
 
   // Map all discovered RAM regions
