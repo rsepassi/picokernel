@@ -1,3 +1,12 @@
+---
+**DESIGN DOCUMENT - THEORETICAL ANALYSIS**
+
+This document compares a future architectural pattern (described in multimachine.md) to other concurrency models. This is theoretical and academic documentation, not a description of the current VMOS implementation.
+
+For documentation of the current VMOS implementation, see the main documentation files in `doc/`.
+
+---
+
 # The Machine Pattern: Comparisons to Other Concurrency Models
 
 ## Introduction

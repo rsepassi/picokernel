@@ -1,458 +1,848 @@
-# VirtIO in vmos
+# VMOS VirtIO Implementation
 
 ## Overview
 
-vmos implements VirtIO device support with a three-layer architecture that
-separates device drivers, transport mechanisms, and platform-specific code.
-Currently supports VirtIO-RNG on both x64 (PCI) and arm64 (MMIO).
+VMOS uses **VirtIO** virtual devices for I/O operations. VirtIO is a standardized interface for virtual devices in hypervisors, designed for efficiency with paravirtualization. VMOS supports both **MMIO** and **PCI** transports.
 
-**Architecture layers:**
-- **Device drivers** (`driver/virtio/`) - Transport-agnostic device logic
-- **Transport implementations** - PCI (x64) and MMIO (arm64)
-- **Platform integration** (`platform/*/`) - Device discovery, interrupts, cache coherency
+**Supported Devices:**
+- **VirtIO RNG** - Random Number Generator (hardware entropy)
+- **VirtIO Block** - Block device (disk I/O)
+- **VirtIO Network** - Network interface (packet send/receive)
 
-## Code Organization
+**Key Characteristics:**
+- Transport-agnostic device drivers (same driver works with MMIO or PCI)
+- Virtqueue-based communication (shared memory rings)
+- Interrupt-driven or polling
+- Zero-copy DMA transfers
+
+## Architecture
+
+### Layered Structure
 
 ```
-driver/virtio/
-  virtio.h/c          - Virtqueue management (descriptors, rings)
-  virtio_pci.h/c      - Generic PCI transport
-  virtio_mmio.h/c     - Generic MMIO transport
-  virtio_rng.h/c      - RNG device driver (transport-agnostic)
-
-platform/x64/
-  platform_virtio.c   - PCI device discovery, interrupt setup
-  pci.c/h             - PCI configuration space access
-  acpi_devices.c      - ACPI-based MMIO device discovery (fallback)
-
-platform/arm64/
-  virtio_mmio.c       - MMIO device discovery, GIC setup
-  interrupt.c         - GIC interrupt configuration
+Device Drivers (virtio_rng.c, virtio_blk.c, virtio_net.c)
+    │
+    │ Uses virtqueue operations
+    ▼
+VirtIO Core (virtio.h, virtio.c)
+    │
+    │ Transport abstraction
+    ▼
+├─ MMIO Transport (virtio_mmio.c)    ├─ PCI Transport (virtio_pci.c)
+│    MMIO register access             │    PCI BAR access, MSI-X
+│    Direct memory mapping            │    Capability parsing
+└────────────────────────────────────┴─────────────────────────────────
+                         │
+                         ▼
+             Platform MMIO/PCI Functions (platform.h)
 ```
 
-## VirtIO Core Concepts
+**Dependency principle:** Device drivers are transport-agnostic. They use `virtqueue_*` operations and transport function pointers, never directly accessing transport-specific details.
 
-### Virtqueues
+## Virtqueue
 
-VirtIO uses virtqueues for device communication. Each virtqueue has three rings:
+The **virtqueue** is the core communication mechanism between driver and device.
 
-**Descriptor table** - Buffers available for device operations:
+### Structure
+
+A virtqueue consists of three rings in shared memory:
+
+```
+┌──────────────────────────────────────┐
+│ Descriptor Table                     │  Driver and device both read/write
+│ (Array of virtq_desc_t)              │  Contains buffer addresses & metadata
+├──────────────────────────────────────┤
+│ Available Ring (avail)               │  Driver writes, device reads
+│ (virtq_avail_t + ring[])             │  Which descriptors are available
+├──────────────────────────────────────┤
+│ Padding (align to 4K)                │
+├──────────────────────────────────────┤
+│ Used Ring (used)                     │  Device writes, driver reads
+│ (virtq_used_t + ring[])              │  Which descriptors are used (done)
+└──────────────────────────────────────┘
+```
+
+**Location:** `driver/virtio/virtio.h:40-81`
+
+### Descriptor
+
 ```c
 typedef struct {
-    uint64_t addr;     // Physical address
-    uint32_t len;      // Buffer length
-    uint16_t flags;    // VIRTQ_DESC_F_{NEXT,WRITE,INDIRECT}
-    uint16_t next;     // Next descriptor if NEXT flag set
+    uint64_t addr;  // Physical address
+    uint32_t len;   // Length
+    uint16_t flags; // VIRTQ_DESC_F_*
+    uint16_t next;  // Next descriptor (if NEXT flag set)
 } virtq_desc_t;
 ```
 
-**Available ring** - Driver writes descriptor indices here:
+**Flags:**
+- `VIRTQ_DESC_F_NEXT (1)`: Descriptor has next (chained descriptors)
+- `VIRTQ_DESC_F_WRITE (2)`: Device writes to buffer (vs. driver writes)
+- `VIRTQ_DESC_F_INDIRECT (4)`: Buffer contains list of descriptors
+
+**Example:** For a block read:
+1. Header descriptor (device writes)
+2. Data descriptor (device writes, NEXT flag)
+3. Status descriptor (device writes)
+
+### Available Ring
+
 ```c
 typedef struct {
     uint16_t flags;
-    uint16_t idx;      // Driver increments when adding descriptors
-    uint16_t ring[];   // Descriptor indices
+    uint16_t idx;
+    uint16_t ring[]; // Variable size
 } virtq_avail_t;
 ```
 
-**Used ring** - Device writes completion entries here:
+**Purpose:** Driver tells device which descriptor chains are available
+
+**Flow:**
+1. Driver allocates descriptors
+2. Driver sets up descriptor chain
+3. Driver adds head descriptor index to `ring[idx % queue_size]`
+4. Driver increments `idx`
+5. Driver optionally notifies device (kick)
+
+### Used Ring
+
 ```c
 typedef struct {
-    uint32_t id;       // Descriptor chain head
-    uint32_t len;      // Bytes written by device
-} virtq_used_elem_t;
+    uint16_t flags;
+    uint16_t idx;
+    virtq_used_elem_t ring[]; // Variable size
+} virtq_used_t;
 
 typedef struct {
-    uint16_t flags;
-    uint16_t idx;      // Device increments when processing descriptors
-    virtq_used_elem_t ring[];
-} virtq_used_t;
+    uint32_t id;  // Descriptor chain head
+    uint32_t len; // Bytes written
+} virtq_used_elem_t;
 ```
+
+**Purpose:** Device tells driver which descriptor chains are completed
+
+**Flow:**
+1. Device processes descriptor chain
+2. Device adds entry to `ring[idx % queue_size]` with head ID and bytes written
+3. Device increments `idx`
+4. Device optionally sends interrupt
 
 ### Virtqueue Operations
 
-Core operations in `driver/virtio/virtio.c`:
-- `virtqueue_alloc_desc()` - Allocate descriptor from free list
-- `virtqueue_add_desc()` - Setup descriptor (address, length, flags)
-- `virtqueue_add_avail()` - Add descriptor to available ring
-- `virtqueue_kick()` - Notify device of new descriptors
-- `virtqueue_has_used()` - Check for completed descriptors
-- `virtqueue_get_used()` - Get completed descriptor and length
-- `virtqueue_free_desc()` - Return descriptor to free list
-
-## Transport Mechanisms
-
-### PCI Transport (x64)
-
-Uses VirtIO PCI modern interface with capability-based configuration.
-
-**Device discovery:**
-- PCI bus scan (buses 0-3, slots 0-31)
-- Vendor ID: 0x1AF4 (Red Hat)
-- Device IDs: 0x1005 (legacy RNG), 0x1044 (modern RNG)
-- Fallback: ACPI-based MMIO device discovery
-
-**Capabilities:**
-- `COMMON_CFG` - Device configuration and virtqueue setup
-- `NOTIFY_CFG` - Virtqueue notification BAR and offset multiplier
-- `ISR_CFG` - Interrupt status register
-
-**Interrupts:**
-- Legacy PCI interrupts (not MSI-X)
-- Routed through LAPIC
-- Deferred processing pattern (ISR sets flag, `platform_tick()` processes)
-
-**Cache coherency:**
-- Hardware-maintained on x86-64 (no explicit cache operations needed)
-
-**Implementation:** `driver/virtio/virtio_pci.c`, `platform/x64/platform_virtio.c`
-
-### MMIO Transport (arm64)
-
-Uses VirtIO MMIO register interface for device access.
-
-**Device discovery:**
-- Fixed memory region scan: 0x0a000000 base
-- 32 slots at 0x200 byte intervals
-- Magic value: 0x74726976 ("virt")
-- Supports both v1 (legacy) and v2 (modern) MMIO
-
-**Register layout (key registers):**
-```
-0x000: Magic value
-0x004: Version (1 = legacy, 2 = modern)
-0x008: Device ID
-0x030: Queue select
-0x034: Queue num max
-0x038: Queue num
-0x050: Queue notify
-0x060: Interrupt status
-0x070: Device status
+**Initialize virtqueue:**
+```c
+void virtqueue_init(virtqueue_t *vq, uint16_t queue_size, void *base);
 ```
 
-**Version differences:**
-- **v1 (legacy):** Single contiguous queue memory, `QUEUE_PFN` register
-- **v2 (modern):** Separate descriptor/available/used addresses
+**Allocate descriptor:**
+```c
+uint16_t virtqueue_alloc_desc(virtqueue_t *vq);
+// Returns: descriptor index or VIRTQUEUE_NO_DESC if full
+```
 
-**Interrupts:**
-- GIC SPIs (Shared Peripheral Interrupts)
-- IRQs 48-79 for slots 0-31
-- Edge-triggered interrupt configuration
+**Setup descriptor:**
+```c
+void virtqueue_add_desc(virtqueue_t *vq, uint16_t idx, uint64_t addr,
+                        uint32_t len, uint16_t flags);
+```
 
-**Cache coherency:**
-- Manual cache maintenance required:
-  - `dc cvac` (clean) before device reads
-  - `dc ivac` (invalidate) before CPU reads
-  - `dsb sy` memory barriers
+**Add to available ring:**
+```c
+void virtqueue_add_avail(virtqueue_t *vq, uint16_t desc_idx);
+```
 
-**Implementation:** `driver/virtio/virtio_mmio.c`, `platform/arm64/virtio_mmio.c`
+**Check for used entries:**
+```c
+int virtqueue_has_used(virtqueue_t *vq);
+// Returns: number of used entries
+```
+
+**Get used descriptor:**
+```c
+void virtqueue_get_used(virtqueue_t *vq, uint16_t *desc_idx, uint32_t *len);
+```
+
+**Free descriptor:**
+```c
+void virtqueue_free_desc(virtqueue_t *vq, uint16_t desc_idx);
+```
+
+**Location:** `driver/virtio/virtio.c`
+
+### Memory Layout
+
+VMOS pre-allocates virtqueue memory statically:
+
+```c
+#define VIRTQUEUE_MAX_SIZE 256
+
+typedef struct {
+    // Descriptor table (4096 bytes)
+    virtq_desc_t descriptors[VIRTQUEUE_MAX_SIZE];
+
+    // Available ring (518 bytes)
+    struct {
+        uint16_t flags;
+        uint16_t idx;
+        uint16_t ring[VIRTQUEUE_MAX_SIZE];
+        uint16_t used_event;
+    } __attribute__((packed)) available;
+
+    // Padding to 4K alignment (3578 bytes)
+    uint8_t padding[8192 - 4096 - 518];
+
+    // Used ring (2054 bytes)
+    struct {
+        uint16_t flags;
+        uint16_t idx;
+        virtq_used_elem_t ring[VIRTQUEUE_MAX_SIZE];
+        uint16_t avail_event;
+    } __attribute__((packed)) used;
+} __attribute__((aligned(4096))) virtqueue_memory_t;
+```
+
+**Total size:** ~12KB per virtqueue
+
+**Storage:** Embedded in `platform_t` structure, one per device
+
+**Location:** `driver/virtio/virtio.h:122-148`
+
+## MMIO Transport
+
+MMIO (Memory-Mapped I/O) transport accesses VirtIO devices through fixed MMIO regions.
+
+### MMIO Registers
+
+```c
+#define VIRTIO_MMIO_MAGIC_VALUE      0x000  // Magic "virt" (0x74726976)
+#define VIRTIO_MMIO_VERSION          0x004  // 1 = legacy, 2 = modern
+#define VIRTIO_MMIO_DEVICE_ID        0x008  // Device type (4=RNG, 2=block, 1=net)
+#define VIRTIO_MMIO_VENDOR_ID        0x00c  // Vendor ID
+#define VIRTIO_MMIO_DEVICE_FEATURES  0x010  // Device features
+#define VIRTIO_MMIO_DRIVER_FEATURES  0x020  // Driver features (write)
+#define VIRTIO_MMIO_QUEUE_SEL        0x030  // Queue select
+#define VIRTIO_MMIO_QUEUE_NUM_MAX    0x034  // Max queue size
+#define VIRTIO_MMIO_QUEUE_NUM        0x038  // Queue size (write)
+#define VIRTIO_MMIO_QUEUE_READY      0x044  // Queue ready (v2+)
+#define VIRTIO_MMIO_QUEUE_NOTIFY     0x050  // Queue notify (kick)
+#define VIRTIO_MMIO_INTERRUPT_STATUS 0x060  // Interrupt status
+#define VIRTIO_MMIO_INTERRUPT_ACK    0x064  // Interrupt acknowledge
+#define VIRTIO_MMIO_STATUS           0x070  // Device status
+#define VIRTIO_MMIO_QUEUE_DESC_LOW   0x080  // Descriptor table address (low)
+#define VIRTIO_MMIO_QUEUE_DESC_HIGH  0x084  // Descriptor table address (high)
+#define VIRTIO_MMIO_QUEUE_DRIVER_LOW 0x090  // Available ring address (low)
+#define VIRTIO_MMIO_QUEUE_DRIVER_HIGH 0x094 // Available ring address (high)
+#define VIRTIO_MMIO_QUEUE_DEVICE_LOW 0x0a0  // Used ring address (low)
+#define VIRTIO_MMIO_QUEUE_DEVICE_HIGH 0x0a4 // Used ring address (high)
+```
+
+**Location:** `driver/virtio/virtio_mmio.h:16-44`
+
+### MMIO Device Discovery
+
+**ARM/RISC-V (FDT-based):**
+1. Parse device tree for `virtio,mmio` nodes
+2. Extract `reg` property (base address, size)
+3. Extract `interrupts` property (IRQ number)
+4. Read magic value to verify device
+5. Read device ID to determine type
+
+**x64 (hardcoded ranges):**
+1. Probe known MMIO addresses (e.g., 0x0a000000 on QEMU)
+2. Check for magic value (0x74726976)
+3. Read device ID
+
+**Implementation:** `platform/*/platform_virtio.c`
+
+### MMIO Initialization
+
+```c
+// 1. Initialize MMIO transport
+virtio_mmio_transport_t mmio;
+virtio_mmio_init(&mmio, (void *)mmio_base);
+
+// 2. Reset device
+virtio_mmio_reset(&mmio);
+
+// 3. Set ACKNOWLEDGE status
+virtio_mmio_set_status(&mmio, VIRTIO_STATUS_ACKNOWLEDGE);
+
+// 4. Set DRIVER status
+virtio_mmio_set_status(&mmio, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
+
+// 5. Feature negotiation
+uint32_t features = virtio_mmio_get_features(&mmio, 0);
+virtio_mmio_set_features(&mmio, 0, accepted_features);
+
+// 6. Set FEATURES_OK
+virtio_mmio_set_status(&mmio, VIRTIO_STATUS_ACKNOWLEDGE |
+                              VIRTIO_STATUS_DRIVER |
+                              VIRTIO_STATUS_FEATURES_OK);
+
+// 7. Setup virtqueue
+virtio_mmio_setup_queue(&mmio, 0, &vq, queue_size);
+
+// 8. Set DRIVER_OK
+virtio_mmio_set_status(&mmio, VIRTIO_STATUS_ACKNOWLEDGE |
+                              VIRTIO_STATUS_DRIVER |
+                              VIRTIO_STATUS_FEATURES_OK |
+                              VIRTIO_STATUS_DRIVER_OK);
+```
+
+**Location:** `driver/virtio/virtio_mmio.c`, device init functions
+
+### MMIO Queue Notification
+
+```c
+void virtio_mmio_notify_queue(virtio_mmio_transport_t *mmio, uint16_t queue_idx) {
+    platform_mmio_write32((volatile uint32_t *)(mmio->base + VIRTIO_MMIO_QUEUE_NOTIFY),
+                          queue_idx);
+}
+```
+
+**When to notify:** After adding buffers to available ring
+
+## PCI Transport
+
+PCI transport accesses VirtIO devices through PCI configuration space and BARs.
+
+### PCI Device Discovery
+
+1. Scan PCI configuration space (bus 0-255, slot 0-31, func 0-7)
+2. Check for Vendor ID 0x1AF4 (VirtIO vendor)
+3. Check for Device ID 0x1000-0x103F (VirtIO devices)
+4. Read BARs to get MMIO regions
+5. Parse PCI capabilities to find VirtIO structures
+
+**Implementation:** `platform/*/platform_virtio.c`
+
+### PCI Capabilities
+
+VirtIO PCI devices use **PCI capabilities** to expose structures:
+
+```c
+#define VIRTIO_PCI_CAP_COMMON_CFG 1  // Common configuration
+#define VIRTIO_PCI_CAP_NOTIFY_CFG 2  // Queue notification
+#define VIRTIO_PCI_CAP_ISR_CFG    3  // ISR status
+#define VIRTIO_PCI_CAP_DEVICE_CFG 4  // Device-specific config
+```
+
+**Parsing capabilities:**
+```c
+int virtio_pci_init(virtio_pci_transport_t *pci, struct platform *platform,
+                    uint8_t bus, uint8_t slot, uint8_t func) {
+    // 1. Find capabilities pointer
+    uint8_t cap_ptr = platform_pci_config_read8(platform, bus, slot, func, 0x34);
+
+    // 2. Walk capability list
+    while (cap_ptr != 0) {
+        uint8_t cap_type = read_pci_cap_type(cap_ptr);
+
+        if (cap_type == VIRTIO_PCI_CAP_COMMON_CFG) {
+            // Map common config structure
+        } else if (cap_type == VIRTIO_PCI_CAP_NOTIFY_CFG) {
+            // Get notification base
+        } else if (cap_type == VIRTIO_PCI_CAP_ISR_CFG) {
+            // Map ISR status register
+        }
+
+        cap_ptr = read_next_cap_ptr(cap_ptr);
+    }
+}
+```
+
+**Location:** `driver/virtio/virtio_pci.c:virtio_pci_init()`
+
+### PCI Common Configuration
+
+```c
+typedef struct {
+    uint32_t device_feature_select;
+    uint32_t device_feature;
+    uint32_t driver_feature_select;
+    uint32_t driver_feature;
+    uint16_t msix_config;
+    uint16_t num_queues;
+    uint8_t device_status;
+    uint8_t config_generation;
+    uint16_t queue_select;
+    uint16_t queue_size;
+    uint16_t queue_msix_vector;
+    uint16_t queue_enable;
+    uint16_t queue_notify_off;
+    uint64_t queue_desc;
+    uint64_t queue_driver;
+    uint64_t queue_device;
+} __attribute__((packed)) virtio_pci_common_cfg_t;
+```
+
+**Access:** Direct MMIO writes to structure in BAR-mapped memory
+
+**Location:** `driver/virtio/virtio_pci.h:22-40`
+
+### MSI-X Support
+
+**x64 platforms** use MSI-X for interrupts (more efficient than legacy INTx):
+
+```c
+// Configure MSI-X vectors
+void virtio_pci_set_msix_vectors(virtio_pci_transport_t *pci,
+                                  uint16_t config_vector,
+                                  uint16_t queue_vector) {
+    pci->msix_config_vector = config_vector;
+    pci->msix_queue_vector = queue_vector;
+
+    // Write to device
+    pci->common_cfg->msix_config = config_vector;
+    pci->common_cfg->queue_msix_vector = queue_vector;
+}
+```
+
+**Other platforms** use legacy INTx (interrupt swizzling based on slot):
+```c
+uint32_t irq = platform_pci_irq_swizzle(platform, slot, int_pin);
+```
+
+**Location:** `driver/virtio/virtio_pci.c`, `platform/x64/platform_virtio.c`
 
 ## Device Drivers
 
-### VirtIO-RNG
+### Common Device Pattern
 
-Random number generator device (Device ID 4).
+All VirtIO device drivers follow this pattern:
 
-**Request tracking:**
-- `active_requests[]` array indexed by descriptor index
-- Constant-time O(1) lookup in interrupt handler
-- Request structure:
 ```c
 typedef struct {
-    work_t work;         // Embedded work item
-    uint8_t* buffer;     // Buffer to fill
-    size_t length;       // Bytes requested
-    size_t completed;    // Bytes actually read
-    uint16_t desc_idx;   // Descriptor index
+    kdevice_base_t base;  // MUST be first field
+
+    void *transport;      // MMIO or PCI transport
+    int transport_type;   // VIRTIO_TRANSPORT_MMIO or _PCI
+
+    virtqueue_t vq;       // Virtqueue
+    virtqueue_memory_t *vq_memory;
+
+    void *active_requests[MAX_REQUESTS];  // Request tracking
+    kernel_t *kernel;     // Kernel reference
+} virtio_xxx_dev_t;
+```
+
+**Key fields:**
+- `base`: Device base (enables type-safe casting)
+- `transport`: Points to either `virtio_mmio_transport_t` or `virtio_pci_transport_t`
+- `transport_type`: Determines which transport functions to call
+- `active_requests`: Maps descriptor index → request pointer
+
+### VirtIO RNG (Random Number Generator)
+
+**Device ID:** 4
+
+**Purpose:** Hardware random number generation
+
+**Virtqueues:** 1 (requestq)
+
+**Request structure:**
+```c
+typedef struct {
+    kwork_t work;
+    uint8_t *buffer;
+    size_t length;
+    size_t completed;
+    krng_req_platform_t platform;  // Contains desc_idx
 } krng_req_t;
 ```
 
-**Work submission:**
-1. Allocate descriptor from virtqueue
-2. Setup descriptor with device-writable buffer (`VIRTQ_DESC_F_WRITE`)
-3. Add to available ring
-4. Track request in `active_requests[desc_idx]`
-5. Kick device via transport notification
-6. Mark work as `KWORK_STATE_LIVE`
-
-**Backpressure:**
-- Returns `KERR_BUSY` immediately when virtqueue is full
-- Caller can retry submission
-
-**Completion:**
-1. Device processes request and writes to used ring
-2. Device generates interrupt
-3. ISR sets `irq_pending` flag
-4. `platform_tick()` processes completions:
-   - Read used ring entries
-   - Lookup request via `active_requests[desc_idx]`
-   - Call `kplatform_complete_work()` with result
-   - Free descriptor
-
-**Implementation:** `driver/virtio/virtio_rng.c`
-
-### User Code Example
-
+**Submission flow:**
 ```c
-static krng_req_t g_rng_req;
-static uint8_t g_random_buf[32];
+void virtio_rng_submit_work(virtio_rng_dev_t *rng, kwork_t *submissions,
+                            kernel_t *k) {
+    for (kwork_t *work = submissions; work != NULL; work = work->next) {
+        krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
 
-static void on_random_ready(kwork_t* work) {
-    krng_req_t* req = CONTAINER_OF(work, krng_req_t, work);
+        // 1. Allocate descriptor
+        uint16_t desc_idx = virtqueue_alloc_desc(&rng->vq);
 
-    if (work->result != KERR_OK) {
-        printk("RNG failed\n");
-        return;
+        // 2. Setup descriptor (device writes)
+        virtqueue_add_desc(&rng->vq, desc_idx,
+                          (uint64_t)req->buffer, req->length,
+                          VIRTQ_DESC_F_WRITE);
+
+        // 3. Store request pointer for completion
+        rng->active_requests[desc_idx] = req;
+        req->platform.desc_idx = desc_idx;
+
+        // 4. Add to available ring
+        virtqueue_add_avail(&rng->vq, desc_idx);
     }
 
-    // Use random bytes in req->buffer
-    printk("Got %d random bytes\n", req->completed);
-}
-
-void kusermain(kernel_t* k) {
-    g_rng_req.work.op = KWORK_OP_RNG_READ;
-    g_rng_req.work.callback = on_random_ready;
-    g_rng_req.buffer = g_random_buf;
-    g_rng_req.length = 32;
-
-    ksubmit(k, &g_rng_req.work);
+    // 5. Notify device
+    notify_device(rng);
 }
 ```
 
-## Platform Integration
-
-### x64 Platform
-
-**Initialization sequence:**
-1. Scan PCI bus for VirtIO devices
-2. Parse PCI capabilities to find COMMON_CFG, NOTIFY_CFG, ISR_CFG BARs
-3. Enable PCI bus mastering and memory access
-4. Initialize device via common configuration
-5. Setup virtqueue (allocate memory, write addresses)
-6. Register LAPIC interrupt handler
-7. Set DRIVER_OK status
-
-**Interrupt handling:**
-- Legacy PCI interrupt line
-- ISR reads interrupt status from ISR_CFG BAR
-- Sets `irq_pending` flag for deferred processing
-
-**Platform hooks:**
-- Cache operations: No-ops (hardware coherency)
-- Memory barriers: `mfence`
-- IRQ registration: LAPIC
-
-**Files:** `platform/x64/platform_virtio.c`, `platform/x64/pci.c`
-
-### arm64 Platform
-
-**Initialization sequence:**
-1. Scan memory regions for MMIO device magic value
-2. Detect MMIO version (v1 vs v2)
-3. Reset device (write 0 to status)
-4. Feature negotiation (read device features, write driver features)
-5. Setup virtqueue:
-   - v1: Write `QUEUE_PFN` (physical address >> 12)
-   - v2: Write separate descriptor/available/used addresses
-6. Clean cache for virtqueue memory
-7. Register GIC interrupt handler (edge-triggered SPI)
-8. Set DRIVER_OK status
-
-**Interrupt handling:**
-- GIC SPI interrupts (IRQs 48-79)
-- ISR reads `INTERRUPT_STATUS` register
-- Sets `irq_pending` flag for deferred processing
-
-**Cache coherency:**
-- **Submission:** Clean cache for descriptor table and available ring
-- **Completion:** Invalidate cache for used ring and data buffers
-- Memory barriers (`dsb sy`) around register access
-
-**Platform hooks:**
-- Cache operations: `dc cvac`, `dc ivac`
-- Memory barriers: `dsb sy`
-- IRQ registration: GIC with edge-triggered configuration
-
-**Files:** `platform/arm64/virtio_mmio.c`, `platform/arm64/interrupt.c`
-
-## Device Initialization Protocol
-
-Standard VirtIO initialization sequence (same for all transports):
-
-1. **Reset device** - Write 0 to status register
-2. **Acknowledge** - Set `VIRTIO_STATUS_ACKNOWLEDGE` bit
-3. **Driver loaded** - Set `VIRTIO_STATUS_DRIVER` bit
-4. **Feature negotiation:**
-   - Read device features
-   - Write accepted driver features
-5. **Features OK** - Set `VIRTIO_STATUS_FEATURES_OK` bit
-6. **Verify** - Re-read status, check `FEATURES_OK` still set
-7. **Setup virtqueues:**
-   - Select queue
-   - Query queue size
-   - Allocate memory (aligned to page boundary)
-   - Write queue addresses to device
-   - Enable queue (v2 only)
-8. **Driver OK** - Set `VIRTIO_STATUS_DRIVER_OK` bit
-9. **Enable interrupts** - Register and enable interrupt handler
-
-If any step fails, write `VIRTIO_STATUS_FAILED` to status register.
-
-## Implementation Status
-
-### Working
-
-✅ **x64 PCI VirtIO-RNG** - Fully functional
-- Device discovery via PCI scan
-- Request submission and completion
-- Interrupt delivery and processing
-- Integration with async work queue
-
-✅ **arm64 MMIO device discovery** - Device detection working
-✅ **arm64 VirtIO-RNG initialization** - Device initializes successfully
-✅ **arm64 GIC interrupt configuration** - Interrupts properly configured
-
-### In Progress
-
-⚠️ **arm64 MMIO VirtIO-RNG** - Initialization works, debugging interrupt delivery
-- Device accepts requests
-- Interrupt handler registered
-- Investigating: Device processing and interrupt generation
-
-### Future Work
-
-- Complete arm64 interrupt debugging
-- Add VirtIO-Block support (Device ID 2)
-- Add VirtIO-Net support (Device ID 1)
-- Implement MSI-X for PCI transport
-- Device tree parsing for dynamic MMIO device discovery
-- Support for VirtIO MMIO v2 optimizations (packed queues)
-
-## Design Rationale
-
-### Deferred Interrupt Processing
-
-**Pattern:** ISR sets `irq_pending` flag, `platform_tick()` processes completions before dispatching callbacks.
-
-**Benefits:**
-- Prevents reentrancy issues
-- Simplifies locking requirements
-- Processes all completions in batch
-- Callbacks execute in predictable context
-
-### Constant-Time Request Lookup
-
-**Design:** `active_requests[desc_idx]` array for O(1) lookup.
-
-**Benefits:**
-- Fast completion processing in ISR
-- Simple implementation
-- No search or hash table overhead
-- Array size equals virtqueue size (bounded)
-
-### Platform Hook Pattern
-
-**Design:** Transport code calls platform-provided functions for cache operations, barriers, and IRQ setup.
-
-**Benefits:**
-- Transport implementations are architecture-agnostic
-- Platform code handles architecture-specific quirks
-- New platforms reuse existing transport code
-- Clear separation of concerns
-
-### Transport Abstraction
-
-**Design:** Device drivers use generic transport interfaces, work with both MMIO and PCI.
-
-**Benefits:**
-- Device drivers written once, work on all platforms
-- Adding new transport doesn't require rewriting device drivers
-- Platform can support multiple transports (e.g., arm64 with PCIe)
-
-## Testing
-
-### x64 with QEMU
-
-```bash
-make run ARCH=x64
-```
-
-Add to QEMU command line (already in Makefile):
-```
--device virtio-rng-pci
-```
-
-**Expected output:**
-```
-Found VirtIO-RNG at PCI 0:4.0
-VirtIO-RNG initialized successfully
-Random bytes (32): [hex values]
-```
-
-### arm64 with QEMU
-
-```bash
-make run ARCH=arm64
-```
-
-QEMU virt machine includes virtio-mmio devices by default at 0x0a000000.
-
-**Current output:**
-```
-VirtIO MMIO device at 0x0a003e00, IRQ 79
-Device ID: 4
-Found VirtIO-RNG (MMIO) device
-Queue size: 256
-VirtIO-RNG (MMIO) initialized successfully
-RNG request submitted
-```
-
-### Debugging Tools
-
-**GIC configuration dump** (`platform/arm64/interrupt.c`):
+**Completion flow:**
 ```c
-void irq_dump_config(uint32_t irq_num);
+void virtio_rng_process_irq(virtio_rng_dev_t *rng, kernel_t *k) {
+    while (virtqueue_has_used(&rng->vq)) {
+        uint16_t desc_idx;
+        uint32_t len;
+
+        // 1. Get used descriptor
+        virtqueue_get_used(&rng->vq, &desc_idx, &len);
+
+        // 2. Recover request
+        krng_req_t *req = rng->active_requests[desc_idx];
+        req->completed = len;
+
+        // 3. Free descriptor
+        virtqueue_free_desc(&rng->vq, desc_idx);
+        rng->active_requests[desc_idx] = NULL;
+
+        // 4. Complete work
+        kplatform_complete_work(k, &req->work, KERR_OK);
+    }
+}
 ```
-Prints enabled state, priority, target CPU, trigger type, GIC registers.
 
-**VirtIO register inspection:**
-- Read `INTERRUPT_STATUS` register for pending interrupts
-- Check used ring `idx` for device updates
-- Verify descriptor table and ring memory contents
+**Location:** `driver/virtio/virtio_rng.c`, `driver/virtio/virtio_rng.h`
 
-## Adding New Devices
+### VirtIO Block (Disk I/O)
 
-To add a new VirtIO device (e.g., virtio-blk):
+**Device ID:** 2
 
-1. **Create device driver** (`driver/virtio/virtio_blk.c`):
-   - Define device-specific request structure
-   - Implement work submission logic
-   - Implement completion processing
-   - Use transport-agnostic virtqueue operations
+**Purpose:** Block device (disk read/write)
 
-2. **Add device ID** (`driver/virtio/virtio.h`):
-   ```c
-   #define VIRTIO_ID_BLOCK    2
-   ```
+**Virtqueues:** 1 (requestq)
 
-3. **Update platform discovery** (`platform/*/platform_virtio.c`):
-   - Check for device ID in discovery loop
-   - Initialize device with appropriate transport
-   - Register interrupt handler
+**Request header:**
+```c
+struct virtio_blk_req_header {
+    uint32_t type;        // VIRTIO_BLK_T_IN (read) or VIRTIO_BLK_T_OUT (write)
+    uint32_t reserved;
+    uint64_t sector;      // Starting sector
+};
+```
 
-4. **Add work queue operations** (`src/kapi.h`):
-   ```c
-   #define KWORK_OP_BLOCK_READ   3
-   #define KWORK_OP_BLOCK_WRITE  4
-   ```
+**Descriptor chain:**
+1. Header (driver writes)
+2. Data buffer (device writes for read, driver writes for write)
+3. Status byte (device writes)
 
-5. **Implement device-specific logic:**
-   - Request queuing
-   - Multi-queue support if needed
-   - Device-specific feature negotiation
+**Features:**
+- Scatter-gather I/O (multiple buffers per request)
+- Read, write, flush operations
+- 512-byte or 4K sectors
 
-The transport layer and platform integration remain unchanged.
+**Location:** `driver/virtio/virtio_blk.c`, `driver/virtio/virtio_blk.h`
 
-## References
+### VirtIO Network (Packet I/O)
 
-- [VirtIO Specification 1.2](https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html)
+**Device ID:** 1
+
+**Purpose:** Network interface (packet send/receive)
+
+**Virtqueues:** 2 (receiveq, transmitq)
+
+**Packet header:**
+```c
+struct virtio_net_hdr {
+    uint8_t flags;
+    uint8_t gso_type;
+    uint16_t hdr_len;
+    uint16_t gso_size;
+    uint16_t csum_start;
+    uint16_t csum_offset;
+    uint16_t num_buffers;  // v1 only
+};
+```
+
+**Receive (standing work):**
+```c
+// Buffers stay in virtqueue, device fills them as packets arrive
+kwork_init(&recv_req.work, KWORK_OP_NET_RECV, ctx, callback,
+           KWORK_FLAG_STANDING);
+```
+
+**Send:**
+```c
+// Submit packet, device transmits and returns descriptor
+kwork_init(&send_req.work, KWORK_OP_NET_SEND, ctx, callback, 0);
+```
+
+**Features:**
+- MAC address configuration
+- MTU negotiation
+- Checksum offload (if negotiated)
+- TSO/GSO support (if negotiated)
+
+**Location:** `driver/virtio/virtio_net.c`, `driver/virtio/virtio_net.h`
+
+## Device Initialization Sequence
+
+### 1. Discovery
+
+Platform discovers devices during `platform_init()`:
+
+**MMIO:**
+```c
+platform_mmio_device_t devices[8];
+int count = platform_discover_mmio_devices(platform, devices, 8);
+```
+
+**PCI:**
+```c
+for (bus = 0; bus < 256; bus++) {
+    for (slot = 0; slot < 32; slot++) {
+        uint16_t vendor = platform_pci_config_read16(platform, bus, slot, 0, 0);
+        if (vendor == 0x1AF4) {  // VirtIO vendor
+            // Initialize device
+        }
+    }
+}
+```
+
+### 2. Transport Initialization
+
+**MMIO:**
+```c
+virtio_mmio_init(&platform->virtio_mmio_transport_rng, mmio_base);
+```
+
+**PCI:**
+```c
+virtio_pci_init(&platform->virtio_pci_transport_rng, platform, bus, slot, func);
+```
+
+### 3. Device Initialization
+
+```c
+// RNG example
+virtio_rng_init_mmio(&platform->virtio_rng,
+                     &platform->virtio_mmio_transport_rng,
+                     &platform->virtqueue_rng_memory,
+                     kernel);
+```
+
+### 4. Interrupt Registration
+
+```c
+platform_irq_register(platform, irq_num, virtio_rng_irq_handler, rng_dev);
+platform_irq_enable(platform, irq_num);
+```
+
+### 5. Set Pointer
+
+```c
+platform->virtio_rng_ptr = &platform->virtio_rng;  // Device is now active
+```
+
+## Adding a New VirtIO Device
+
+To add support for a new VirtIO device (e.g., VirtIO Console):
+
+### 1. Create Header File
+
+`driver/virtio/virtio_console.h`:
+
+```c
+#pragma once
+#include "virtio.h"
+
+#define VIRTIO_ID_CONSOLE 3
+
+typedef struct {
+    kdevice_base_t base;
+    void *transport;
+    int transport_type;
+
+    virtqueue_t vq_rx;  // Receive queue
+    virtqueue_t vq_tx;  // Transmit queue
+    virtqueue_memory_t *vq_rx_memory;
+    virtqueue_memory_t *vq_tx_memory;
+
+    // Device-specific state
+    void *active_rx_requests[256];
+    void *active_tx_requests[256];
+
+    kernel_t *kernel;
+} virtio_console_dev_t;
+
+int virtio_console_init_mmio(virtio_console_dev_t *console,
+                              virtio_mmio_transport_t *mmio,
+                              virtqueue_memory_t *rx_memory,
+                              virtqueue_memory_t *tx_memory,
+                              kernel_t *kernel);
+
+int virtio_console_init_pci(virtio_console_dev_t *console,
+                             virtio_pci_transport_t *pci,
+                             virtqueue_memory_t *rx_memory,
+                             virtqueue_memory_t *tx_memory,
+                             kernel_t *kernel);
+
+void virtio_console_submit_work(virtio_console_dev_t *console,
+                                 kwork_t *submissions, kernel_t *k);
+
+void virtio_console_process_irq(virtio_console_dev_t *console, kernel_t *k);
+```
+
+### 2. Implement Driver
+
+`driver/virtio/virtio_console.c`:
+
+```c
+#include "virtio_console.h"
+#include "kernel.h"
+
+int virtio_console_init_mmio(virtio_console_dev_t *console,
+                              virtio_mmio_transport_t *mmio,
+                              virtqueue_memory_t *rx_memory,
+                              virtqueue_memory_t *tx_memory,
+                              kernel_t *kernel) {
+    // 1. Initialize base
+    console->base.device_type = KDEVICE_TYPE_VIRTIO_CONSOLE;
+    console->base.process_irq = (void (*)(void *, struct kernel *))virtio_console_process_irq;
+
+    // 2. Store transport
+    console->transport = mmio;
+    console->transport_type = VIRTIO_TRANSPORT_MMIO;
+    console->kernel = kernel;
+
+    // 3. Reset device
+    virtio_mmio_reset(mmio);
+
+    // 4. Feature negotiation
+    // ...
+
+    // 5. Setup virtqueues
+    virtqueue_init(&console->vq_rx, 256, rx_memory);
+    virtio_mmio_setup_queue(mmio, 0, &console->vq_rx, 256);
+
+    virtqueue_init(&console->vq_tx, 256, tx_memory);
+    virtio_mmio_setup_queue(mmio, 1, &console->vq_tx, 256);
+
+    // 6. Set DRIVER_OK
+    virtio_mmio_set_status(mmio, VIRTIO_STATUS_DRIVER_OK);
+
+    return 0;
+}
+
+void virtio_console_submit_work(virtio_console_dev_t *console,
+                                 kwork_t *submissions, kernel_t *k) {
+    // Process submissions, add to virtqueue
+}
+
+void virtio_console_process_irq(virtio_console_dev_t *console, kernel_t *k) {
+    // Process used ring, complete work
+}
+```
+
+### 3. Add to Platform
+
+`platform/*/platform_impl.h`:
+
+```c
+struct platform {
+    // ... existing fields
+
+    virtio_console_dev_t virtio_console;
+    virtqueue_memory_t virtqueue_console_rx_memory;
+    virtqueue_memory_t virtqueue_console_tx_memory;
+    virtio_console_dev_t *virtio_console_ptr;
+};
+```
+
+### 4. Initialize in Platform
+
+`platform/*/platform_virtio.c`:
+
+```c
+if (device_id == VIRTIO_ID_CONSOLE) {
+    virtio_console_init_mmio(&platform->virtio_console,
+                             &mmio_transport,
+                             &platform->virtqueue_console_rx_memory,
+                             &platform->virtqueue_console_tx_memory,
+                             kernel);
+    platform->virtio_console_ptr = &platform->virtio_console;
+}
+```
+
+### 5. Handle in platform_submit()
+
+```c
+void platform_submit(platform_t *platform, kwork_t *submissions,
+                     kwork_t *cancellations) {
+    // ... existing cases
+
+    case KWORK_OP_CONSOLE_READ:
+    case KWORK_OP_CONSOLE_WRITE:
+        if (platform->virtio_console_ptr) {
+            virtio_console_submit_work(platform->virtio_console_ptr,
+                                       submissions, k);
+        }
+        break;
+}
+```
+
+## Debugging
+
+### Common Issues
+
+**Device not found:**
+- Check QEMU command line includes device (`-device virtio-rng-device` for MMIO or `-device virtio-rng-pci` for PCI)
+- Verify device tree (FDT) contains device node
+- Check PCI vendor ID (0x1AF4) and device ID
+
+**Virtqueue initialization fails:**
+- Verify memory alignment (4096 bytes)
+- Check queue size is power of 2
+- Ensure addresses are physical, not virtual
+
+**Interrupts not firing:**
+- Verify IRQ registered and enabled
+- Check interrupt controller initialization
+- Verify device status is DRIVER_OK
+- For PCI: check MSI-X configuration
+
+**Descriptor exhaustion:**
+- Check `virtqueue_alloc_desc()` returns valid index
+- Verify descriptors are freed in completion path
+- Monitor `vq->num_free` (should increase after completion)
+
+**Data corruption:**
+- Verify buffer addresses are physical
+- Check buffer alignment (some devices require 4K alignment)
+- Ensure no buffer reuse before completion
+
+### Diagnostic Functions
+
+**Dump virtqueue state:**
+```c
+void virtqueue_dump(virtqueue_t *vq) {
+    printk("Virtqueue: size=%u free=%u\n", vq->queue_size, vq->num_free);
+    printk("  avail.idx=%u used.idx=%u last_used=%u\n",
+           vq->avail->idx, vq->used->idx, vq->last_used_idx);
+}
+```
+
+**Check device status:**
+```c
+uint8_t status = virtio_mmio_get_status(mmio);
+printk("Device status: 0x%x\n", status);
+// Should be 0x0F (ACKNOWLEDGE | DRIVER | FEATURES_OK | DRIVER_OK)
+```
+
+## Summary
+
+The VirtIO subsystem provides:
+
+✅ **Transport abstraction** - Same driver works with MMIO or PCI
+✅ **Efficient I/O** - Zero-copy DMA via virtqueues
+✅ **Standard interface** - VirtIO spec compliance
+✅ **Multiple devices** - RNG, block, network support
+✅ **Interrupt-driven** - Async completion via interrupts
+✅ **Modular design** - Easy to add new device types
+
+For more details:
+- **Architecture**: See [architecture.md](architecture.md)
+- **Async work**: See [async-work.md](async-work.md)
+- **Platform API**: See [platform-api.md](platform-api.md)
+- **VirtIO spec**: https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.html

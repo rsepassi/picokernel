@@ -1,3 +1,12 @@
+---
+**DESIGN DOCUMENT - FUTURE VISION**
+
+This document describes a future architectural pattern that VMOS aspires to implement fully. While VMOS demonstrates some elements of this pattern (work states, callbacks, operation codes), it does not currently implement the complete abstraction described here (no `machine_t` interface, no `requester` field, no `query()` method, limited async stack pattern).
+
+For documentation of the current VMOS implementation, see the main documentation files in `doc/`.
+
+---
+
 # The Machine Pattern: Composable State Machine Architecture
 
 ## Introduction

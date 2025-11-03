@@ -1,12 +1,10 @@
-* smp 2; setup thread-local (kernel, platform, ...)
 * -accel hvf/kvm
-* Test IRQ ring with C11 atomics
-* Update memory_map docs
-* Update docs/
-* Clean up startup logging
+
+* smp 2; setup thread-local (kernel, platform, ...)
 * Hosted
 
 * MSI-X on arm/rv
+* Rm mmio/pci scanning
 * Centralize and standardize constants and configs
 * Ensure all symbols are prefixed with k platform etc
 * ksubmit timeout support

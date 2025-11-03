@@ -1,3 +1,12 @@
+---
+**DESIGN DOCUMENT - UNIMPLEMENTED LANGUAGE**
+
+This document describes a proposed programming language that does not currently exist. There is no compiler, no language implementation, and no code in VMOS uses this language. This is purely speculative future work.
+
+For documentation of the current VMOS implementation, see the main documentation files in `doc/`.
+
+---
+
 # A Programming Language for the Machine Pattern
 
 ## Introduction
