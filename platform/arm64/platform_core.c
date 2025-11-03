@@ -588,6 +588,16 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
                    PTE_L3_PAGE_DEVICE);
   }
 
+  // Map PCI MMIO region explicitly (for device BARs)
+  // Note: This is separate from PCI ECAM (configuration space)
+  if (platform->pci_mmio_base != 0) {
+    KDEBUG_LOG("Mapping PCI MMIO: 0x%llx (size: 0x%llx)",
+               (unsigned long long)platform->pci_mmio_base,
+               (unsigned long long)platform->pci_mmio_size);
+    map_page_range(platform, platform->pci_mmio_base, platform->pci_mmio_size,
+                   PTE_L3_PAGE_DEVICE);
+  }
+
   // Map all discovered RAM regions
   for (int r = 0; r < platform->num_mem_regions; r++) {
     uint64_t ram_base = platform->mem_regions[r].base;
