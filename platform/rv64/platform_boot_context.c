@@ -181,7 +181,7 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
             // Found MMIO space - use this for BAR allocation
             platform->pci_mmio_base = parent_addr;
             platform->pci_mmio_size = size;
-            break;  // Use the first MMIO range we find
+            break; // Use the first MMIO range we find
           }
         }
       }
@@ -247,8 +247,8 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
   printk_dec(loop_count);
   printk(" iterations)\n");
 
-  // Validate MMIO addresses are within fixed range (0x0 - 0x40000000)
-  #define MMIO_RANGE_END 0x40000000ULL
+// Validate MMIO addresses are within fixed range (0x0 - 0x40000000)
+#define MMIO_RANGE_END 0x40000000ULL
 
   if (platform->uart_base != 0 && platform->uart_base >= MMIO_RANGE_END) {
     printk("ERROR: UART address 0x");
@@ -277,7 +277,8 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     kpanic("CLINT address outside fixed MMIO range");
   }
 
-  if (platform->pci_ecam_base != 0 && platform->pci_ecam_base >= MMIO_RANGE_END) {
+  if (platform->pci_ecam_base != 0 &&
+      platform->pci_ecam_base >= MMIO_RANGE_END) {
     printk("ERROR: PCI ECAM address 0x");
     printk_hex64(platform->pci_ecam_base);
     printk(" outside fixed MMIO range (0x0-0x");
@@ -286,7 +287,8 @@ int platform_boot_context_parse(platform_t *platform, void *boot_context) {
     kpanic("PCI ECAM address outside fixed MMIO range");
   }
 
-  if (platform->virtio_mmio_base != 0 && platform->virtio_mmio_base >= MMIO_RANGE_END) {
+  if (platform->virtio_mmio_base != 0 &&
+      platform->virtio_mmio_base >= MMIO_RANGE_END) {
     printk("ERROR: VirtIO MMIO address 0x");
     printk_hex64(platform->virtio_mmio_base);
     printk(" outside fixed MMIO range (0x0-0x");

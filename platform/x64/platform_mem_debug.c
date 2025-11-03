@@ -9,17 +9,18 @@
 #ifdef KDEBUG
 
 // Linker-provided symbols
-extern uint8_t _kernel_start[];    // Start of entire kernel image (including PVH note)
+extern uint8_t
+    _kernel_start[]; // Start of entire kernel image (including PVH note)
 extern uint8_t _text_start[], _text_end[];
 extern uint8_t _rodata_start[], _rodata_end[];
 extern uint8_t _data_start[], _data_end[];
 extern uint8_t _bss_start[], _bss_end[];
 extern uint8_t __bss_start[], __bss_end[];
-extern uint8_t _kernel_end[];      // End of kernel image
-extern uint8_t _end[];             // Alias for _kernel_end
+extern uint8_t _kernel_end[]; // End of kernel image
+extern uint8_t _end[];        // Alias for _kernel_end
 extern uint8_t stack_bottom[], stack_top[];
 extern uint8_t _page_tables_start[], _page_tables_end[];
-extern uint8_t _start[];           // Boot entry point
+extern uint8_t _start[]; // Boot entry point
 
 // Validate critical memory regions (page tables, kernel sections)
 void platform_mem_validate_critical(void) {
@@ -87,7 +88,8 @@ void platform_mem_validate_critical(void) {
   printk(" bytes)\n");
 
   // 3. Verify kernel base address (allow for .note.Xen section before .text)
-  // The linker script places kernel at _start, but .text may start slightly after
+  // The linker script places kernel at _start, but .text may start slightly
+  // after
   uintptr_t kernel_base = (uintptr_t)_start;
   if (text_start < kernel_base || text_start > kernel_base + 0x1000) {
     printk("[MEM] ERROR: Kernel .text not near expected base 0x");
@@ -384,7 +386,7 @@ void platform_mem_print_layout(void) {
 
   // Note: RAM size is not fixed in x64, but we show the typical QEMU default
   // The actual usable RAM extends to PCI_MMIO_BASE (0xC0000000 = 3GB)
-  uintptr_t ram_end = PCI_MMIO_BASE;  // RAM ends where PCI MMIO begins
+  uintptr_t ram_end = PCI_MMIO_BASE; // RAM ends where PCI MMIO begins
   printk("  Free RAM:            0x");
   printk_hex64(kernel_end);
   printk(" - 0x");

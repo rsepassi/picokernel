@@ -11,15 +11,15 @@ static inline volatile void *pci_ecam_address(platform_t *platform, uint8_t bus,
                                               uint8_t slot, uint8_t func,
                                               uint8_t offset) {
   // Use discovered ECAM base from platform_t
-  // If not discovered, fall back to PLATFORM_PCI_ECAM_BASE (compile-time default)
+  // If not discovered, fall back to PLATFORM_PCI_ECAM_BASE (compile-time
+  // default)
   uint64_t ecam_base = platform->pci_ecam_base;
   if (ecam_base == 0) {
     ecam_base = PLATFORM_PCI_ECAM_BASE;
   }
 
-  uint64_t addr = ecam_base | ((uint64_t)bus << 20) |
-                  ((uint64_t)slot << 15) | ((uint64_t)func << 12) |
-                  (uint64_t)offset;
+  uint64_t addr = ecam_base | ((uint64_t)bus << 20) | ((uint64_t)slot << 15) |
+                  ((uint64_t)func << 12) | (uint64_t)offset;
   return (volatile void *)addr;
 }
 

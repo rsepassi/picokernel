@@ -1,6 +1,6 @@
 #include "kbase.h"
-#include "printk.h"
 #include "platform.h"
+#include "printk.h"
 
 void *memcpy(void *dest, const void *src, size_t n) {
   uint8_t *d = (uint8_t *)dest;

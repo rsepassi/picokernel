@@ -8,10 +8,10 @@
 #ifdef KDEBUG
 
 // RISC-V 64 memory layout constants (QEMU virt machine)
-#define DTB_BASE 0x80000000ULL    // DTB passed via a1 register
-#define DTB_SIZE 0x00200000ULL    // 2 MiB reserved (typical)
-#define RAM_BASE 0x80000000ULL    // RAM starts here
-#define RAM_SIZE 0x08000000ULL    // 128 MiB default (for display purposes)
+#define DTB_BASE 0x80000000ULL // DTB passed via a1 register
+#define DTB_SIZE 0x00200000ULL // 2 MiB reserved (typical)
+#define RAM_BASE 0x80000000ULL // RAM starts here
+#define RAM_SIZE 0x08000000ULL // 128 MiB default (for display purposes)
 
 // Linker-provided symbols
 extern uint8_t _start[];

@@ -58,10 +58,10 @@ extern uint8_t stack_top[];
 // - 1 L2 table (root): 512 entries, each covers 1 GB
 // - 512 L1 tables: one per L2 entry, full Sv39 address space coverage (512 GB)
 // Total allocation: 512 × 4 KB = 2 MB for complete address space support
-// This allows mapping multiple non-contiguous memory regions at any valid address
-// Note: RAM base and size are discovered from FDT, not hardcoded
+// This allows mapping multiple non-contiguous memory regions at any valid
+// address Note: RAM base and size are discovered from FDT, not hardcoded
 static uint64_t pt_l2[512] __attribute__((aligned(4096)));
-static uint64_t pt_l1[512][512] __attribute__((aligned(4096)));  // 2 MB total
+static uint64_t pt_l1[512][512] __attribute__((aligned(4096))); // 2 MB total
 
 // ============================================================================
 // MMU Configuration
@@ -148,7 +148,8 @@ static int mmu_enable_sv39(platform_t *platform) {
       uint64_t map_end = (end_addr < slot_end) ? end_addr : slot_end;
 
       // Calculate L1 entry range for this portion
-      uint64_t start_l1_idx = (map_start & 0x3FFFFFFF) / 0x200000; // Within 1 GB
+      uint64_t start_l1_idx =
+          (map_start & 0x3FFFFFFF) / 0x200000; // Within 1 GB
       uint64_t end_l1_idx = (map_end & 0x3FFFFFFF) / 0x200000;
 
       // Populate L1 entries with 2 MB megapages
@@ -167,7 +168,7 @@ static int mmu_enable_sv39(platform_t *platform) {
   // This is larger than strictly necessary but provides coverage for all
   // typical MMIO devices without needing device-specific mapping.
   uint64_t mmio_base = 0x00000000;
-  uint64_t mmio_size = 0x40000000;  // 1 GB (covers all typical MMIO regions)
+  uint64_t mmio_size = 0x40000000; // 1 GB (covers all typical MMIO regions)
   uint64_t num_pages = mmio_size / 0x200000; // 512 pages of 2 MB
 
   for (uint64_t i = 0; i < num_pages && i < 512; i++) {

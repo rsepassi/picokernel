@@ -5,20 +5,17 @@
 #pragma once
 
 #include "kbase.h"
-#include <stddef.h>
-#include <stdint.h>
+#include "kconfig.h"
 
 // Forward declarations for types defined elsewhere
 typedef struct kernel kernel_t;
 typedef struct kwork kwork_t;
 
 // Memory region descriptor (needed by platform_impl.h)
-#include "kconfig.h"
 typedef struct {
   uintptr_t base; // Base physical address
   size_t size;    // Size in bytes
 } mem_region_t;
-
 // Each platform implements platform_impl.h with platform-specific types
 #include "platform_impl.h"
 
@@ -187,10 +184,6 @@ void platform_irq_enable(platform_t *platform, uint32_t irq_num);
 // ===========================================================================
 // SECTION 8: Work Submission - Process work queue changes
 // ===========================================================================
-
-// Forward declaration (actual type in kapi.h)
-typedef struct kwork kwork_t;
-typedef struct kernel kernel_t;
 
 // Submit work and cancellations to platform
 // Called by kernel during tick processing with queued work

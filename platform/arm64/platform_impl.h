@@ -94,7 +94,7 @@ struct platform_t {
 
   // MMIO regions (discovered from FDT)
   mmio_region_t mmio_regions[KCONFIG_MAX_MMIO_REGIONS]; // Device MMIO regions
-  int num_mmio_regions;                                  // Number of MMIO regions
+  int num_mmio_regions; // Number of MMIO regions
 
   // Interrupt controller addresses (discovered from FDT)
   uintptr_t gic_dist_base; // GIC Distributor base address

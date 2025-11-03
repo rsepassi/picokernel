@@ -7,9 +7,9 @@
 
 #include "kbase.h"
 #include "kconfig.h"
+#include "mem_debug.h"
 #include "platform.h"
 #include "printk.h"
-#include "mem_debug.h"
 
 #include "interrupt.h"
 #include "timer.h"
@@ -80,7 +80,8 @@ extern uint8_t stack_top[];
 // =============================================================================
 
 // Helper: Check if compatible property matches any in list
-static int compatible_match(const void *fdt, int node, const char **compat_list) {
+static int compatible_match(const void *fdt, int node,
+                            const char **compat_list) {
   int len;
   const char *compat = fdt_getprop(fdt, node, "compatible", &len);
   if (!compat || len <= 0)
@@ -178,7 +179,8 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
     }
 
     // Check for GIC
-    if (platform->gic_dist_base == 0 && compatible_match(fdt, node, gic_compat)) {
+    if (platform->gic_dist_base == 0 &&
+        compatible_match(fdt, node, gic_compat)) {
       int len;
       const void *reg = fdt_getprop(fdt, node, "reg", &len);
       if (reg && len >= 16) {
@@ -227,8 +229,9 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
                 // Read size (bytes 20-27)
                 uint64_t size = kload_be64(entry + 20);
 
-                // Check if this is 64-bit MMIO space (0x03000000 = prefetchable,
-                // 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit non-prefetchable)
+                // Check if this is 64-bit MMIO space (0x03000000 =
+                // prefetchable, 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit
+                // non-prefetchable)
                 uint32_t space_code = flags & 0x03000000;
                 if (space_code == 0x03000000 || space_code == 0x02000000) {
                   // Found MMIO space - use this for BAR allocation
@@ -246,7 +249,8 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
     }
 
     // Generic MMIO region collection for all device nodes with reg property
-    // Only collect from nodes at depth 2 (direct children of root, since root is at depth 1)
+    // Only collect from nodes at depth 2 (direct children of root, since root
+    // is at depth 1)
     if (depth == 2 && platform->num_mmio_regions < KCONFIG_MAX_MMIO_REGIONS) {
       // Skip memory nodes (already handled separately)
       if (memcmp(name, "memory@", 7) == 0 || strcmp(name, "memory") == 0) {
@@ -514,7 +518,8 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
     uint64_t mmio_size = platform->mmio_regions[r].size;
 
     KLOG("  Region %d: 0x%llx - 0x%llx (0x%llx bytes)", r,
-         (unsigned long long)mmio_base, (unsigned long long)(mmio_base + mmio_size),
+         (unsigned long long)mmio_base,
+         (unsigned long long)(mmio_base + mmio_size),
          (unsigned long long)mmio_size);
 
     map_page_range(platform, mmio_base, mmio_size, PTE_L3_PAGE_DEVICE);
@@ -530,12 +535,14 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
   if (platform->gic_dist_base != 0) {
     KLOG("Mapping GIC Distributor: 0x%llx",
          (unsigned long long)platform->gic_dist_base);
-    map_page_range(platform, platform->gic_dist_base, 0x10000, PTE_L3_PAGE_DEVICE);
+    map_page_range(platform, platform->gic_dist_base, 0x10000,
+                   PTE_L3_PAGE_DEVICE);
   }
   if (platform->gic_cpu_base != 0) {
     KLOG("Mapping GIC CPU Interface: 0x%llx",
          (unsigned long long)platform->gic_cpu_base);
-    map_page_range(platform, platform->gic_cpu_base, 0x10000, PTE_L3_PAGE_DEVICE);
+    map_page_range(platform, platform->gic_cpu_base, 0x10000,
+                   PTE_L3_PAGE_DEVICE);
   }
 
   // Map all discovered RAM regions
@@ -544,7 +551,8 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
     uint64_t ram_size = platform->mem_regions[r].size;
 
     KLOG("Mapping RAM region %d: 0x%llx - 0x%llx (%llu MB)", r,
-         (unsigned long long)ram_base, (unsigned long long)(ram_base + ram_size),
+         (unsigned long long)ram_base,
+         (unsigned long long)(ram_base + ram_size),
          (unsigned long long)(ram_size / 1024 / 1024));
 
     map_page_range(platform, ram_base, ram_size, PTE_L3_PAGE_NORMAL);

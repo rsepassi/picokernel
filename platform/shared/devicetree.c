@@ -5,11 +5,11 @@
 
 #ifdef KDEBUG
 #include "kstrings.h"
+#include "mem_debug.h"
 #include "platform.h"
 #include "printk.h"
-#include "mem_debug.h"
-#include <stdint.h>
 #include <libfdt/libfdt.h>
+#include <stdint.h>
 
 // Helper to print indentation
 static void print_indent(int depth) {
@@ -27,7 +27,8 @@ static bool is_printable_string(const char *data, int len) {
   if (data[len - 1] != '\0')
     return false;
 
-  // Check if all characters are printable (or null terminators for string lists)
+  // Check if all characters are printable (or null terminators for string
+  // lists)
   for (int i = 0; i < len - 1; i++) {
     if (data[i] == '\0') {
       // Allow null terminators in string lists
@@ -112,7 +113,8 @@ static void dump_fdt_node(const void *fdt, int node, int depth) {
   int prop_offset = fdt_first_property_offset(fdt, node);
   while (prop_offset >= 0) {
     const char *prop_name;
-    const void *prop_data = fdt_getprop_by_offset(fdt, prop_offset, &prop_name, &len);
+    const void *prop_data =
+        fdt_getprop_by_offset(fdt, prop_offset, &prop_name, &len);
 
     if (prop_data && prop_name) {
       print_indent(depth + 1);
@@ -173,4 +175,4 @@ void platform_fdt_dump(platform_t *platform, void *fdt) {
 
   printk("=== End Device Tree ===\n\n");
 }
-#endif  // KDEBUG
+#endif // KDEBUG

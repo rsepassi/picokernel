@@ -24,12 +24,14 @@ static volatile uintptr_t g_uart_base = 0x10000000UL;
 #define UART_LSR_DR (1 << 0)   // Data Ready
 
 static inline void uart_write_reg(unsigned int offset, unsigned char value) {
-  volatile unsigned char *reg = (volatile unsigned char *)(g_uart_base + offset);
+  volatile unsigned char *reg =
+      (volatile unsigned char *)(g_uart_base + offset);
   *reg = value;
 }
 
 static inline unsigned char uart_read_reg(unsigned int offset) {
-  volatile unsigned char *reg = (volatile unsigned char *)(g_uart_base + offset);
+  volatile unsigned char *reg =
+      (volatile unsigned char *)(g_uart_base + offset);
   return *reg;
 }
 

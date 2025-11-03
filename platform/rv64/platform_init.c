@@ -38,7 +38,8 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   timer_init(platform, fdt);
 
   // Initialize memory management (MMU setup, memory discovery, free regions)
-  // This also parses the FDT and populates device addresses including pci_mmio_base
+  // This also parses the FDT and populates device addresses including
+  // pci_mmio_base
   platform_mem_init(platform, fdt);
 
   // Initialize PCI BAR allocator from FDT-discovered MMIO range
@@ -46,7 +47,7 @@ void platform_init(platform_t *platform, void *fdt, void *kernel) {
   if (platform->pci_mmio_base != 0) {
     platform->pci_next_bar_addr = platform->pci_mmio_base;
   } else {
-    platform->pci_next_bar_addr = 0x40000000;  // Fallback default
+    platform->pci_next_bar_addr = 0x40000000; // Fallback default
   }
 
   // NOTE: Interrupts NOT enabled yet - will be enabled in event loop

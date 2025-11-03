@@ -111,7 +111,8 @@ void mmio_scan_devices(platform_t *platform);
 static bool is_valid_bar_address(uint64_t addr) {
   // Valid x64 PCI MMIO range from platform_config.h
   // Reject addresses below PCI_MMIO_BASE (likely RAM)
-  // Reject addresses at or above PCI_MMIO_END (high MMIO: IOAPIC/LAPIC/VirtIO MMIO)
+  // Reject addresses at or above PCI_MMIO_END (high MMIO: IOAPIC/LAPIC/VirtIO
+  // MMIO)
   if (addr >= PCI_MMIO_BASE && addr < PCI_MMIO_END) {
     return true; // Valid PCI MMIO range
   }
@@ -881,7 +882,8 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 }
 
 // Probe for VirtIO MMIO devices at known addresses
-// QEMU microvm places VirtIO MMIO devices at VIRTIO_MMIO_BASE (from platform_config.h)
+// QEMU microvm places VirtIO MMIO devices at VIRTIO_MMIO_BASE (from
+// platform_config.h)
 void mmio_scan_devices(platform_t *platform) {
 // QEMU microvm VirtIO MMIO region layout
 // QEMU places devices starting at base + 0x2A00 with 0x200 byte spacing
