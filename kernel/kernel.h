@@ -54,9 +54,6 @@ uint64_t kmain_next_delay(kernel_t *k);
 // Process kernel tick (expire timers, run callbacks, submit work)
 void kmain_tick(kernel_t *k, uint64_t current_time);
 
-// ktick + platform_wfi
-void kmain_step(kernel_t *k, uint64_t max_timeout);
-
 // Platform → Kernel Interface (called by platform code)
 
 // Mark work as complete (moves LIVE -> READY)

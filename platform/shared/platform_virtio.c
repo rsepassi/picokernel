@@ -111,11 +111,9 @@ void mmio_scan_devices(platform_t *platform);
 // This handles both 32-bit and 64-bit BARs, skipping I/O BARs
 static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
                               uint8_t func, const char *device_name) {
-  printk("[");
-  printk(device_name);
-  printk("] Allocating BARs starting at 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  KDEBUG_LOG("[%s] Allocating BARs starting at 0x%llx", device_name,
+             (unsigned long long)platform->pci_next_bar_addr);
+  (void)device_name; // Used in KDEBUG_LOG
 
   for (int i = 0; i < 6; i++) {
     uint8_t bar_offset = PCI_REG_BAR0 + (i * 4);
@@ -165,11 +163,8 @@ static void allocate_pci_bars(platform_t *platform, uint8_t bus, uint8_t slot,
     }
   }
 
-  printk("[");
-  printk(device_name);
-  printk("] BARs allocated, next address: 0x");
-  printk_hex64(platform->pci_next_bar_addr);
-  printk("\n");
+  KDEBUG_LOG("[%s] BARs allocated, next address: 0x%llx", device_name,
+             (unsigned long long)platform->pci_next_bar_addr);
 }
 
 // Setup VirtIO-RNG device via PCI
@@ -305,15 +300,11 @@ static void virtio_blk_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform->block_capacity = platform->virtio_blk.capacity;
 
   // Log device info
-  printk("  sector_size=");
-  printk_dec(platform->block_sector_size);
-  printk(" capacity=");
-  printk_dec(platform->block_capacity);
-  printk(" sectors (");
   uint64_t mb =
       (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
-  printk_dec(mb);
-  printk(" MB)\n");
+  KLOG("  sector_size=%u capacity=%llu sectors (%llu MB)",
+       platform->block_sector_size, (unsigned long long)platform->block_capacity,
+       (unsigned long long)mb);
 }
 
 // Setup VirtIO-BLK device via MMIO
@@ -359,15 +350,11 @@ static void virtio_blk_mmio_setup(platform_t *platform, uint64_t mmio_base,
   platform->block_capacity = platform->virtio_blk.capacity;
 
   // Log device info
-  printk("  sector_size=");
-  printk_dec(platform->block_sector_size);
-  printk(" capacity=");
-  printk_dec(platform->block_capacity);
-  printk(" sectors (");
   uint64_t mb =
       (platform->block_capacity * platform->block_sector_size) / (1024 * 1024);
-  printk_dec(mb);
-  printk(" MB)\n");
+  KLOG("  sector_size=%u capacity=%llu sectors (%llu MB)",
+       platform->block_sector_size, (unsigned long long)platform->block_capacity,
+       (unsigned long long)mb);
 }
 
 // Setup VirtIO-NET device via PCI
@@ -383,25 +370,25 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
   platform_pci_config_write16(platform, bus, slot, func, PCI_REG_COMMAND,
                               command);
 
-  printk("[NET] Initializing PCI transport...\n");
+  KDEBUG_LOG("[NET] Initializing PCI transport...");
   // Initialize PCI transport for NET
   if (virtio_pci_init(&platform->virtio_pci_transport_net, platform, bus, slot,
                       func) < 0) {
-    printk("[NET] PCI transport init failed\n");
+    KDEBUG_LOG("[NET] PCI transport init failed");
     return;
   }
 
-  printk("[NET] Initializing NET device...\n");
+  KDEBUG_LOG("[NET] Initializing NET device...");
   // Initialize NET device
   if (virtio_net_init_pci(
           &platform->virtio_net, &platform->virtio_pci_transport_net,
           &platform->virtqueue_net_rx_memory,
           &platform->virtqueue_net_tx_memory, platform->kernel) < 0) {
-    printk("[NET] NET device init failed\n");
+    KDEBUG_LOG("[NET] NET device init failed");
     return;
   }
 
-  printk("[NET] Device initialized successfully\n");
+  KDEBUG_LOG("[NET] Device initialized successfully");
 
   // Initialize device base fields
   platform->virtio_net.base.device_type = KDEVICE_TYPE_VIRTIO_NET;
@@ -418,36 +405,16 @@ static void virtio_net_setup(platform_t *platform, uint8_t bus, uint8_t slot,
                         &platform->virtio_net);
   platform_irq_enable(platform, irq_num);
 
-  printk("[NET] Storing device info...\n");
   // Store device info
   platform->virtio_net_ptr = &platform->virtio_net;
   platform->has_net_device = true;
+  memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
-  printk("[NET] Copying MAC address (from virtio_net struct at ");
-  printk_hex32((uint32_t)(uint64_t)&platform->virtio_net.mac_address[0]);
-  printk(")...\n");
-  for (int i = 0; i < 6; i++) {
-    printk("[NET] Copying MAC byte ");
-    printk_dec(i);
-    printk("...\n");
-    platform->net_mac_address[i] = platform->virtio_net.mac_address[i];
-  }
-  printk("[NET] MAC copy complete\n");
-
-  printk("[NET] Logging MAC address...\n");
   // Log device info
-  printk("  mac=");
-  for (int i = 0; i < 6; i++) {
-    if (i > 0)
-      printk(":");
-    uint8_t b = platform->net_mac_address[i];
-    uint8_t hi = (b >> 4) & 0xF;
-    uint8_t lo = b & 0xF;
-    printk_putc(hi < 10 ? '0' + hi : 'a' + (hi - 10));
-    printk_putc(lo < 10 ? '0' + lo : 'a' + (lo - 10));
-  }
-  printk("\n");
-  printk("[NET] Setup complete\n");
+  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x",
+       platform->net_mac_address[0], platform->net_mac_address[1],
+       platform->net_mac_address[2], platform->net_mac_address[3],
+       platform->net_mac_address[4], platform->net_mac_address[5]);
 }
 
 // Setup VirtIO-NET device via MMIO
@@ -493,17 +460,10 @@ static void virtio_net_mmio_setup(platform_t *platform, uint64_t mmio_base,
   memcpy(platform->net_mac_address, platform->virtio_net.mac_address, 6);
 
   // Log device info
-  printk("  mac=");
-  for (int i = 0; i < 6; i++) {
-    if (i > 0)
-      printk(":");
-    uint8_t b = platform->net_mac_address[i];
-    uint8_t hi = (b >> 4) & 0xF;
-    uint8_t lo = b & 0xF;
-    printk_putc(hi < 10 ? '0' + hi : 'a' + (hi - 10));
-    printk_putc(lo < 10 ? '0' + lo : 'a' + (lo - 10));
-  }
-  printk("\n");
+  KLOG("  mac=%02x:%02x:%02x:%02x:%02x:%02x",
+       platform->net_mac_address[0], platform->net_mac_address[1],
+       platform->net_mac_address[2], platform->net_mac_address[3],
+       platform->net_mac_address[4], platform->net_mac_address[5]);
 }
 
 // Helper to get device type name
@@ -525,7 +485,7 @@ static const char *virtio_device_name(uint16_t device_id) {
 
 // Scan PCI bus for VirtIO devices
 void pci_scan_devices(platform_t *platform) {
-  printk("Scanning PCI bus for VirtIO devices...\n");
+  KDEBUG_LOG("Scanning PCI bus for VirtIO devices...");
 
   int devices_found = 0;
   int rng_initialized = 0;
@@ -550,15 +510,8 @@ void pci_scan_devices(platform_t *platform) {
       if (vendor == VIRTIO_PCI_VENDOR_ID) {
         // Check if this is any VirtIO device (0x1000-0x107F range)
         if ((device >= 0x1000 && device <= 0x107F)) {
-          printk("Found ");
-          printk(virtio_device_name(device));
-          printk(" at PCI ");
-          printk_dec(bus);
-          printk(":");
-          printk_dec(slot);
-          printk(".0 (device ID 0x");
-          printk_hex16(device);
-          printk(")\n");
+          KLOG("Found %s at PCI %u:%u.0 (device ID 0x%04x)",
+               virtio_device_name(device), bus, slot, device);
 
           devices_found++;
 
@@ -588,11 +541,9 @@ void pci_scan_devices(platform_t *platform) {
   }
 
   if (devices_found == 0) {
-    printk("No VirtIO devices found.\n");
+    KDEBUG_LOG("No VirtIO PCI devices found");
   } else {
-    printk("Found ");
-    printk_dec(devices_found);
-    printk(" VirtIO device(s) total.\n");
+    KLOG("Found %d VirtIO PCI device(s) total", devices_found);
   }
 }
 
@@ -782,7 +733,7 @@ static const char *virtio_mmio_device_name(uint32_t device_id) {
 // Probe for VirtIO MMIO devices at known addresses
 // Platform must populate virtio_mmio_base in platform_t from FDT
 void mmio_scan_devices(platform_t *platform) {
-  printk("Probing for VirtIO MMIO devices...\n");
+  KDEBUG_LOG("Probing for VirtIO MMIO devices...");
 
   // Use discovered VirtIO MMIO base from platform_t
   // If not discovered, fall back to VIRTIO_MMIO_BASE (compile-time default)
@@ -817,14 +768,8 @@ void mmio_scan_devices(platform_t *platform) {
       continue;
     }
 
-    printk("Found ");
-    printk(virtio_mmio_device_name(device_id));
-    printk(" at MMIO 0x");
-    printk_hex64(base);
-    printk(" (device ID ");
-    printk_dec(device_id);
-    printk(")");
-    printk("\n");
+    KLOG("Found %s at MMIO 0x%llx (device ID %u)",
+         virtio_mmio_device_name(device_id), (unsigned long long)base, device_id);
 
     devices_found++;
 
@@ -854,10 +799,8 @@ void mmio_scan_devices(platform_t *platform) {
   }
 
   if (devices_found == 0) {
-    printk("No VirtIO MMIO devices found.\n");
+    KDEBUG_LOG("No VirtIO MMIO devices found");
   } else {
-    printk("Found ");
-    printk_dec(devices_found);
-    printk(" VirtIO MMIO device(s) total.\n");
+    KLOG("Found %d VirtIO MMIO device(s) total", devices_found);
   }
 }

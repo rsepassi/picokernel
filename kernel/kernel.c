@@ -25,11 +25,11 @@ static void record_work_transition(kernel_t *k, kwork_t *work,
 void kdebug_dump_work_history(void) {
   kernel_t *k = kget_kernel__logonly__();
   if (k == NULL) {
-    printk("\nNo work history (kernel not initialized)\n");
+    KLOG("\nNo work history (kernel not initialized)\n");
     return;
   }
 
-  printk("\nLast work transitions:\n");
+  KLOG("\nLast work transitions:\n");
 
   const char *state_names[] = {"DEAD", "SUBMIT_REQUESTED", "LIVE",
                                "CANCEL_REQUESTED", "READY"};
@@ -77,18 +77,6 @@ static inline void record_work_transition(kernel_t *k, kwork_t *work,
   (void)to_state;
 }
 #endif
-
-// Run event loop until a condition is true or a maximum timeout is reached
-#define KWAIT_UNTIL(kernel, cond, step_timeout, max_timeout)                   \
-  do {                                                                         \
-    kernel_t *_k = (kernel);                                                   \
-    ktime_t _max_timeout = (max_timeout);                                      \
-    ktime_t _step_timeout = (step_timeout);                                    \
-    ktime_t start_time = _k->current_time_ms;                                  \
-    while (!(cond) && (_k->current_time_ms - start_time) < (_max_timeout)) {   \
-      kmain_step(_k, _step_timeout);                                           \
-    }                                                                          \
-  } while (0)
 
 // Queue management helpers
 
@@ -146,19 +134,10 @@ static void expire_timers(kernel_t *k) {
 // Initialize kernel
 void kmain_init(kernel_t *k, void *fdt) {
   memset(k, 0, sizeof(kernel_t));
-
-  // Initialize platform
-  KLOG("Initializing platform");
   platform_init(&k->platform, fdt, k);
-
-  // Initialize start time
   k->current_time_ms = platform_wfi(&k->platform, 0);
-
-  // Enable interrupts
   platform_interrupt_enable(&k->platform);
   KLOG("interrupts enabled");
-
-  printk("kmain_init complete\n");
 }
 
 // Submit work item
@@ -344,14 +323,4 @@ void kplatform_cancel_work(kernel_t *k, kwork_t *work) {
   record_work_transition(k, work, work->state, KWORK_STATE_READY);
   work->state = KWORK_STATE_READY;
   enqueue_ready(k, work);
-}
-
-void kmain_step(kernel_t *k, uint64_t max_timeout) {
-  KLOG("[KLOOP] tick");
-  kmain_tick(k, k->current_time_ms);
-  uint64_t timeout = kmain_next_delay(k);
-  if (timeout > max_timeout)
-    timeout = max_timeout;
-  KLOG("[KLOOP] wfi");
-  k->current_time_ms = platform_wfi(&k->platform, timeout);
 }

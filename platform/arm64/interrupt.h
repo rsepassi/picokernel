@@ -9,14 +9,6 @@
 // Initialize exception vectors and GIC
 void interrupt_init(platform_t *platform);
 
-// Enable interrupts (unmask DAIF)
-// Declared in platform.h, implemented here
-// void platform_interrupt_enable(platform_t *platform);
-
-// Disable interrupts (mask DAIF)
-// Declared in platform.h, implemented here
-// void platform_interrupt_disable(platform_t *platform);
-
 // Register IRQ handler
 void irq_register(platform_t *platform, uint32_t irq_num,
                   void (*handler)(void *), void *context);

@@ -140,17 +140,8 @@ static void gic_init(platform_t *platform) {
   uintptr_t gicd_base = platform->gic_dist_base;
   uintptr_t gicc_base = platform->gic_cpu_base;
 
-  if (gicd_base == 0 || gicc_base == 0) {
-    printk("ERROR: GIC addresses not discovered from FDT\n");
-    printk("  GICD base: 0x");
-    printk_hex64(gicd_base);
-    printk("\n  GICC base: 0x");
-    printk_hex64(gicc_base);
-    printk("\nSystem halted.\n");
-    while (1) {
-      __asm__ volatile("wfe");
-    }
-  }
+  KASSERT(gicd_base != 0 && gicc_base != 0,
+          "GIC addresses must be discovered from FDT");
 
   // Initialize GIC Distributor
   // Disable distributor during configuration
@@ -160,9 +151,7 @@ static void gic_init(platform_t *platform) {
   uint32_t typer = mmio_read32(gicd_base + GICD_TYPER_OFF);
   uint32_t num_lines = ((typer & 0x1F) + 1) * 32;
 
-  printk("GIC Distributor: ");
-  printk_dec(num_lines);
-  printk(" interrupt lines\n");
+  KDEBUG_LOG("GIC Distributor: %u interrupt lines", num_lines);
 
   // Disable all interrupts
   for (uint32_t i = 0; i < num_lines; i += 32) {
@@ -177,18 +166,18 @@ static void gic_init(platform_t *platform) {
   // Set all SPIs (IRQs 32+) to target CPU 0
   // PPIs (IRQs 16-31) are hardwired to their CPU, so start from IRQ 32
   // Each 32-bit register contains targets for 4 interrupts (8 bits each)
-  printk("Setting SPI targets to CPU 0...\n");
+  KDEBUG_LOG("Setting SPI targets to CPU 0...");
   for (uint32_t i = 32; i < num_lines; i += 4) {
     mmio_write32(gicd_base + GICD_ITARGETSR_OFF + i,
                  0x01010101); // All 4 IRQs target CPU 0
   }
 
   // Verify IRQ 79 target was set
-  uint32_t irq79_target_reg = gicd_base + GICD_ITARGETSR_OFF + (79 / 4) * 4;
-  uint32_t irq79_target = mmio_read32(irq79_target_reg);
-  printk("IRQ 79 target register value: 0x");
-  printk_hex32(irq79_target);
-  printk("\n");
+  KDEBUG_VALIDATE({
+    uint32_t irq79_target_reg = gicd_base + GICD_ITARGETSR_OFF + (79 / 4) * 4;
+    uint32_t irq79_target = mmio_read32(irq79_target_reg);
+    KLOG("IRQ 79 target register value: 0x%08x", irq79_target);
+  });
 
   // Configure timer interrupt (IRQ 30)
   // Set target to CPU 0
@@ -213,11 +202,8 @@ static void gic_init(platform_t *platform) {
   // Enable CPU interface
   mmio_write32(gicc_base + GICC_CTLR_OFF, 1);
 
-  printk("GIC initialized (Distributor at 0x");
-  printk_hex64(gicd_base);
-  printk(", CPU Interface at 0x");
-  printk_hex64(gicc_base);
-  printk(")\n");
+  KLOG("GIC initialized (Distributor at 0x%llx, CPU Interface at 0x%llx)",
+       (unsigned long long)gicd_base, (unsigned long long)gicc_base);
 }
 
 // Initialize exception vectors and GIC
@@ -230,7 +216,7 @@ void interrupt_init(platform_t *platform) {
   uint64_t vbar = (uint64_t)exception_vector_table;
   __asm__ volatile("msr vbar_el1, %0" : : "r"(vbar));
   __asm__ volatile("isb");
-  KLOG("Exception vectors installed at %llx", vbar);
+  KDEBUG_LOG("Exception vectors installed at %llx", vbar);
 
   gic_init(platform);
   kirq_ring_init(&platform->irq_ring);
@@ -296,11 +282,8 @@ void irq_register(platform_t *platform, uint32_t irq_num,
     irq_set_trigger(platform, irq_num, 1); // 1 = edge-triggered
   }
 
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" registered (");
-  printk(irq_num == TIMER_IRQ ? "level" : "edge");
-  printk("-triggered, target CPU 0)\n");
+  KDEBUG_LOG("IRQ %u registered (%s-triggered, target CPU 0)", irq_num,
+             irq_num == TIMER_IRQ ? "level" : "edge");
 }
 
 // Enable (unmask) a specific IRQ in the GIC
@@ -314,9 +297,7 @@ void irq_enable(platform_t *platform, uint32_t irq_num) {
                    (irq_num / 32) * 4,
                1 << (irq_num % 32));
 
-  printk("IRQ ");
-  printk_dec(irq_num);
-  printk(" enabled in GIC\n");
+  KDEBUG_LOG("IRQ %u enabled in GIC", irq_num);
 }
 
 // Dispatch IRQ to registered handler

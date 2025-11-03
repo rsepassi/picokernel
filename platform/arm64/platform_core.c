@@ -50,11 +50,17 @@ extern uint8_t stack_top[];
 #define ARM64_L2_COVERAGE (1ULL << ARM64_L1_SHIFT) // 4 TB (8192 * 512 MB)
 #define ARM64_L1_COVERAGE (1ULL << 48)             // 256 TB (64 * 4 TB)
 
-#define ARM64_L1_INDEX(addr) (((addr) >> ARM64_L1_SHIFT) & 0x3F) // Bits [47:42]
-#define ARM64_L2_INDEX(addr)                                                   \
-  (((addr) >> ARM64_L2_SHIFT) & 0x1FFF) // Bits [41:29]
-#define ARM64_L3_INDEX(addr)                                                   \
-  (((addr) >> ARM64_L3_SHIFT) & 0x1FFF) // Bits [28:16]
+// Index masks for page table levels
+#define ARM64_L1_MASK 0x3FULL    // 6 bits for L1 index (64 entries)
+#define ARM64_L2_MASK 0x1FFFULL  // 13 bits for L2 index (8192 entries)
+#define ARM64_L3_MASK 0x1FFFULL  // 13 bits for L3 index (8192 entries)
+
+// Page alignment mask (64KB granule)
+#define ARM64_PAGE_ALIGN_MASK 0xFFFFULL // Lower 16 bits for 64KB pages
+
+#define ARM64_L1_INDEX(addr) (((addr) >> ARM64_L1_SHIFT) & ARM64_L1_MASK)
+#define ARM64_L2_INDEX(addr) (((addr) >> ARM64_L2_SHIFT) & ARM64_L2_MASK)
+#define ARM64_L3_INDEX(addr) (((addr) >> ARM64_L3_SHIFT) & ARM64_L3_MASK)
 
 // Page table entry flags for ARM64 with 64KB granule
 #define PTE_VALID (1UL << 0)    // Valid entry
@@ -102,22 +108,21 @@ static int compatible_match(const void *fdt, int node,
 }
 
 // Parse FDT boot context and populate platform with memory regions
-// Returns: 0 on success, negative on error
+// Asserts on error (does not return error codes)
 void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   void *fdt = boot_context;
 
-  KLOG("ARM64 FDT parsing");
+  KDEBUG_LOG("ARM64 FDT parsing");
   KASSERT(fdt, "FDT is NULL");
 
   // Validate FDT header
-  KLOG("Validating FDT header");
   int err = fdt_check_header(fdt);
   KASSERT(err == 0, "Invalid FDT header");
 
   // Store FDT location and size
   platform->fdt_base = (uintptr_t)fdt;
   platform->fdt_size = fdt_totalsize(fdt);
-  KLOG("FDT size: %u bytes", platform->fdt_size);
+  KDEBUG_LOG("FDT size: %u bytes", platform->fdt_size);
   // Align size up to 64KB page boundary
   platform->fdt_size = KALIGN(platform->fdt_size, ARM64_PAGE_SIZE);
 
@@ -136,7 +141,7 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
   platform->pci_mmio_size = 0;
   platform->uart_base = 0;
 
-  KLOG("Traversing device tree");
+  KDEBUG_LOG("Traversing device tree");
 
   // Compatible string lists for device matching
   const char *uart_compat[] = {"arm,pl011", NULL};
@@ -208,55 +213,48 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
 
     // Check for PCI ECAM
     if (platform->pci_ecam_base == 0) {
-      int len;
-      const char *compat = fdt_getprop(fdt, node, "compatible", &len);
-      if (compat && len > 0) {
-        const char *end = compat + len;
-        while (compat < end) {
-          if (strcmp(compat, "pci-host-ecam-generic") == 0) {
-            // Found PCI node - get ECAM base
-            const void *reg = fdt_getprop(fdt, node, "reg", &len);
-            if (reg && len >= 16) {
-              platform->pci_ecam_base = kload_be64((const uint8_t *)reg);
-              platform->pci_ecam_size = kload_be64((const uint8_t *)reg + 8);
+      static const char *pci_compat[] = {"pci-host-ecam-generic", NULL};
+      if (compatible_match(fdt, node, pci_compat)) {
+        // Found PCI node - get ECAM base
+        int len;
+        const void *reg = fdt_getprop(fdt, node, "reg", &len);
+        if (reg && len >= 16) {
+          platform->pci_ecam_base = kload_be64((const uint8_t *)reg);
+          platform->pci_ecam_size = kload_be64((const uint8_t *)reg + 8);
+        }
+
+        // Parse PCI ranges property to get MMIO region for BAR allocation
+        const uint8_t *ranges = fdt_getprop(fdt, node, "ranges", &len);
+        if (ranges && len >= 28) {
+          // PCI ranges format: (child-addr, parent-addr, size) tuples
+          // Each tuple is 7 cells (28 bytes):
+          //   3 cells (12 bytes): child address (flags + addr)
+          //   2 cells (8 bytes):  parent address
+          //   2 cells (8 bytes):  size
+          // We want 64-bit MMIO space (flags = 0x03000000 or 0x02000000)
+          for (int offset = 0; offset + 28 <= len; offset += 28) {
+            const uint8_t *entry = ranges + offset;
+
+            // Read child address flags (first 4 bytes)
+            uint32_t flags = kload_be32(entry);
+
+            // Read parent address (bytes 12-19)
+            uint64_t parent_addr = kload_be64(entry + 12);
+
+            // Read size (bytes 20-27)
+            uint64_t size = kload_be64(entry + 20);
+
+            // Check if this is 64-bit MMIO space (0x03000000 =
+            // prefetchable, 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit
+            // non-prefetchable)
+            uint32_t space_code = flags & 0x03000000;
+            if (space_code == 0x03000000 || space_code == 0x02000000) {
+              // Found MMIO space - use this for BAR allocation
+              platform->pci_mmio_base = parent_addr;
+              platform->pci_mmio_size = size;
+              break; // Use the first MMIO range we find
             }
-
-            // Parse PCI ranges property to get MMIO region for BAR allocation
-            const uint8_t *ranges = fdt_getprop(fdt, node, "ranges", &len);
-            if (ranges && len >= 28) {
-              // PCI ranges format: (child-addr, parent-addr, size) tuples
-              // Each tuple is 7 cells (28 bytes):
-              //   3 cells (12 bytes): child address (flags + addr)
-              //   2 cells (8 bytes):  parent address
-              //   2 cells (8 bytes):  size
-              // We want 64-bit MMIO space (flags = 0x03000000 or 0x02000000)
-              for (int offset = 0; offset + 28 <= len; offset += 28) {
-                const uint8_t *entry = ranges + offset;
-
-                // Read child address flags (first 4 bytes)
-                uint32_t flags = kload_be32(entry);
-
-                // Read parent address (bytes 12-19)
-                uint64_t parent_addr = kload_be64(entry + 12);
-
-                // Read size (bytes 20-27)
-                uint64_t size = kload_be64(entry + 20);
-
-                // Check if this is 64-bit MMIO space (0x03000000 =
-                // prefetchable, 0x02000000 = 32-bit MMIO, 0x43000000 = 64-bit
-                // non-prefetchable)
-                uint32_t space_code = flags & 0x03000000;
-                if (space_code == 0x03000000 || space_code == 0x02000000) {
-                  // Found MMIO space - use this for BAR allocation
-                  platform->pci_mmio_base = parent_addr;
-                  platform->pci_mmio_size = size;
-                  break; // Use the first MMIO range we find
-                }
-              }
-            }
-            break;
           }
-          compat += strlen(compat) + 1;
         }
       }
     }
@@ -270,19 +268,14 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
         continue;
       }
 
-      // Skip virtual/container nodes without physical addresses
-      // These typically don't have a compatible property or have special names
-      if (strcmp(name, "aliases") == 0 || strcmp(name, "chosen") == 0 ||
-          strcmp(name, "cpus") == 0 || strcmp(name, "timer") == 0 ||
-          strcmp(name, "psci") == 0 || strcmp(name, "pmu") == 0 ||
-          strcmp(name, "gpio-keys") == 0) {
-        continue;
-      }
+      // Only collect nodes that represent actual devices (have both "reg" and
+      // "compatible" properties). This filters out virtual/container nodes like
+      // aliases, chosen, cpus, etc. which lack physical device properties.
+      int reg_len, compat_len;
+      const void *reg = fdt_getprop(fdt, node, "reg", &reg_len);
+      const void *compat = fdt_getprop(fdt, node, "compatible", &compat_len);
 
-      // Try to get reg property
-      int len;
-      const void *reg = fdt_getprop(fdt, node, "reg", &len);
-      if (reg && len >= 16) {
+      if (reg && compat && reg_len >= 16) {
         uint64_t base = kload_be64((const uint8_t *)reg);
         uint64_t size = kload_be64((const uint8_t *)reg + 8);
 
@@ -297,7 +290,7 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
     }
   }
 
-  KLOG("FDT parse complete");
+  KDEBUG_LOG("FDT parse complete");
 
   // Print discovered information
   KLOG("Discovered from FDT:");
@@ -335,19 +328,23 @@ void platform_boot_context_parse(platform_t *platform, void *boot_context) {
          (unsigned long long)platform->pci_mmio_base,
          (unsigned long long)platform->pci_mmio_size);
   }
+
+  // Initialize BAR allocator for bare-metal PCI device configuration
+  // Use FDT-discovered MMIO range if available, otherwise default to 0x10000000
+  // (256MB physical address - safe region above typical low memory)
   platform->pci_next_bar_addr =
       platform->pci_mmio_base ? platform->pci_mmio_base : 0x10000000;
 
   KLOG("  MMIO regions: %d", platform->num_mmio_regions);
-  for (int i = 0; i < platform->num_mmio_regions; i++) {
-    uint64_t base = platform->mmio_regions[i].base;
-    uint64_t size = platform->mmio_regions[i].size;
-    KLOG("    Region %d: 0x%llx - 0x%llx (size: 0x%llx)", i,
-         (unsigned long long)base, (unsigned long long)(base + size),
-         (unsigned long long)size);
-  }
-
-  printk("\n");
+  KDEBUG_VALIDATE({
+    for (int i = 0; i < platform->num_mmio_regions; i++) {
+      uint64_t base = platform->mmio_regions[i].base;
+      uint64_t size = platform->mmio_regions[i].size;
+      KLOG("    Region %d: 0x%llx - 0x%llx (size: 0x%llx)", i,
+           (unsigned long long)base, (unsigned long long)(base + size),
+           (unsigned long long)size);
+    }
+  });
 }
 
 // =============================================================================
@@ -466,7 +463,7 @@ static uint64_t *get_l3_table(platform_t *platform) {
 // Helper: Map a single 64KB page with identity mapping
 static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
   // Physical address must be 64KB aligned for ARM64 64KB pages
-  KASSERT((phys_addr & 0xFFFFULL) == 0,
+  KASSERT((phys_addr & ARM64_PAGE_ALIGN_MASK) == 0,
           "Physical address must be 64KB aligned for mapping");
 
   uint32_t l1_idx = ARM64_L1_INDEX(phys_addr);
@@ -477,22 +474,22 @@ static void map_page(platform_t *platform, uint64_t phys_addr, uint64_t flags) {
   if (!(platform->page_table_l1[l1_idx] & PTE_VALID)) {
     uint64_t *l2_table = get_l2_table(platform);
     uint64_t l2_addr = (uint64_t)l2_table;
-    KASSERT((l2_addr & 0xFFFFULL) == 0, "L2 table must be 64KB aligned");
+    KASSERT((l2_addr & ARM64_PAGE_ALIGN_MASK) == 0, "L2 table must be 64KB aligned");
     platform->page_table_l1[l1_idx] = l2_addr | PTE_L1_TABLE;
   }
 
   // Get L2 table and ensure L2 → L3 mapping exists
   uint64_t *l2_table =
-      (uint64_t *)(platform->page_table_l1[l1_idx] & ~0xFFFFULL);
+      (uint64_t *)(platform->page_table_l1[l1_idx] & ~ARM64_PAGE_ALIGN_MASK);
   if (!(l2_table[l2_idx] & PTE_VALID)) {
     uint64_t *l3_table = get_l3_table(platform);
     uint64_t l3_addr = (uint64_t)l3_table;
-    KASSERT((l3_addr & 0xFFFFULL) == 0, "L3 table must be 64KB aligned");
+    KASSERT((l3_addr & ARM64_PAGE_ALIGN_MASK) == 0, "L3 table must be 64KB aligned");
     l2_table[l2_idx] = l3_addr | PTE_L2_TABLE;
   }
 
   // Map the page in L3 table
-  uint64_t *l3_table = (uint64_t *)(l2_table[l2_idx] & ~0xFFFFULL);
+  uint64_t *l3_table = (uint64_t *)(l2_table[l2_idx] & ~ARM64_PAGE_ALIGN_MASK);
 
   // Skip if page is already mapped (handles overlapping regions from FDT)
   if (l3_table[l3_idx] & PTE_VALID) {
@@ -525,10 +522,10 @@ static void map_page_range(platform_t *platform, uint64_t base, uint64_t size,
 // NOTE: noinline to prevent load hoisting from platform after
 // platform_boot_context_parse
 __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
-  KLOG("Setting up ARM64 MMU (64KB pages, 48-bit address space)...");
+  KDEBUG_LOG("Setting up ARM64 MMU (64KB pages, 48-bit address space)...");
 
   // Print kernel location for debugging
-  KLOG("Kernel location: _start=0x%llx, _end=0x%llx, size=%llu KB",
+  KDEBUG_LOG("Kernel location: _start=0x%llx, _end=0x%llx, size=%llu KB",
        (unsigned long long)(uintptr_t)_start,
        (unsigned long long)(uintptr_t)_end,
        (unsigned long long)((uintptr_t)_end - (uintptr_t)_start) / 1024);
@@ -556,35 +553,35 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
   // All device MMIO regions are discovered during FDT parsing and stored in
   // platform->mmio_regions[]. We map each region individually with device
   // memory attributes. Region sizes are aligned to ARM64_PAGE_SIZE (64KB).
-  KLOG("Mapping %d MMIO regions from FDT:", platform->num_mmio_regions);
+  KDEBUG_LOG("Mapping %d MMIO regions from FDT:", platform->num_mmio_regions);
   for (int r = 0; r < platform->num_mmio_regions; r++) {
     uint64_t mmio_base = platform->mmio_regions[r].base;
     uint64_t mmio_size = platform->mmio_regions[r].size;
 
-    KLOG("  Region %d: 0x%llx - 0x%llx (0x%llx bytes)", r,
-         (unsigned long long)mmio_base,
-         (unsigned long long)(mmio_base + mmio_size),
-         (unsigned long long)mmio_size);
+    KDEBUG_LOG("  Region %d: 0x%llx - 0x%llx (0x%llx bytes)", r,
+               (unsigned long long)mmio_base,
+               (unsigned long long)(mmio_base + mmio_size),
+               (unsigned long long)mmio_size);
 
     map_page_range(platform, mmio_base, mmio_size, PTE_L3_PAGE_DEVICE);
   }
 
   // Map UART explicitly (it's parsed from FDT but not in MMIO regions list)
   if (platform->uart_base != 0) {
-    KLOG("Mapping UART: 0x%llx", (unsigned long long)platform->uart_base);
+    KDEBUG_LOG("Mapping UART: 0x%llx", (unsigned long long)platform->uart_base);
     map_page_range(platform, platform->uart_base, 0x1000, PTE_L3_PAGE_DEVICE);
   }
 
   // Map GIC explicitly (parsed from FDT but not in MMIO regions list)
   if (platform->gic_dist_base != 0) {
-    KLOG("Mapping GIC Distributor: 0x%llx",
-         (unsigned long long)platform->gic_dist_base);
+    KDEBUG_LOG("Mapping GIC Distributor: 0x%llx",
+               (unsigned long long)platform->gic_dist_base);
     map_page_range(platform, platform->gic_dist_base, 0x10000,
                    PTE_L3_PAGE_DEVICE);
   }
   if (platform->gic_cpu_base != 0) {
-    KLOG("Mapping GIC CPU Interface: 0x%llx",
-         (unsigned long long)platform->gic_cpu_base);
+    KDEBUG_LOG("Mapping GIC CPU Interface: 0x%llx",
+               (unsigned long long)platform->gic_cpu_base);
     map_page_range(platform, platform->gic_cpu_base, 0x10000,
                    PTE_L3_PAGE_DEVICE);
   }
@@ -594,10 +591,10 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
     uint64_t ram_base = platform->mem_regions[r].base;
     uint64_t ram_size = platform->mem_regions[r].size;
 
-    KLOG("Mapping RAM region %d: 0x%llx - 0x%llx (%llu MB)", r,
-         (unsigned long long)ram_base,
-         (unsigned long long)(ram_base + ram_size),
-         (unsigned long long)(ram_size / 1024 / 1024));
+    KDEBUG_LOG("Mapping RAM region %d: 0x%llx - 0x%llx (%llu MB)", r,
+               (unsigned long long)ram_base,
+               (unsigned long long)(ram_base + ram_size),
+               (unsigned long long)(ram_size / 1024 / 1024));
 
     map_page_range(platform, ram_base, ram_size, PTE_L3_PAGE_NORMAL);
   }
@@ -646,18 +643,18 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
   __asm__ volatile("dsb sy" ::: "memory");
   __asm__ volatile("isb" ::: "memory");
 
-  KLOG("x");
+  KDEBUG_LOG("MMU setup: caches invalidated, barriers complete");
 
   // Check if MMU is already enabled
   uint64_t sctlr;
   __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
   KASSERT((sctlr & 1) == 0, "MMU expected to be disabled");
 
-  KLOG("x");
+  KDEBUG_LOG("MMU setup: enabling MMU...");
   // First enable just the MMU
   sctlr |= (1 << 0); // M: Enable MMU
   __asm__ volatile("msr sctlr_el1, %0" : : "r"(sctlr));
-  KLOG("x");
+  KDEBUG_LOG("MMU setup: MMU enabled, applying barrier");
   __asm__ volatile("isb" ::: "memory");
 
   // Now enable caches
@@ -666,14 +663,14 @@ __attribute__((noinline)) static void setup_mmu(platform_t *platform) {
   __asm__ volatile("msr sctlr_el1, %0" : : "r"(sctlr));
   __asm__ volatile("isb" ::: "memory");
 
-  printk("MMU enabled with caching\n");
+  KDEBUG_LOG("MMU enabled with caching");
 }
 
 // Build free memory region list
 // NOTE: noinline to prevent load hoisting from platform after
 // platform_boot_context_parse
 __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
-  printk("\nBuilding free memory region list...\n");
+  KDEBUG_LOG("Building free memory region list...");
 
   // Head and tail of linked list (starts at first region if any exist)
   kregion_t *head =
@@ -692,7 +689,7 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   kregion_t *region = head;
   int idx = 0;
   while (region != NULL) {
-    KLOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", idx,
+    KDEBUG_LOG("Initial region %d: 0x%llx - 0x%llx (%llu MB)", idx,
          (unsigned long long)region->base,
          (unsigned long long)(region->base + region->size),
          (unsigned long long)(region->size / 1024 / 1024));
@@ -702,7 +699,7 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
 
   // Reserve DTB region
   if (platform->fdt_base != 0 && platform->fdt_size != 0) {
-    KLOG("Reserving DTB: 0x%llx - 0x%llx (%llu KB)",
+    KDEBUG_LOG("Reserving DTB: 0x%llx - 0x%llx (%llu KB)",
          (unsigned long long)platform->fdt_base,
          (unsigned long long)(platform->fdt_base + platform->fdt_size),
          (unsigned long long)(platform->fdt_size / 1024));
@@ -717,7 +714,7 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   uintptr_t kernel_base = (uintptr_t)_start;
   uintptr_t kernel_end = (uintptr_t)_end;
   size_t kernel_size = kernel_end - kernel_base;
-  KLOG("Reserving kernel: 0x%llx - 0x%llx (%llu KB, includes stack and page "
+  KDEBUG_LOG("Reserving kernel: 0x%llx - 0x%llx (%llu KB, includes stack and page "
        "tables in .bss)",
        (unsigned long long)kernel_base, (unsigned long long)kernel_end,
        (unsigned long long)(kernel_size / 1024));
@@ -730,7 +727,7 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
   platform->mem_regions_tail = tail;
 
   // Print final free regions
-  printk("\nFree memory regions:\n");
+  KLOG("Free memory regions:");
   size_t total_free = 0;
   region = head;
   idx = 0;
@@ -743,7 +740,7 @@ __attribute__((noinline)) static void build_free_regions(platform_t *platform) {
     region = region->next;
     idx++;
   }
-  KLOG("Total free memory: %llu MB\n",
+  KLOG("Total free memory: %llu MB",
        (unsigned long long)(total_free / 1024 / 1024));
 }
 

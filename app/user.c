@@ -102,19 +102,11 @@ static const uint16_t UDP_ECHO_PORT = 8080;
 static void on_random_ready(kwork_t *work) {
   user_t *user = work->ctx;
 
-  if (work->result != KERR_OK) {
-    printk("RNG failed: error ");
-    printk_dec(work->result);
-    printk("\n");
-    return;
-  }
-
+  KASSERT(work->result == KERR_OK, "RNG failed");
   krng_req_t *req = CONTAINER_OF(work, krng_req_t, work);
 
-  // Log the random bytes received
-  printk("Random bytes (");
-  printk_dec(req->completed);
-  printk("): ");
+  // Log the random bytes received (first 32 bytes)
+  printk("Random bytes (%llu): ", req->completed);
   for (size_t i = 0; i < req->completed && i < 32; i++) {
     printk_hex8(req->buffer[i]);
     if (i < req->completed - 1)
@@ -125,14 +117,14 @@ static void on_random_ready(kwork_t *work) {
   // Seed CSPRNG with the random bytes from virtio-rng
   csprng_init(&user->rng, req->buffer, req->completed);
 
-  printk("[TEST PASS] RNG\n");
+  KLOG("[TEST PASS] RNG");
 }
 
 // Send ARP reply packet
 static void send_arp_reply(user_t *user, const uint8_t *target_mac,
                            const uint8_t *target_ip) {
   if (user->arp_send_req.work.state != KWORK_STATE_DEAD) {
-    printk("ARP reply already in flight, ignoring\n");
+    KLOG("ARP reply already in flight, ignoring");
     return;
   }
 
@@ -170,9 +162,7 @@ static void send_arp_reply(user_t *user, const uint8_t *target_mac,
 
   kerr_t err = ksubmit(user->kernel, &user->arp_send_req.work);
   if (err != KERR_OK) {
-    printk("ARP reply send failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("ARP reply send failed: error %d", (int)err);
   } else {
     printk("Sent ARP reply to ");
     printk_ip(target_ip);
@@ -187,9 +177,7 @@ static void handle_arp_packet(user_t *user, const uint8_t *pkt,
                               size_t pkt_len) {
   // Minimum ARP packet: 14 (Ethernet) + 28 (ARP) = 42 bytes
   if (pkt_len < 42) {
-    printk("ARP packet too small (");
-    printk_dec(pkt_len);
-    printk(" bytes)\n");
+    KLOG("ARP packet too small (%zu bytes)", pkt_len);
     return;
   }
 
@@ -203,7 +191,7 @@ static void handle_arp_packet(user_t *user, const uint8_t *pkt,
   // Validate ARP packet
   if (htype != ARP_HTYPE_ETHERNET || ptype != ARP_PTYPE_IPV4 || hlen != 6 ||
       plen != 4) {
-    printk("Invalid ARP packet format\n");
+    KLOG("Invalid ARP packet format");
     return;
   }
 
@@ -243,7 +231,7 @@ static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
                                size_t pkt_len, const uint8_t *ip_hdr) {
   // Minimum ICMP packet: 14 (Ethernet) + 20 (IP) + 8 (ICMP header) = 42 bytes
   if (pkt_len < 42) {
-    printk("ICMP packet too small\n");
+    KLOG("ICMP packet too small");
     return;
   }
 
@@ -268,7 +256,7 @@ static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
 
     // Check if send request is available
     if (user->icmp_send_req.work.state != KWORK_STATE_DEAD) {
-      printk("ICMP reply already in flight, ignoring\n");
+      KLOG("ICMP reply already in flight, ignoring");
       return;
     }
 
@@ -315,9 +303,7 @@ static void handle_icmp_packet(user_t *user, const uint8_t *pkt,
 
     kerr_t err = ksubmit(user->kernel, &user->icmp_send_req.work);
     if (err != KERR_OK) {
-      printk("ICMP reply send failed: error ");
-      printk_dec(err);
-      printk("\n");
+      KLOG("ICMP reply send failed: error %d", (int)err);
     } else {
       printk("Sent ICMP echo reply to ");
       printk_ip(ip_src);
@@ -337,7 +323,7 @@ static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
                               const uint8_t *ip_hdr) {
   // Minimum UDP packet: 14 (Ethernet) + 20 (IP) + 8 (UDP) = 42 bytes
   if (pkt_len < 42) {
-    printk("UDP packet too small\n");
+    KLOG("UDP packet too small");
     return;
   }
 
@@ -354,9 +340,7 @@ static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
 
   // Check if it's for our echo port
   if (udp_dst_port != UDP_ECHO_PORT) {
-    printk("UDP packet not for echo port (dst port ");
-    printk_dec(udp_dst_port);
-    printk("), dropping\n");
+    KLOG("UDP packet not for echo port (dst port %u), dropping", udp_dst_port);
     return;
   }
 
@@ -392,7 +376,7 @@ static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
   // Construct UDP echo response
   // Check if send request is available (not already in use)
   if (user->udp_send_req.work.state != KWORK_STATE_DEAD) {
-    printk("UDP send already in flight, dropping\n");
+    KLOG("UDP send already in flight, dropping");
     return;
   }
 
@@ -442,9 +426,7 @@ static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
   // Submit send request
   kerr_t err = ksubmit(user->kernel, &user->udp_send_req.work);
   if (err != KERR_OK) {
-    printk("Network send submit failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("Network send submit failed: error %d", (int)err);
   } else {
     printk("Sent UDP response to ");
     printk_ip(ip_src);
@@ -453,7 +435,7 @@ static void handle_udp_packet(user_t *user, const uint8_t *pkt, size_t pkt_len,
     printk(" len=");
     printk_dec(udp_data_len);
     printk("\n");
-    printk("[TEST PASS] Network Echo\n");
+    KLOG("[TEST PASS] Network Echo");
   }
 }
 
@@ -466,9 +448,7 @@ static void on_packet_received(kwork_t *work) {
 
   if (work->result != KERR_OK) {
     if (work->result != KERR_CANCELLED) {
-      printk("Network recv failed: error ");
-      printk_dec(work->result);
-      printk("\n");
+      KLOG("Network recv failed: error %d", (int)work->result);
     }
     return;
   }
@@ -495,9 +475,7 @@ static void on_packet_received(kwork_t *work) {
 
   // Minimum Ethernet frame: 14 bytes
   if (pkt_len < 14) {
-    printk("Packet too small (");
-    printk_dec(pkt_len);
-    printk(" bytes), dropping\n");
+    KLOG("Packet too small (%zu bytes), dropping", pkt_len);
     goto release;
   }
 
@@ -510,7 +488,7 @@ static void on_packet_received(kwork_t *work) {
   } else if (ethertype == ETHERTYPE_IPV4) {
     // Minimum IPv4 packet: 14 (Ethernet) + 20 (IP) = 34 bytes
     if (pkt_len < 34) {
-      printk("IPv4 packet too small\n");
+      KLOG("IPv4 packet too small");
       goto release;
     }
 
@@ -523,16 +501,12 @@ static void on_packet_received(kwork_t *work) {
 
     // Validate IP version and header length
     if (ip_version != 4) {
-      printk("Invalid IP version (");
-      printk_dec(ip_version);
-      printk("), dropping\n");
+      KLOG("Invalid IP version (%u), dropping", ip_version);
       goto release;
     }
 
     if (ip_ihl != 5) {
-      printk("IP options not supported (IHL=");
-      printk_dec(ip_ihl);
-      printk("), dropping\n");
+      KLOG("IP options not supported (IHL=%u), dropping", ip_ihl);
       goto release;
     }
 
@@ -551,9 +525,7 @@ static void on_packet_received(kwork_t *work) {
     } else if (ip_protocol == IP_PROTOCOL_UDP) {
       handle_udp_packet(user, pkt, pkt_len, ip_hdr);
     } else {
-      printk("Unsupported IP protocol (");
-      printk_dec(ip_protocol);
-      printk("), dropping\n");
+      KLOG("Unsupported IP protocol (%u), dropping", ip_protocol);
     }
   } else {
     printk("Unknown ethertype ");
@@ -571,9 +543,7 @@ static void on_packet_sent(kwork_t *work) {
   user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
-    printk("Network send failed: error ");
-    printk_dec(work->result);
-    printk("\n");
+    KLOG("Network send failed: error %d", (int)work->result);
     return;
   }
 
@@ -595,9 +565,7 @@ static void on_block_complete(kwork_t *work) {
   user_t *user = work->ctx;
 
   if (work->result != KERR_OK) {
-    printk("Block operation failed: error ");
-    printk_dec(work->result);
-    printk("\n");
+    KLOG("Block operation failed: error %d", (int)work->result);
     return;
   }
 
@@ -639,9 +607,7 @@ static void on_block_complete(kwork_t *work) {
     req->work.state = KWORK_STATE_DEAD;
     kerr_t err = ksubmit(user->kernel, &req->work);
     if (err != KERR_OK) {
-      printk("Block write submit failed: error ");
-      printk_dec(err);
-      printk("\n");
+      KLOG("Block write submit failed: error %d", (int)err);
     }
   } else if (user->test_stage == 1) {
     // Stage 1: Write complete, flush
@@ -657,9 +623,7 @@ static void on_block_complete(kwork_t *work) {
 
     kerr_t err = ksubmit(user->kernel, &req->work);
     if (err != KERR_OK) {
-      printk("Block flush submit failed: error ");
-      printk_dec(err);
-      printk("\n");
+      KLOG("Block flush submit failed: error %d", (int)err);
     }
   } else if (user->test_stage == 2) {
     // Stage 2: Flush complete, verify
@@ -685,9 +649,7 @@ static void on_block_complete(kwork_t *work) {
 
     kerr_t err = ksubmit(user->kernel, &req->work);
     if (err != KERR_OK) {
-      printk("Block verify read submit failed: error ");
-      printk_dec(err);
-      printk("\n");
+      KLOG("Block verify read submit failed: error %d", (int)err);
     }
   } else if (user->test_stage == 3) {
     // Stage 3: Verify read complete
@@ -704,17 +666,17 @@ static void on_block_complete(kwork_t *work) {
       printk("Verified magic and timestamp=");
       printk_dec(timestamp);
       printk("\n");
-      printk("Block device test PASSED\n");
+      KLOG("[TEST PASS] Block Device");
     } else {
-      printk("Verification failed: magic mismatch\n");
-      printk("Block device test FAILED\n");
+      KLOG("Verification failed: magic mismatch");
+      KLOG("[TEST FAIL] Block Device");
     }
   }
 }
 
 // User entry point
 void user_main(user_t *user) {
-  printk("user_main: Requesting random bytes for CSPRNG...\n");
+  KLOG("user_main: Requesting random bytes for CSPRNG...");
 
   // Setup RNG request
   kwork_init(&user->rng_req.work, KWORK_OP_RNG_READ, user, on_random_ready, 0);
@@ -725,15 +687,13 @@ void user_main(user_t *user) {
   // Submit work
   kerr_t err = ksubmit(user->kernel, &user->rng_req.work);
   if (err != KERR_OK) {
-    printk("ksubmit failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("ksubmit failed: error %d", (int)err);
   } else {
-    printk("RNG request submitted\n");
+    KLOG("RNG request submitted");
   }
 
   // Setup block device test (stage 0: initial read)
-  printk("user_main: Starting block device test...\n");
+  KLOG("user_main: Starting block device test...");
 
   user->test_stage = 0;
 
@@ -749,15 +709,13 @@ void user_main(user_t *user) {
 
   err = ksubmit(user->kernel, &user->blk_req.work);
   if (err != KERR_OK) {
-    printk("Block request submit failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("Block request submit failed: error %d", (int)err);
   } else {
-    printk("Block request submitted\n");
+    KLOG("Block request submitted");
   }
 
   // Setup network device test (continuous packet reception)
-  printk("user_main: Starting network packet reception...\n");
+  KLOG("user_main: Starting network packet reception...");
 
   // Initialize receive buffers
   user->net_rx_bufs[0].buffer = user->net_rx_buf0;
@@ -777,12 +735,9 @@ void user_main(user_t *user) {
   user->net_rx_bufs[3].packet_length = 0;
 
   // Memory barrier before setting counters to prevent optimization issues
-  KLOG("x user ptr=");
-  printk_hex64((uintptr_t)user);
-  printk("\n");
+  KLOG("user ptr=%p", user);
   user->packets_received = 0;
   user->packets_sent = 0;
-  KLOG("x");
 
   // Setup standing receive request
   kwork_init(&user->net_recv_req.work, KWORK_OP_NET_RECV, user,
@@ -793,16 +748,14 @@ void user_main(user_t *user) {
 
   err = ksubmit(user->kernel, &user->net_recv_req.work);
   if (err != KERR_OK) {
-    printk("Network recv submit failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("Network recv submit failed: error %d", (int)err);
   } else {
-    printk("Network recv request submitted (4 buffers)\n");
+    KLOG("Network recv request submitted (4 buffers)");
   }
 
   // Send gratuitous ARP to announce our presence
   // This pre-populates QEMU's ARP cache, eliminating delay on first packet
-  printk("Sending gratuitous ARP...\n");
+  KLOG("Sending gratuitous ARP...");
 
   uint8_t *tx_pkt = user->arp_tx_buf;
   size_t tx_len = 0;
@@ -839,11 +792,9 @@ void user_main(user_t *user) {
 
   err = ksubmit(user->kernel, &user->arp_send_req.work);
   if (err != KERR_OK) {
-    printk("Gratuitous ARP send failed: error ");
-    printk_dec(err);
-    printk("\n");
+    KLOG("Gratuitous ARP send failed: error %d", (int)err);
   } else {
-    printk("Gratuitous ARP sent (announcing ");
+    KLOG("Gratuitous ARP sent (announcing ");
     printk_ip(DEVICE_IP);
     printk(" at ");
     printk_mac(device_mac);

@@ -6,6 +6,8 @@
 #include "printk.h"
 #include "user.h"
 
+#define MAX_TICK_TIMEOUT 2000
+
 static kernel_t g_kernel;
 static user_t g_user;
 
@@ -30,6 +32,7 @@ void kmain(void *fdt) {
   KDEBUG_VALIDATE(platform_mem_validate_post_init(&k->platform, fdt));
 
   // User kickoff
+  KLOG("user_main...");
   user_t *user = &g_user;
   user->kernel = k;
   user_main(user);
@@ -38,6 +41,12 @@ void kmain(void *fdt) {
   // Event loop
   KLOG("kloop...");
   while (1) {
-    kmain_step(k, 2000);
+  KLOG("[KLOOP] tick");
+  kmain_tick(k, k->current_time_ms);
+  uint64_t timeout = kmain_next_delay(k);
+  if (timeout > MAX_TICK_TIMEOUT)
+    timeout = MAX_TICK_TIMEOUT;
+  KLOG("[KLOOP] wfi");
+  k->current_time_ms = platform_wfi(&k->platform, timeout);
   }
 }

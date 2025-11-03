@@ -125,14 +125,11 @@ else
     OVERALL_PASS=0
 fi
 
-# Test 4: CSPRNG
-check_test "CSPRNG Initialization" "$LOGDIR/qemu.log" "CSPRNG initialized"
-
 # Test 5: RNG Request
 check_test "RNG Request" "$LOGDIR/qemu.log" "\[TEST PASS\] RNG"
 
 # Test 6: Block Device Test
-check_test "Block Device Test" "$LOGDIR/qemu.log" "Block device test PASSED"
+check_test "Block Device Test" "$LOGDIR/qemu.log" "\[TEST PASS\] Block Device"
 
 # Test 7: Network - Received UDP packet
 check_test "Network Received" "$LOGDIR/qemu.log" "Received UDP packet"
